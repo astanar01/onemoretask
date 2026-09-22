@@ -53,7 +53,17 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 
 .card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); cursor: grab; border-left: 3px solid transparent; }
 .card:hover { outline: 1px solid var(--line); }
-.card.dragging { opacity: .35; }
+.group { display: flex; flex-direction: column; gap: 6px; }
+.group.dragging { opacity: .35; }
+.children { display: flex; flex-direction: column; gap: 6px; margin-left: 12px; padding-left: 8px; border-left: 2px solid var(--line); }
+.children:empty, .group.collapsed > .children { display: none; }
+.card .row { display: flex; align-items: flex-start; gap: 4px; }
+.card .row .title { flex: 1; min-width: 0; }
+.twisty { border: 0; background: transparent; color: var(--muted); width: 22px; height: 20px; padding: 0; margin-left: -4px; border-radius: 4px; flex: none; display: grid; place-items: center; }
+.twisty svg { transition: transform .12s; }
+.twisty.shut svg { transform: rotate(-90deg); }
+.twisty:hover { background: var(--line); color: var(--text); }
+.hidden-count { font-size: 11px; color: var(--muted); background: var(--col); border-radius: 8px; padding: 0 6px; align-self: center; }
 .card.p-high { border-left-color: var(--p-high); }
 .card.p-med { border-left-color: var(--p-med); }
 .card.p-low { border-left-color: var(--p-low); }
@@ -168,12 +178,13 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 300);
 }
-async function flush() {
+async function flush(keepalive = false) {
+  clearTimeout(saveTimer);
   saveTimer = null;
   const body = JSON.stringify(state);
   try {
     if (useServer) {
-      const r = await fetch("/api/tasks", { method: "PUT", headers: { "Content-Type": "application/json" }, body });
+      const r = await fetch("/api/tasks", { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
       if (!r.ok) throw new Error("server said " + r.status);
     } else {
       localStorage.setItem(LS_KEY, body);
@@ -184,7 +195,8 @@ async function flush() {
   }
 }
 function setStatus(msg, err) { const s = $("#status"); s.textContent = msg; s.className = err ? "err" : ""; }
-window.addEventListener("beforeunload", (e) => { if (saveTimer) { flush(); e.preventDefault(); } });
+// keepalive lets the pending save finish after the page is gone.
+window.addEventListener("pagehide", () => { if (saveTimer) flush(true); });
 
 // ---------------------------------------------------------------- model helpers
 const task = (id) => state.tasks.find((t) => t.id === id);
@@ -208,16 +220,31 @@ function addTask(title, colId, parent = null) {
 }
 function touch(t) { t.updated = now(); save(); }
 
-// Put task `id` into column `colId`, just before task `beforeId` (null = at the end).
-function moveTask(id, colId, beforeId) {
+// The subtasks drawn nested under `t` in column `colId` (same-column chain only).
+function nestedIn(t, colId) { return children(t.id).filter((c) => c.column === colId).flatMap((c) => [c, ...nestedIn(c, colId)]); }
+
+// Put task `id` into column `colId`, just before sibling `beforeId` (null = at the end).
+// `carry` brings along the subtasks nested under it in its old column.
+function moveTask(id, colId, beforeId, carry = true) {
   const t = task(id);
-  const list = state.tasks.filter((x) => x.column === colId && x.id !== id).sort((a, b) => a.order - b.order);
+  const carried = carry && t.column !== colId ? nestedIn(t, t.column) : [];
+  const moving = new Set([t.id, ...carried.map((x) => x.id)]);
+  const list = state.tasks.filter((x) => x.column === colId && !moving.has(x.id)).sort((a, b) => a.order - b.order);
   let idx = beforeId ? list.findIndex((x) => x.id === beforeId) : -1;
   if (idx < 0) idx = list.length;
-  list.splice(idx, 0, t);
+  list.splice(idx, 0, t, ...carried);
   list.forEach((x, i) => (x.order = i));
-  t.column = colId;
+  for (const x of moving) task(x).column = colId;
   touch(t);
+}
+
+// Collapsed groups are a per-browser view preference, so they stay out of tasks.json.
+const collapsed = new Set();
+try { JSON.parse(localStorage.getItem(LS_KEY + ":collapsed") || "[]").forEach((id) => collapsed.add(id)); } catch (_) {}
+function toggleCollapsed(id) {
+  collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+  try { localStorage.setItem(LS_KEY + ":collapsed", JSON.stringify([...collapsed])); } catch (_) {}
+  render();
 }
 
 function deleteTask(id) {
@@ -249,6 +276,8 @@ function render() {
     const cards = state.tasks
       .filter((t) => t.column === col.id && (showSubs || !t.parent) && matches(t, q))
       .sort((a, b) => a.order - b.order);
+    const shown = new Set(cards.map((t) => t.id));
+    const kidsOf = (id) => cards.filter((t) => t.parent === id);
 
     const head = document.createElement("div");
     head.className = "col-head";
@@ -278,7 +307,8 @@ function render() {
 
     const list = document.createElement("div");
     list.className = "cards";
-    for (const t of cards) list.appendChild(cardEl(t));
+    // A subtask nests under its parent when the parent is shown in this column too.
+    for (const t of cards) if (!shown.has(t.parent)) list.appendChild(groupEl(t, kidsOf, true));
     el.appendChild(list);
 
     el.addEventListener("dragover", (e) => onDragOver(e, el, list));
@@ -302,29 +332,50 @@ function render() {
   board.appendChild(addCol);
 }
 
-function cardEl(t) {
+function groupEl(t, kidsOf, top) {
+  const g = document.createElement("div");
+  g.className = "group" + (collapsed.has(t.id) ? " collapsed" : "");
+  g.dataset.id = t.id;
+  const kids = kidsOf(t.id);
+  g.appendChild(cardEl(t, top, kids.length));
+  const box = document.createElement("div");
+  box.className = "children";
+  for (const k of kids) box.appendChild(groupEl(k, kidsOf, false));
+  g.appendChild(box);
+  return g;
+}
+
+function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
   el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "");
   el.draggable = true;
   el.dataset.id = t.id;
   const kids = descendants(t.id);
   const doneKids = kids.filter(isDone).length;
-  const parent = t.parent && task(t.parent);
+  const parent = top && t.parent && task(t.parent);
+  const shut = collapsed.has(t.id);
   el.innerHTML = `
     ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
-    <div class="title">${esc(t.title)}</div>
+    <div class="row">
+      ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? "Expand" : "Collapse"} subtasks"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+      <div class="title">${esc(t.title)}</div>
+      ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
+    </div>
     ${(kids.length || t.tags.length || t.notes) ? `<div class="meta">
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
+  const tw = el.querySelector(".twisty");
+  if (tw) tw.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapsed(t.id); });
   el.addEventListener("dragstart", (e) => {
+    e.stopPropagation();
     drag = { kind: "card", id: t.id };
     e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id);
-    requestAnimationFrame(() => el.classList.add("dragging"));
+    requestAnimationFrame(() => el.parentElement.classList.add("dragging"));
   });
-  el.addEventListener("dragend", () => { drag = null; clearDropLine(); el.classList.remove("dragging"); });
+  el.addEventListener("dragend", () => { drag = null; clearDropLine(); el.parentElement.classList.remove("dragging"); render(); });
   return el;
 }
 
@@ -357,15 +408,20 @@ function onDragOver(e, colEl, list) {
   if (!drag) return;
   e.preventDefault();
   if (drag.kind === "col") return;
-  const before = cardAfterPointer(list, e.clientY);
+  // A card drops among its siblings: inside its parent's group if the parent is in this column.
+  const t = task(drag.id);
+  const pg = t.parent && list.querySelector(`.group[data-id="${t.parent}"]`);
+  const box = pg ? pg.querySelector(":scope > .children") : list;
+  if (pg) pg.classList.remove("collapsed");
+  const before = groupAfterPointer(box, e.clientY);
   if (!dropLine) { dropLine = document.createElement("div"); dropLine.className = "drop-line"; }
-  if (before) list.insertBefore(dropLine, before); else list.appendChild(dropLine);
+  if (before) box.insertBefore(dropLine, before); else box.appendChild(dropLine);
 }
 
-function cardAfterPointer(list, y) {
-  for (const c of list.querySelectorAll(".card:not(.dragging)")) {
-    const r = c.getBoundingClientRect();
-    if (y < r.top + r.height / 2) return c;
+function groupAfterPointer(box, y) {
+  for (const g of box.querySelectorAll(":scope > .group:not(.dragging)")) {
+    const r = g.firstElementChild.getBoundingClientRect();
+    if (y < r.top + r.height / 2) return g;
   }
   return null;
 }
@@ -379,7 +435,7 @@ function onDrop(e, col) {
     if (from >= 0 && from !== to) { const [c] = state.columns.splice(from, 1); state.columns.splice(to, 0, c); save(); }
   } else {
     let next = dropLine && dropLine.nextElementSibling;
-    while (next && !next.classList.contains("card")) next = next.nextElementSibling;
+    while (next && (!next.classList.contains("group") || next.classList.contains("dragging"))) next = next.nextElementSibling;
     moveTask(drag.id, col.id, next ? next.dataset.id : null);
   }
   drag = null; clearDropLine(); render();
@@ -422,7 +478,7 @@ function renderDetail() {
     li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="Done">
       <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${n} sub</span>` : ""}
       <span class="c">${esc((column(k.column) || {}).name || "")}</span>`;
-    li.querySelector("input").onchange = (e) => { moveTask(k.id, e.target.checked ? doneCol() : firstOpenCol(), null); renderDetail(); };
+    li.querySelector("input").onchange = (e) => { moveTask(k.id, e.target.checked ? doneCol() : firstOpenCol(), null, false); renderDetail(); };
     li.querySelector(".t").onclick = () => { openId = k.id; renderDetail(); };
     ul.appendChild(li);
   }
