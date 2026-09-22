@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Board</title>
+<style>
+:root {
+  --bg: #f4f2ee; --col: #e9e6df; --card: #ffffff; --text: #1f1d1a; --muted: #6f6a61;
+  --line: #d6d1c7; --accent: #7a4fd6; --accent-soft: #ece4fb; --danger: #c0392b;
+  --drop: #7a4fd6; --shadow: 0 1px 2px rgba(0,0,0,.08), 0 1px 1px rgba(0,0,0,.04);
+  --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
+    --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
+    --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0 8px 0 0; }
+header .grow { flex: 1; }
+#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 200px; }
+label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
+#status { color: var(--muted); font-size: 12px; }
+#status.err { color: var(--danger); }
+.btn { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 5px 10px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+#banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: 13px; }
+
+#board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
+.column { background: var(--col); border-radius: 10px; width: 290px; min-width: 290px; display: flex; flex-direction: column; max-height: 100%; }
+.column.col-drag { opacity: .4; }
+.col-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px 12px; cursor: grab; }
+.col-head .name { font-weight: 600; flex: 1; border: 0; background: transparent; padding: 2px 4px; border-radius: 4px; min-width: 0; }
+.col-head .name:focus { background: var(--card); outline: 1px solid var(--accent); }
+.col-head .count { color: var(--muted); font-size: 12px; }
+.col-head .icon { border: 0; background: transparent; color: var(--muted); padding: 2px 5px; border-radius: 4px; }
+.col-head .icon:hover { background: var(--line); color: var(--text); }
+.col-head .done-flag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.cards { padding: 4px 8px 8px; overflow-y: auto; min-height: 40px; display: flex; flex-direction: column; gap: 8px; }
+.drop-line { height: 3px; background: var(--drop); border-radius: 2px; margin: -2px 0; }
+
+.card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); cursor: grab; border-left: 3px solid transparent; }
+.card:hover { outline: 1px solid var(--line); }
+.card.dragging { opacity: .35; }
+.card.p-high { border-left-color: var(--p-high); }
+.card.p-med { border-left-color: var(--p-med); }
+.card.p-low { border-left-color: var(--p-low); }
+.card.is-done .title { text-decoration: line-through; color: var(--muted); }
+.card .parent { font-size: 11px; color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .title { word-wrap: break-word; }
+.card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.tag { background: var(--accent-soft); color: var(--text); border-radius: 4px; padding: 0 6px; font-size: 11px; }
+.progress { display: flex; align-items: center; gap: 6px; }
+.progress .bar { width: 50px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: var(--accent); }
+
+.add-card { margin: 0 8px 8px; }
+.add-card button { width: 100%; text-align: left; border: 0; background: transparent; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
+.add-card button:hover { background: var(--line); color: var(--text); }
+.add-card textarea { width: 100%; resize: none; border: 1px solid var(--accent); border-radius: 6px; padding: 6px 8px; background: var(--card); }
+.add-col { min-width: 220px; }
+
+/* detail panel */
+#overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: flex-start; padding: 6vh 16px; overflow-y: auto; }
+#overlay.open { display: flex; }
+#panel { background: var(--bg); border-radius: 12px; width: 620px; max-width: 100%; padding: 18px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+#panel .crumb { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+#panel .crumb a { color: var(--accent); cursor: pointer; }
+#d-title { width: 100%; font-size: 18px; font-weight: 600; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; }
+#d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.fields label, .block > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.fields select, .fields input, #d-notes { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+#d-notes { min-height: 90px; resize: vertical; }
+.block { margin-top: 14px; }
+.sub-list { list-style: none; margin: 4px 0 6px; padding: 0; }
+.sub-list li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; }
+.sub-list li:hover { background: var(--card); }
+.sub-list li .t { flex: 1; cursor: pointer; }
+.sub-list li.done .t { text-decoration: line-through; color: var(--muted); }
+.sub-list li .c { font-size: 11px; color: var(--muted); }
+.sub-list li .n { font-size: 11px; color: var(--muted); }
+#d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
+.panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: 12px; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Task Board</h1>
+  <input id="search" type="search" placeholder="Filter tasks…">
+  <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
+  <span class="grow"></span>
+  <span id="status"></span>
+</header>
+<div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 tools/task_board/server.py</code> to save them to <code>tasks.json</code>.</div>
+<main id="board"></main>
+
+<div id="overlay">
+  <div id="panel">
+    <div class="crumb" id="d-crumb"></div>
+    <input id="d-title">
+    <div class="fields">
+      <div><label for="d-col">Column</label><select id="d-col"></select></div>
+      <div><label for="d-prio">Priority</label>
+        <select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select></div>
+      <div style="grid-column: 1 / -1"><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
+    </div>
+    <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea></div>
+    <div class="block">
+      <label>Subtasks <span id="d-subcount"></span></label>
+      <ul class="sub-list" id="d-subs"></ul>
+      <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
+    </div>
+    <div class="panel-foot">
+      <span id="d-dates"></span>
+      <span><button class="btn danger" id="d-delete">Delete</button> <button class="btn primary" id="d-close">Close</button></span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const LS_KEY = "mage-task-board";
+const $ = (s) => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const now = () => new Date().toISOString();
+
+let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated}] }
+let useServer = true;
+let openId = null;         // task shown in the detail panel
+let drag = null;           // { kind:'card'|'col', id }
+
+function defaultState() {
+  const cols = [["To Do", false], ["In Progress", false], ["Review", false], ["Done", true]]
+    .map(([name, done]) => ({ id: uid(), name, done }));
+  return { version: 1, columns: cols, tasks: [] };
+}
+
+// ---------------------------------------------------------------- persistence
+async function load() {
+  try {
+    const r = await fetch("/api/tasks", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    state = (await r.json()) || defaultState();
+  } catch (e) {
+    useServer = false;
+    $("#banner").style.display = "block";
+    try { state = JSON.parse(localStorage.getItem(LS_KEY)); } catch (_) { state = null; }
+    state = state || defaultState();
+  }
+}
+
+let saveTimer = null;
+function save() {
+  setStatus("Saving…");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 300);
+}
+async function flush() {
+  saveTimer = null;
+  const body = JSON.stringify(state);
+  try {
+    if (useServer) {
+      const r = await fetch("/api/tasks", { method: "PUT", headers: { "Content-Type": "application/json" }, body });
+      if (!r.ok) throw new Error("server said " + r.status);
+    } else {
+      localStorage.setItem(LS_KEY, body);
+    }
+    setStatus("Saved");
+  } catch (e) {
+    setStatus("Save failed: " + e.message, true);
+  }
+}
+function setStatus(msg, err) { const s = $("#status"); s.textContent = msg; s.className = err ? "err" : ""; }
+window.addEventListener("beforeunload", (e) => { if (saveTimer) { flush(); e.preventDefault(); } });
+
+// ---------------------------------------------------------------- model helpers
+const task = (id) => state.tasks.find((t) => t.id === id);
+const column = (id) => state.columns.find((c) => c.id === id);
+const children = (id) => state.tasks.filter((t) => t.parent === id).sort((a, b) => a.order - b.order);
+const isDone = (t) => !!(column(t.column) || {}).done;
+const firstOpenCol = () => (state.columns.find((c) => !c.done) || state.columns[0]).id;
+const doneCol = () => (state.columns.find((c) => c.done) || state.columns[state.columns.length - 1]).id;
+function descendants(id) { return children(id).flatMap((c) => [c, ...descendants(c.id)]); }
+function nextOrder(colId) {
+  const inCol = state.tasks.filter((t) => t.column === colId);
+  return inCol.length ? Math.max(...inCol.map((t) => t.order)) + 1 : 0;
+}
+
+function addTask(title, colId, parent = null) {
+  const t = { id: uid(), title: title.trim(), notes: "", priority: "", tags: [], column: colId,
+              parent, order: nextOrder(colId), created: now(), updated: now() };
+  state.tasks.push(t);
+  save();
+  return t;
+}
+function touch(t) { t.updated = now(); save(); }
+
+// Put task `id` into column `colId`, just before task `beforeId` (null = at the end).
+function moveTask(id, colId, beforeId) {
+  const t = task(id);
+  const list = state.tasks.filter((x) => x.column === colId && x.id !== id).sort((a, b) => a.order - b.order);
+  let idx = beforeId ? list.findIndex((x) => x.id === beforeId) : -1;
+  if (idx < 0) idx = list.length;
+  list.splice(idx, 0, t);
+  list.forEach((x, i) => (x.order = i));
+  t.column = colId;
+  touch(t);
+}
+
+function deleteTask(id) {
+  const gone = new Set([id, ...descendants(id).map((t) => t.id)]);
+  state.tasks = state.tasks.filter((t) => !gone.has(t.id));
+  save();
+}
+
+function parseTags(s) { return s.split(",").map((x) => x.trim()).filter(Boolean); }
+
+// ---------------------------------------------------------------- board rendering
+function matches(t, q) {
+  if (!q) return true;
+  const hay = [t.title, t.notes, ...(t.tags || [])].join(" ").toLowerCase();
+  return hay.includes(q);
+}
+
+function render() {
+  const board = $("#board");
+  const q = $("#search").value.trim().toLowerCase();
+  const showSubs = $("#show-subs").checked;
+  board.innerHTML = "";
+
+  for (const col of state.columns) {
+    const el = document.createElement("section");
+    el.className = "column";
+    el.dataset.col = col.id;
+
+    const cards = state.tasks
+      .filter((t) => t.column === col.id && (showSubs || !t.parent) && matches(t, q))
+      .sort((a, b) => a.order - b.order);
+
+    const head = document.createElement("div");
+    head.className = "col-head";
+    head.draggable = true;
+    head.innerHTML = `<input class="name" value="${esc(col.name)}" title="Rename column">
+      ${col.done ? '<span class="done-flag" title="Tasks here count as done">done</span>' : ""}
+      <span class="count">${cards.length}</span>
+      <button class="icon" data-act="done" title="Toggle: tasks in this column count as done">✓</button>
+      <button class="icon" data-act="del" title="Delete column (only when empty)">✕</button>`;
+    const name = head.querySelector(".name");
+    name.addEventListener("change", () => { col.name = name.value.trim() || col.name; save(); render(); });
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); });
+    name.addEventListener("mousedown", (e) => e.stopPropagation());
+    head.querySelector('[data-act="done"]').onclick = () => { col.done = !col.done; save(); render(); };
+    head.querySelector('[data-act="del"]').onclick = () => {
+      if (state.tasks.some((t) => t.column === col.id)) { setStatus(`"${col.name}" still has tasks — move them first`, true); return; }
+      if (state.columns.length <= 1) return;
+      state.columns = state.columns.filter((c) => c !== col); save(); render();
+    };
+    head.addEventListener("dragstart", (e) => {
+      if (e.target !== head) return;
+      drag = { kind: "col", id: col.id }; el.classList.add("col-drag");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", col.id);
+    });
+    head.addEventListener("dragend", () => { drag = null; render(); });
+    el.appendChild(head);
+
+    const list = document.createElement("div");
+    list.className = "cards";
+    for (const t of cards) list.appendChild(cardEl(t));
+    el.appendChild(list);
+
+    el.addEventListener("dragover", (e) => onDragOver(e, el, list));
+    el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) clearDropLine(); });
+    el.addEventListener("drop", (e) => onDrop(e, col));
+
+    el.appendChild(addCardEl(col));
+    board.appendChild(el);
+  }
+
+  const addCol = document.createElement("div");
+  addCol.className = "add-col";
+  addCol.innerHTML = `<button class="btn">+ Add column</button>`;
+  addCol.firstChild.onclick = () => {
+    const doneIdx = state.columns.findIndex((c) => c.done);
+    const c = { id: uid(), name: "New column", done: false };
+    state.columns.splice(doneIdx < 0 ? state.columns.length : doneIdx, 0, c);
+    save(); render();
+    const inp = document.querySelector(`[data-col="${c.id}"] .name`); inp.focus(); inp.select();
+  };
+  board.appendChild(addCol);
+}
+
+function cardEl(t) {
+  const el = document.createElement("div");
+  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "");
+  el.draggable = true;
+  el.dataset.id = t.id;
+  const kids = descendants(t.id);
+  const doneKids = kids.filter(isDone).length;
+  const parent = t.parent && task(t.parent);
+  el.innerHTML = `
+    ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
+    <div class="title">${esc(t.title)}</div>
+    ${(kids.length || t.tags.length || t.notes) ? `<div class="meta">
+      ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
+      ${t.notes ? `<span title="Has notes">≡</span>` : ""}
+      ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
+    </div>` : ""}`;
+  el.addEventListener("click", () => openDetail(t.id));
+  el.addEventListener("dragstart", (e) => {
+    drag = { kind: "card", id: t.id };
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id);
+    requestAnimationFrame(() => el.classList.add("dragging"));
+  });
+  el.addEventListener("dragend", () => { drag = null; clearDropLine(); el.classList.remove("dragging"); });
+  return el;
+}
+
+function addCardEl(col) {
+  const wrap = document.createElement("div");
+  wrap.className = "add-card";
+  const btn = document.createElement("button");
+  btn.textContent = "+ Add task";
+  btn.onclick = () => {
+    const ta = document.createElement("textarea");
+    ta.rows = 2; ta.placeholder = "Task title — Enter to add, Esc to stop";
+    wrap.replaceChildren(ta); ta.focus();
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (ta.value.trim()) { addTask(ta.value, col.id); render(); document.querySelector(`[data-col="${col.id}"] .add-card button`).click(); }
+      } else if (e.key === "Escape") render();
+    });
+    ta.addEventListener("blur", () => { if (!ta.value.trim()) render(); });
+  };
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+// ---------------------------------------------------------------- drag & drop
+let dropLine = null;
+function clearDropLine() { if (dropLine) { dropLine.remove(); dropLine = null; } }
+
+function onDragOver(e, colEl, list) {
+  if (!drag) return;
+  e.preventDefault();
+  if (drag.kind === "col") return;
+  const before = cardAfterPointer(list, e.clientY);
+  if (!dropLine) { dropLine = document.createElement("div"); dropLine.className = "drop-line"; }
+  if (before) list.insertBefore(dropLine, before); else list.appendChild(dropLine);
+}
+
+function cardAfterPointer(list, y) {
+  for (const c of list.querySelectorAll(".card:not(.dragging)")) {
+    const r = c.getBoundingClientRect();
+    if (y < r.top + r.height / 2) return c;
+  }
+  return null;
+}
+
+function onDrop(e, col) {
+  e.preventDefault();
+  if (!drag) return;
+  if (drag.kind === "col") {
+    const from = state.columns.findIndex((c) => c.id === drag.id);
+    const to = state.columns.indexOf(col);
+    if (from >= 0 && from !== to) { const [c] = state.columns.splice(from, 1); state.columns.splice(to, 0, c); save(); }
+  } else {
+    let next = dropLine && dropLine.nextElementSibling;
+    while (next && !next.classList.contains("card")) next = next.nextElementSibling;
+    moveTask(drag.id, col.id, next ? next.dataset.id : null);
+  }
+  drag = null; clearDropLine(); render();
+}
+
+// ---------------------------------------------------------------- detail panel
+function openDetail(id) {
+  openId = id;
+  $("#overlay").classList.add("open");
+  renderDetail();
+  $("#d-title").focus();
+}
+function closeDetail() { openId = null; $("#overlay").classList.remove("open"); render(); }
+
+function renderDetail() {
+  const t = task(openId);
+  if (!t) { closeDetail(); return; }
+  const chain = [];
+  for (let p = t.parent && task(t.parent); p; p = p.parent && task(p.parent)) chain.unshift(p);
+  $("#d-crumb").innerHTML = chain.length
+    ? "Subtask of " + chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ")
+    : "Task";
+  $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
+
+  $("#d-title").value = t.title;
+  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#d-col").value = t.column;
+  $("#d-prio").value = t.priority;
+  $("#d-tags").value = t.tags.join(", ");
+  $("#d-notes").value = t.notes;
+
+  const kids = children(t.id);
+  $("#d-subcount").textContent = kids.length ? `(${kids.filter(isDone).length}/${kids.length} done)` : "";
+  const ul = $("#d-subs");
+  ul.innerHTML = "";
+  for (const k of kids) {
+    const li = document.createElement("li");
+    li.className = isDone(k) ? "done" : "";
+    const n = children(k.id).length;
+    li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="Done">
+      <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${n} sub</span>` : ""}
+      <span class="c">${esc((column(k.column) || {}).name || "")}</span>`;
+    li.querySelector("input").onchange = (e) => { moveTask(k.id, e.target.checked ? doneCol() : firstOpenCol(), null); renderDetail(); };
+    li.querySelector(".t").onclick = () => { openId = k.id; renderDetail(); };
+    ul.appendChild(li);
+  }
+  $("#d-newsub").value = "";
+  $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
+  disarmDelete();
+}
+
+$("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value; touch(t); });
+$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
+$("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
+$("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
+$("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
+$("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
+$("#d-newsub").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !e.target.value.trim()) return;
+  const parent = task(openId);
+  addTask(e.target.value, isDone(parent) ? firstOpenCol() : parent.column, parent.id);
+  renderDetail(); $("#d-newsub").focus();
+});
+$("#d-close").onclick = closeDetail;
+$("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeDetail(); });
+
+// Two-step delete instead of window.confirm (a modal dialog blocks browser automation).
+let deleteArmed = false;
+function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.textContent = "Delete"; }
+$("#d-delete").onclick = () => {
+  const t = task(openId);
+  if (!deleteArmed) {
+    const n = descendants(t.id).length;
+    deleteArmed = true;
+    $("#d-delete").classList.add("armed");
+    $("#d-delete").textContent = n ? `Delete with ${n} subtask${n > 1 ? "s" : ""}?` : "Really delete?";
+    return;
+  }
+  const parent = t.parent;
+  deleteTask(t.id);
+  if (parent && task(parent)) { openId = parent; renderDetail(); } else closeDetail();
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && openId) closeDetail();
+  else if (e.key === "/" && !openId && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("#search").focus(); }
+});
+
+// ---------------------------------------------------------------- misc
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function fmt(iso) { return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
+
+$("#search").addEventListener("input", render);
+$("#show-subs").addEventListener("change", () => {
+  try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
+  render();
+});
+try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
+
+load().then(() => { render(); setStatus(useServer ? "Saving to tasks.json" : "Saving in this browser"); });
+</script>
+</body>
+</html>
