@@ -103,10 +103,26 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .sub-list li .c { font-size: 11px; color: var(--muted); }
 .sub-list li .n { font-size: 11px; color: var(--muted); }
 #d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
+:root { --wait: #e67e22; --ok: #3c9d6b; }
 .agent { font-size: 11px; border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--accent); }
 .agent.working { background: var(--accent); color: #fff; }
+.agent.needs_you { background: var(--wait); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
+.agent.finished { background: var(--ok); color: #fff; }
+@keyframes pulse { 50% { opacity: .55; } }
+.card.needs-you { outline: 2px solid var(--wait); }
+.card .agent-note { margin-top: 5px; font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: 12px; }
 #d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 #d-agent code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: copy; }
+#d-log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+#d-log li { background: var(--card); border-radius: 6px; padding: 6px 8px; border-left: 3px solid var(--line); word-wrap: break-word; }
+#d-log li .msg { white-space: pre-wrap; }
+#d-log li.k-question { border-left-color: var(--wait); }
+#d-log li.k-done { border-left-color: var(--ok); }
+#d-log li.k-you { border-left-color: var(--accent); }
+#d-log li .who { font-size: 11px; color: var(--muted); display: block; }
+#d-reply-wrap { display: none; margin-top: 8px; gap: 8px; align-items: flex-end; }
+#d-reply { flex: 1; min-height: 54px; resize: vertical; padding: 6px 8px; border: 1px solid var(--wait); border-radius: 6px; background: var(--card); }
 .panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: 12px; align-items: center; }
 </style>
 </head>
@@ -116,6 +132,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <input id="search" type="search" placeholder="Filter tasks…">
   <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <span class="grow"></span>
+  <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <span id="status"></span>
 </header>
 <div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 tools/task_board/server.py</code> to save them to <code>tasks.json</code>.</div>
@@ -137,7 +154,10 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <ul class="sub-list" id="d-subs"></ul>
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
     </div>
-    <div class="block"><label>Claude</label><div id="d-agent"></div></div>
+    <div class="block"><label>Claude</label><div id="d-agent"></div>
+      <ul id="d-log"></ul>
+      <div id="d-reply-wrap"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send"></textarea><button class="btn primary" id="d-reply-send">Send reply</button></div>
+    </div>
     <div class="panel-foot">
       <span id="d-dates"></span>
       <span><button class="btn danger" id="d-delete">Delete</button> <button class="btn primary" id="d-close">Close</button></span>
@@ -352,7 +372,8 @@ function groupEl(t, kidsOf, top) {
 
 function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
-  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "");
+  const ag = t.agent && agents[t.id];
+  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "");
   el.draggable = true;
   el.dataset.id = t.id;
   const kids = descendants(t.id);
@@ -369,9 +390,10 @@ function cardEl(t, top, nestedCount) {
     ${(kids.length || t.tags.length || t.notes || t.agent) ? `<div class="meta">
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
-      ${t.agent ? `<span class="agent ${t.agent.state === "working" ? "working" : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(agentLabel(t.agent))}</span>` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
-    </div>` : ""}`;
+    </div>` : ""}
+    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const tw = el.querySelector(".twisty");
   if (tw) tw.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapsed(t.id); });
@@ -532,20 +554,38 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------------------------------------------------------------- Send to Claude
-// server.py starts `claude --bg` for the task; the board only keeps { id, started, state } on it.
-const agentLabel = (a) => ({ working: "working", done: "finished", gone: "removed", starting: "starting" }[a.state] || a.state || "?");
+// server.py starts `claude --bg` for a task and watches it. tasks.json keeps only { id, started } on the
+// task; the live phase (working / needs_you / finished / gone), reason and message log come from /api/agents.
+let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
+const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
+const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
 
 function renderAgent(t) {
-  const box = $("#d-agent");
-  const running = t.agent && (t.agent.state === "working" || t.agent.state === "starting");
-  box.innerHTML = `<button class="btn primary" id="d-send" ${running || !useServer ? "disabled" : ""}
-      title="${useServer ? "Start a background Claude session on this task" : "Needs server.py"}">${t.agent ? "Send to Claude again" : "Send to Claude"}</button>
-    ${t.agent ? `<span>${esc(agentLabel(t.agent))} · started ${fmt(t.agent.started)}</span>
-      <code title="Click to copy">claude attach ${esc(t.agent.id)}</code>` : ""}`;
+  const ag = t.agent && agents[t.id];
+  const working = ag && ag.phase === "working";
+  $("#d-agent").innerHTML = `<button class="btn ${t.agent ? "" : "primary"}" id="d-send" ${working || !useServer ? "disabled" : ""}
+      title="${useServer ? "Start a new background Claude session on this task" : "Needs server.py"}">${t.agent ? "New Claude session" : "Send to Claude"}</button>
+    ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>
+      <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : ""}`;
   $("#d-send").onclick = () => sendToClaude(t);
-  const code = box.querySelector("code");
+  const code = $("#d-agent code");
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
+
+  const log = (ag && ag.log) || [];
+  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div></li>`).join("");
+  $("#d-log").scrollTop = $("#d-log").scrollHeight;
+  // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
+  if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
+    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
+  $("#d-reply-wrap").style.display = ag && ag.sessionId && !working && ag.phase !== "gone" ? "flex" : "none";
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await r.json();
+  if (!r.ok) throw new Error(res.error || r.status);
+  return res;
 }
 
 async function sendToClaude(t) {
@@ -553,47 +593,70 @@ async function sendToClaude(t) {
   setStatus("Starting Claude…");
   if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
   try {
-    const r = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: t.id }) });
-    const res = await r.json();
-    if (!r.ok) throw new Error(res.error || r.status);
-    t.agent = { id: res.id, started: now(), state: "starting" };
+    const res = await post("/api/agent", { taskId: t.id });
+    t.agent = { id: res.id, started: now() };
     const prog = colNamed(/progress|doing/i);
     if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null); else touch(t);
+    if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
     setStatus("Claude session " + res.id + " started");
   } catch (e) {
     setStatus("Send to Claude failed: " + e.message, true);
   }
-  if (openId === t.id) renderDetail();
-  render();
-  pollAgents();
+  await pollAgents();
 }
 
-let pollTimer = null;
+async function sendReply() {
+  const t = task(openId), text = $("#d-reply").value.trim();
+  if (!t || !text) return;
+  $("#d-reply-send").disabled = true;
+  setStatus("Sending reply…");
+  try {
+    await post("/api/agent/reply", { taskId: t.id, text });
+    $("#d-reply").value = "";
+    setStatus("Reply sent — Claude is back at work");
+  } catch (e) {
+    setStatus("Reply failed: " + e.message, true);
+  }
+  $("#d-reply-send").disabled = false;
+  await pollAgents();
+}
+$("#d-reply-send").onclick = sendReply;
+$("#d-reply").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
+
+let pollTimer = null, polledOnce = false;
 async function pollAgents() {
   clearTimeout(pollTimer);
-  const live = state.tasks.filter((t) => t.agent && (t.agent.state === "working" || t.agent.state === "starting"));
-  if (!useServer || !live.length) return;
+  if (!useServer) return;
   try {
-    const r = await fetch("/api/agents?ids=" + live.map((t) => t.agent.id).join(","), { cache: "no-store" });
-    const states = await r.json();
-    if (!r.ok) throw new Error(states.error || r.status);
-    let changed = false;
-    for (const t of live) {
-      const st = states[t.agent.id];
-      if (!st || st === t.agent.state) continue;
-      t.agent.state = st;
-      changed = true;
-      // A finished session parks the task in Review, if the board has such a column.
-      const review = colNamed(/review/i);
-      if (st === "done" && review && !isDone(t) && t.column !== review.id) moveTask(t.id, review.id, null);
-      else touch(t);
+    const r = await fetch("/api/agents", { cache: "no-store" });
+    const next = await r.json();
+    if (!r.ok) throw new Error(next.error || r.status);
+    // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
+    for (const [id, a] of Object.entries(next)) {
+      const t = task(id), was = agents[id] && agents[id].phase;
+      if (!t || !polledOnce || was === a.phase) continue;
+      const review = colNamed(/review/i), prog = colNamed(/progress|doing/i);
+      if (a.phase === "finished" && review && !isDone(t) && t.column !== review.id) moveTask(t.id, review.id, null);
+      if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
     }
-    // Refresh only the Claude row and column so a poll never resets text being typed in the panel.
+    const changed = JSON.stringify(next) !== JSON.stringify(agents);
+    agents = next; polledOnce = true;
+    updateWaiting();
+    // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
   } catch (e) {
     setStatus("Claude status check failed: " + e.message, true);
   }
-  pollTimer = setTimeout(pollAgents, 8000);
+  pollTimer = setTimeout(pollAgents, 4000);
+}
+
+function updateWaiting() {
+  const waiting = state.tasks.filter((t) => t.agent && agents[t.id] && agents[t.id].phase === "needs_you");
+  document.title = waiting.length ? `(${waiting.length}) Claude needs you · Task Board` : "Task Board";
+  const b = $("#waiting");
+  b.style.display = waiting.length ? "inline-block" : "none";
+  b.textContent = `${waiting.length} waiting on you`;
+  b.onclick = () => waiting.length && openDetail(waiting[0].id);
 }
 
 // ---------------------------------------------------------------- misc
