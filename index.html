@@ -591,17 +591,24 @@ async function post(url, body) {
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   setStatus("Starting Claude…");
+  // The card moves on the click itself; a failed launch puts it back.
+  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
+  render(); $("#d-col").value = t.column;
   if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
   try {
     const res = await post("/api/agent", { taskId: t.id });
     t.agent = { id: res.id, started: now() };
-    const prog = colNamed(/progress|doing/i);
-    if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null); else touch(t);
+    touch(t);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
     setStatus("Claude session " + res.id + " started");
   } catch (e) {
+    if (t.column !== fromCol) moveTask(t.id, fromCol, null);
+    if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // else its "Saved" would replace the error
     setStatus("Send to Claude failed: " + e.message, true);
   }
+  render();
+  if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
   await pollAgents();
 }
 
