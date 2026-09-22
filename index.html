@@ -103,6 +103,10 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .sub-list li .c { font-size: 11px; color: var(--muted); }
 .sub-list li .n { font-size: 11px; color: var(--muted); }
 #d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
+.agent { font-size: 11px; border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--accent); }
+.agent.working { background: var(--accent); color: #fff; }
+#d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+#d-agent code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: copy; }
 .panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: 12px; align-items: center; }
 </style>
 </head>
@@ -133,6 +137,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <ul class="sub-list" id="d-subs"></ul>
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
     </div>
+    <div class="block"><label>Claude</label><div id="d-agent"></div></div>
     <div class="panel-foot">
       <span id="d-dates"></span>
       <span><button class="btn danger" id="d-delete">Delete</button> <button class="btn primary" id="d-close">Close</button></span>
@@ -361,9 +366,10 @@ function cardEl(t, top, nestedCount) {
       <div class="title">${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
     </div>
-    ${(kids.length || t.tags.length || t.notes) ? `<div class="meta">
+    ${(kids.length || t.tags.length || t.notes || t.agent) ? `<div class="meta">
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
+      ${t.agent ? `<span class="agent ${t.agent.state === "working" ? "working" : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(agentLabel(t.agent))}</span>` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
@@ -483,6 +489,7 @@ function renderDetail() {
     ul.appendChild(li);
   }
   $("#d-newsub").value = "";
+  renderAgent(t);
   $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
   disarmDelete();
 }
@@ -524,6 +531,71 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "/" && !openId && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("#search").focus(); }
 });
 
+// ---------------------------------------------------------------- Send to Claude
+// server.py starts `claude --bg` for the task; the board only keeps { id, started, state } on it.
+const agentLabel = (a) => ({ working: "working", done: "finished", gone: "removed", starting: "starting" }[a.state] || a.state || "?");
+const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
+
+function renderAgent(t) {
+  const box = $("#d-agent");
+  const running = t.agent && (t.agent.state === "working" || t.agent.state === "starting");
+  box.innerHTML = `<button class="btn primary" id="d-send" ${running || !useServer ? "disabled" : ""}
+      title="${useServer ? "Start a background Claude session on this task" : "Needs server.py"}">${t.agent ? "Send to Claude again" : "Send to Claude"}</button>
+    ${t.agent ? `<span>${esc(agentLabel(t.agent))} · started ${fmt(t.agent.started)}</span>
+      <code title="Click to copy">claude attach ${esc(t.agent.id)}</code>` : ""}`;
+  $("#d-send").onclick = () => sendToClaude(t);
+  const code = box.querySelector("code");
+  if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
+}
+
+async function sendToClaude(t) {
+  $("#d-send").disabled = true;
+  setStatus("Starting Claude…");
+  if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
+  try {
+    const r = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: t.id }) });
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.error || r.status);
+    t.agent = { id: res.id, started: now(), state: "starting" };
+    const prog = colNamed(/progress|doing/i);
+    if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null); else touch(t);
+    setStatus("Claude session " + res.id + " started");
+  } catch (e) {
+    setStatus("Send to Claude failed: " + e.message, true);
+  }
+  if (openId === t.id) renderDetail();
+  render();
+  pollAgents();
+}
+
+let pollTimer = null;
+async function pollAgents() {
+  clearTimeout(pollTimer);
+  const live = state.tasks.filter((t) => t.agent && (t.agent.state === "working" || t.agent.state === "starting"));
+  if (!useServer || !live.length) return;
+  try {
+    const r = await fetch("/api/agents?ids=" + live.map((t) => t.agent.id).join(","), { cache: "no-store" });
+    const states = await r.json();
+    if (!r.ok) throw new Error(states.error || r.status);
+    let changed = false;
+    for (const t of live) {
+      const st = states[t.agent.id];
+      if (!st || st === t.agent.state) continue;
+      t.agent.state = st;
+      changed = true;
+      // A finished session parks the task in Review, if the board has such a column.
+      const review = colNamed(/review/i);
+      if (st === "done" && review && !isDone(t) && t.column !== review.id) moveTask(t.id, review.id, null);
+      else touch(t);
+    }
+    // Refresh only the Claude row and column so a poll never resets text being typed in the panel.
+    if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
+  } catch (e) {
+    setStatus("Claude status check failed: " + e.message, true);
+  }
+  pollTimer = setTimeout(pollAgents, 8000);
+}
+
 // ---------------------------------------------------------------- misc
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function fmt(iso) { return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
@@ -535,7 +607,7 @@ $("#show-subs").addEventListener("change", () => {
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
 
-load().then(() => { render(); setStatus(useServer ? "Saving to tasks.json" : "Saving in this browser"); });
+load().then(() => { render(); setStatus(useServer ? "Saving to tasks.json" : "Saving in this browser"); pollAgents(); });
 </script>
 </body>
 </html>
