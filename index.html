@@ -127,6 +127,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .agent.finished { background: var(--ok); color: #fff; }
 @keyframes pulse { 50% { opacity: .55; } }
 .card.needs-you { outline: 2px solid var(--wait); }
+.card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.card.unread .title { font-weight: 600; }
+.card.unread .title::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: .8em; vertical-align: 1px; }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: calc(12px * var(--ts)); }
 #d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: calc(12px * var(--ts)); color: var(--muted); }
@@ -392,6 +395,28 @@ function toggleCollapsed(id) {
   render();
 }
 
+// Unread = a Review card whose Claude log has an entry newer than the last time you opened it.
+// Per-browser like `collapsed`; with no stored map yet, the first poll marks everything read.
+let seen = null;
+try { seen = JSON.parse(localStorage.getItem(LS_KEY + ":seen")); } catch (_) {}
+const seenPrimed = !!seen;
+seen = seen || {};
+const lastClaudeAt = (id) => {
+  const log = (agents[id] && agents[id].log) || [];
+  for (let i = log.length - 1; i >= 0; i--) if (log[i].from !== "you") return Date.parse(log[i].at) || 0;
+  return 0;
+};
+function isUnread(t) {
+  const review = colNamed(/review/i);
+  return !!(t.agent && review && t.column === review.id && lastClaudeAt(t.id) > (seen[t.id] || 0));
+}
+function markSeen(ids) {
+  let changed = false;
+  for (const id of ids) { const at = lastClaudeAt(id); if (at > (seen[id] || 0)) { seen[id] = at; changed = true; } }
+  if (changed) try { localStorage.setItem(LS_KEY + ":seen", JSON.stringify(seen)); } catch (_) {}
+  return changed;
+}
+
 function deleteTask(id) {
   const gone = new Set([id, ...descendants(id).map((t) => t.id)]);
   state.tasks = state.tasks.filter((t) => !gone.has(t.id));
@@ -493,7 +518,7 @@ function groupEl(t, kidsOf, top) {
 function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
   const ag = t.agent && agents[t.id];
-  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "");
+  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
   el.draggable = true;
   el.dataset.id = t.id;
   const kids = descendants(t.id);
@@ -583,6 +608,7 @@ function onDrop(e, col) {
 function openDetail(id) {
   if (id !== openId) replyImages = [];
   openId = id;
+  if (markSeen([id])) render();
   $("#overlay").classList.add("open");
   renderDetail();
   $("#d-title").focus();
@@ -772,7 +798,10 @@ async function pollAgents() {
       if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
     }
     const changed = JSON.stringify(next) !== JSON.stringify(agents);
-    agents = next; polledOnce = true;
+    agents = next;
+    if (!polledOnce && !seenPrimed) markSeen(Object.keys(next));
+    if (openId) markSeen([openId]);   // news that lands while you have the card open is read
+    polledOnce = true;
     updateWaiting();
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
