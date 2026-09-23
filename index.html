@@ -772,6 +772,7 @@ function renderAgent(t) {
   model.disabled = !useServer;
   try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
   model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} };
+  if (!t.agent) loadDefaultModel();
   $("#d-right").style.display = t.agent ? "" : "none";
   $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${t.agent.model ? `<span>${esc(t.agent.model)}</span>` : ""}${cacheChip(ag, true)}
       <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
@@ -786,6 +787,27 @@ function renderAgent(t) {
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   renderReplyImages();
+}
+// Names the model a launch with no --model gets. The server may still be probing the account default (null).
+let defaultModel = { pid: null, model: null, at: 0 };
+const prettyModel = (m) => {
+  const x = /^(?:claude-)?([a-z]+)((?:-\d+)*)(?:-\d{8})?(\[1m\])?$/i.exec(m);
+  if (!x) return m;
+  const v = x[2].replace(/-\d{8}$/, "").split("-").filter(Boolean).join(".");
+  return x[1][0].toUpperCase() + x[1].slice(1) + (v ? " " + v : "") + (x[3] ? " 1M" : "");
+};
+async function loadDefaultModel() {
+  const pid = P, fresh = defaultModel.pid === pid && (defaultModel.model || Date.now() - defaultModel.at < 10000);
+  if (!useServer || !pid || fresh) return;
+  defaultModel = { pid, model: defaultModel.pid === pid ? defaultModel.model : null, at: Date.now() };
+  try {
+    const r = await fetch(api("/api/default-model"), { cache: "no-store" });
+    const res = await r.json();
+    if (r.ok && pid === P) defaultModel.model = res.model;
+  } catch (e) { /* label stays generic */ }
+  const opt = $("#d-model option[value='']");
+  opt.textContent = defaultModel.model ? `Default model (${prettyModel(defaultModel.model)})` : "Default model (checking…)";
+  if (!defaultModel.model) setTimeout(() => { const o = openId && task(openId); if (o && !o.agent) loadDefaultModel(); }, 10000);
 }
 const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && ag.sessionId && ag.phase !== "working" && ag.phase !== "gone"); };
 

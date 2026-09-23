@@ -18,7 +18,9 @@ the task's title, notes, subtasks and parent chain as the prompt. The session
 shows in `claude agents`; `claude attach <id>` opens it. Permission mode
 defaults to auto (--permission-mode to change). The model picker beside the
 button passes --model (an alias like fable / opus / sonnet / haiku, or blank for
-the CLI default). The session keeps it across replies; Haiku has no auto mode,
+the CLI default, which the picker names: the "model" key from the settings files,
+else a one-off `claude -p` probe of the account default, about $0.09, cached 24h in
+~/.config/task_board/default_model.json). The session keeps it across replies; Haiku has no auto mode,
 so it runs with manual permission prompts.
 
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
@@ -259,6 +261,65 @@ def launch(p, task_id, model=""):
     if not t:
         raise LookupError("no such task (save first?)")
     if t.get("agent"):
+DEFAULT_CACHE = os.path.expanduser("~/.config/task_board/default_model.json")
+DEFAULT_TTL = 24 * 3600
+_default_lock = threading.Lock()
+_default_probing = False
+
+
+def settings_model(path):
+    """The "model" the CLI would start with from env or settings files (highest precedence first), or None."""
+    if os.environ.get("ANTHROPIC_MODEL"):
+        return os.environ["ANTHROPIC_MODEL"]
+    for f in (os.path.join(path, ".claude", "settings.local.json"), os.path.join(path, ".claude", "settings.json"),
+              os.path.expanduser("~/.claude/settings.json")):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                m = json.load(fh).get("model")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if m:
+            return m
+    return None
+
+
+def _probe_account_default():
+    global _default_probing
+    try:
+        # No tools, MCP or project dir, to keep the probe cheap; the model is all we read.
+        r = subprocess.run([CLAUDE, "-p", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                            "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
+                            "Reply: ok"], cwd=tempfile.gettempdir(), capture_output=True, text=True, timeout=180)
+        models = list(json.loads(r.stdout).get("modelUsage") or {})
+        if models:
+            os.makedirs(os.path.dirname(DEFAULT_CACHE), exist_ok=True)
+            with open(DEFAULT_CACHE, "w", encoding="utf-8") as fh:
+                json.dump({"model": models[0], "at": time.time()}, fh)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print("default model probe:", e)
+    finally:
+        _default_probing = False
+
+
+def default_model(p):
+    """{"model", "source"} of what a launch without --model gets; model is None while the probe runs."""
+    m = settings_model(p.path)
+    if m:
+        return {"model": m, "source": "settings"}
+    try:
+        with open(DEFAULT_CACHE, encoding="utf-8") as fh:
+            cached = json.load(fh)
+    except (OSError, ValueError):
+        cached = {}
+    global _default_probing
+    if time.time() - cached.get("at", 0) > DEFAULT_TTL:
+        with _default_lock:
+            if not _default_probing:
+                _default_probing = True
+                threading.Thread(target=_probe_account_default, daemon=True).start()
+    return {"model": cached.get("model"), "source": "account"}
+
+
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
     r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
@@ -606,6 +667,8 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if "/api/" not in self.path and "/files/" not in self.path:
             super().log_message(fmt, *args)
+        elif path == "/api/default-model":
+            self._errors(lambda: self._json(200, default_model(project(pid))))
 
 
 def main():
