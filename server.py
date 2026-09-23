@@ -24,7 +24,7 @@ else a one-off `claude -p` probe of the account default, about $0.09, cached 24h
 so it runs with manual permission prompts.
 
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
-`subagentModel`) gets a planning brief in its prompt: analyse the task, split
+`subagentModel`) gets a delegation brief in its prompt (never plan mode): analyse the task, split
 it, and hand the independent parts to subagents on the chosen model.
 
 The agent posts progress / question / done onto its card with report.py. A
@@ -239,7 +239,9 @@ def delegate_lines(model, report):
         model = ""
     use = (f'- Run every subagent on the "{model}" model: pass `model: "{model}"` on each Agent call.' if model
            else "- Subagents use this session's model (leave the Agent `model` unset).")
-    return ["Planning (this task is marked \"divide in subtasks / use subagents\"):",
+    return ["Subagents (this task is marked \"divide in subtasks / use subagents\"):",
+            "- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work out the split yourself and carry on "
+            "without waiting for approval.",
             "- Before changing anything, analyse the brief carefully and work out how to split it: the parts, what "
             "each needs to know, and which depend on others.",
             "- Delegate each part that can stand alone to a subagent (the Agent tool). Launch independent parts in one "
