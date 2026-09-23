@@ -55,7 +55,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .cards { padding: 4px 8px 8px; overflow-y: auto; min-height: 40px; display: flex; flex-direction: column; gap: 8px; }
 .drop-line { height: 3px; background: var(--drop); border-radius: 2px; margin: -2px 0; }
 
-.card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); cursor: grab; border-left: 3px solid transparent; }
+.card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); cursor: grab; }
 .card:hover { outline: 1px solid var(--line); }
 .group { display: flex; flex-direction: column; gap: 6px; }
 .group.dragging { opacity: .35; }
@@ -68,9 +68,10 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .twisty.shut svg { transform: rotate(-90deg); }
 .twisty:hover { background: var(--line); color: var(--text); }
 .hidden-count { font-size: calc(11px * var(--ts)); color: var(--muted); background: var(--col); border-radius: 8px; padding: 0 6px; align-self: center; }
-.card.p-high { border-left-color: var(--p-high); }
-.card.p-med { border-left-color: var(--p-med); }
-.card.p-low { border-left-color: var(--p-low); }
+.prio { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 2px; }
+.prio.p-high { background: var(--p-high); }
+.prio.p-med { background: var(--p-med); }
+.prio.p-low { background: var(--p-low); }
 .card.is-done .title { text-decoration: line-through; color: var(--muted); }
 .card .parent { font-size: calc(11px * var(--ts)); color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .title { word-wrap: break-word; }
@@ -525,7 +526,7 @@ function groupEl(t, kidsOf, top) {
 function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
   const ag = t.agent && agents[t.id];
-  el.className = "card" + (t.priority ? " p-" + t.priority : "") + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
+  el.className = "card" + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
   el.draggable = true;
   el.dataset.id = t.id;
   const kids = descendants(t.id);
@@ -536,7 +537,7 @@ function cardEl(t, top, nestedCount) {
     ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
     <div class="row">
       ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? "Expand" : "Collapse"} subtasks"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
-      <div class="title">${esc(t.title)}</div>
+      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: "High", med: "Medium", low: "Low" }[t.priority]} priority"></span>` : ""}${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
     </div>
     ${(kids.length || t.tags.length || t.notes || t.agent || (t.images || []).length) ? `<div class="meta">
