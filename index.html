@@ -36,6 +36,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.danger { color: var(--danger); }
 .btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+#project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
+#project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: 13px; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
@@ -148,13 +150,15 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 <body>
 <header>
   <h1>Task Board</h1>
+  <select id="project" title="Project"></select>
+  <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
   <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <span class="grow"></span>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <span id="status"></span>
 </header>
-<div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 tools/task_board/server.py</code> to save them to <code>tasks.json</code>.</div>
+<div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
 
 <div id="overlay">
@@ -194,13 +198,15 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 
 <script>
 "use strict";
-const LS_KEY = "mage-task-board";
+const LS_KEY = "task-board";
 const $ = (s) => document.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
 let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated}] }
 let useServer = true;
+let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
+let P = null;              // current project id; every /api call carries it
 let openId = null;         // task shown in the detail panel
 let drag = null;           // { kind:'card'|'col', id }
 
@@ -213,16 +219,93 @@ function defaultState() {
 // ---------------------------------------------------------------- persistence
 async function load() {
   try {
-    const r = await fetch("/api/tasks", { cache: "no-store" });
+    const r = await fetch("/api/projects", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
-    state = (await r.json()) || defaultState();
+    projects = await r.json();
   } catch (e) {
     useServer = false;
     $("#banner").style.display = "block";
     try { state = JSON.parse(localStorage.getItem(LS_KEY)); } catch (_) { state = null; }
     state = state || defaultState();
+    return;
+  }
+  let last = null;
+  try { last = localStorage.getItem(LS_KEY + ":project"); } catch (_) {}
+  const want = new URLSearchParams(location.hash.slice(1)).get("p") || last;
+  P = (projects.find((p) => p.id === want) || projects[0] || {}).id || null;
+  await loadTasks();
+}
+async function loadTasks() {
+  state = defaultState();
+  if (P) {
+    const r = await fetch(api("/api/tasks"), { cache: "no-store" });
+    if (!r.ok) throw new Error("server said " + r.status);
+    state = (await r.json()) || defaultState();
+  }
+  const p = project();
+  try { if (P) localStorage.setItem(LS_KEY + ":project", P); } catch (_) {}
+  history.replaceState(null, "", P ? "#p=" + P : location.pathname);
+  $("#board").style.display = P ? "" : "none";
+  renderProjects();
+  updateWaiting();
+  if (p) setStatus("Saving to " + p.board.replace(p.path, p.name) + "/tasks.json");
+  else setStatus("Open a project folder to start");
+}
+const api = (url) => url + "?p=" + encodeURIComponent(P);
+const project = () => projects.find((p) => p.id === P);
+
+// ---------------------------------------------------------------- projects
+function renderProjects() {
+  const sel = $("#project");
+  sel.style.display = useServer ? "" : "none";
+  const dup = (n) => projects.filter((p) => p.name === n).length > 1;
+  sel.innerHTML = (P ? "" : `<option value="" disabled>No project</option>`)
+    + projects.map((p) => `<option value="${p.id}" title="${esc(p.path)}">${esc(dup(p.name) ? p.path.replace(/^\/Users\/[^/]+/, "~") : p.name)}</option>`).join("")
+    + `<option disabled>──────────</option><option value=":pick">Open folder…</option><option value=":path">Open a path…</option>`
+    + (P ? `<option value=":forget">Remove this project from the list</option>` : "");
+  sel.value = P || "";
+  sel.title = project() ? project().path : "Project";
+}
+
+async function switchProject(id) {
+  if (saveTimer) await flush();
+  openId = null; replyImages = []; $("#overlay").classList.remove("open");
+  P = id; agents = {}; polledOnce = false;
+  try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
+  render(); pollAgents();
+}
+
+async function openFolder(how, path) {
+  setStatus(how === "pick" ? "Choose a folder in the dialog…" : "Opening…");
+  try {
+    const res = how === "pick" ? await post("/api/projects/pick", {}) : await post("/api/projects", { path });
+    if (res.cancelled) { setStatus(""); return; }
+    projects = await (await fetch("/api/projects", { cache: "no-store" })).json();
+    await switchProject(res.id);
+  } catch (e) {
+    setStatus("Open folder failed: " + e.message, true);
+    if (how === "pick") showPathInput();
   }
 }
+
+function showPathInput() { const i = $("#project-path"); i.style.display = "inline-block"; i.focus(); }
+$("#project-path").addEventListener("keydown", (e) => {
+  const i = e.target;
+  if (e.key === "Escape") { i.value = ""; i.style.display = "none"; }
+  else if (e.key === "Enter" && i.value.trim()) { openFolder("path", i.value.trim()); i.value = ""; i.style.display = "none"; }
+});
+
+$("#project").addEventListener("change", async (e) => {
+  const v = e.target.value;
+  renderProjects();   // the action options are not places to stay on
+  if (v === ":pick") openFolder("pick");
+  else if (v === ":path") showPathInput();
+  else if (v === ":forget") {
+    await post("/api/projects/forget", { p: P });
+    projects = projects.filter((p) => p.id !== P);
+    await switchProject(projects.length ? projects[0].id : null);
+  } else if (v && v !== P) switchProject(v);
+});
 
 let saveTimer = null;
 function save() {
@@ -234,9 +317,10 @@ async function flush(keepalive = false) {
   clearTimeout(saveTimer);
   saveTimer = null;
   const body = JSON.stringify(state);
+  if (useServer && !P) return;
   try {
     if (useServer) {
-      const r = await fetch("/api/tasks", { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
+      const r = await fetch(api("/api/tasks"), { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
       if (!r.ok) throw new Error("server said " + r.status);
     } else {
       localStorage.setItem(LS_KEY, body);
@@ -603,7 +687,7 @@ function renderAgent(t) {
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
 
   const log = (ag && ag.log) || [];
-  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, LOG_DIR)}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-log").scrollTop = $("#d-log").scrollHeight;
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
@@ -629,7 +713,7 @@ async function sendToClaude(t) {
   render(); $("#d-col").value = t.column;
   if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
   try {
-    const res = await post("/api/agent", { taskId: t.id });
+    const res = await post("/api/agent", { p: P, taskId: t.id });
     t.agent = { id: res.id, started: now() };
     touch(t);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
@@ -650,7 +734,7 @@ async function sendReply() {
   $("#d-reply-send").disabled = true;
   setStatus("Sending reply…");
   try {
-    await post("/api/agent/reply", { taskId: t.id, text, images: replyImages });
+    await post("/api/agent/reply", { p: P, taskId: t.id, text, images: replyImages });
     $("#d-reply").value = ""; replyImages = []; renderReplyImages();
     setStatus("Reply sent — Claude is back at work");
   } catch (e) {
@@ -665,11 +749,13 @@ $("#d-reply").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.m
 let pollTimer = null, polledOnce = false;
 async function pollAgents() {
   clearTimeout(pollTimer);
-  if (!useServer) return;
+  if (!useServer || !P) return;
+  const pid = P;
   try {
-    const r = await fetch("/api/agents", { cache: "no-store" });
+    const r = await fetch(api("/api/agents"), { cache: "no-store" });
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
+    if (pid !== P) return;   // switched projects while this was in flight
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     for (const [id, a] of Object.entries(next)) {
       const t = task(id), was = agents[id] && agents[id].phase;
@@ -691,7 +777,8 @@ async function pollAgents() {
 
 function updateWaiting() {
   const waiting = state.tasks.filter((t) => t.agent && agents[t.id] && agents[t.id].phase === "needs_you");
-  document.title = waiting.length ? `(${waiting.length}) Claude needs you · Task Board` : "Task Board";
+  const name = project() ? project().name + " · Task Board" : "Task Board";
+  document.title = waiting.length ? `(${waiting.length}) Claude needs you · ${name}` : name;
   const b = $("#waiting");
   b.style.display = waiting.length ? "inline-block" : "none";
   b.textContent = `${waiting.length} waiting on you`;
@@ -700,8 +787,8 @@ function updateWaiting() {
 
 // ---------------------------------------------------------------- images
 // Pasted/dropped images upload to server.py, which stores them by content hash and returns the file name.
-// Task images live in images/ (names on t.images); reply and report images in agent_reports/images/.
-const TASK_DIR = "images/", LOG_DIR = "agent_reports/images/";
+// Task images live in <board>/images/ (names on t.images); reply and report images in <board>/agent_reports/images/.
+const fileDir = (sub) => (useServer ? `/files/${P}/${sub}/` : sub + "/");
 let replyImages = [];            // uploaded, waiting for Send reply
 
 function thumbItems(names, dir, removable) {
@@ -712,13 +799,13 @@ function bindRemove(box, list, after) {
 }
 function renderImages(t) {
   const box = $("#d-images");
-  box.innerHTML = thumbItems(t.images, TASK_DIR, true);
+  box.innerHTML = thumbItems(t.images, fileDir("images"), true);
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
   $("#d-img-hint").textContent = useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
-  box.innerHTML = thumbItems(replyImages, LOG_DIR, true);
+  box.innerHTML = thumbItems(replyImages, fileDir("agent_reports/images"), true);
   bindRemove(box, replyImages, renderReplyImages);
 }
 
@@ -729,7 +816,7 @@ async function uploadImage(file, kind) {
     r.onerror = () => fail(r.error);
     r.readAsDataURL(file);
   });
-  return (await post("/api/image", { kind, data })).name;
+  return (await post("/api/image", { p: P, kind, data })).name;
 }
 
 // Into the reply when it is focused (or the only place it can go), else onto the task.
@@ -782,7 +869,8 @@ $("#show-subs").addEventListener("change", () => {
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
 
-load().then(() => { render(); setStatus(useServer ? "Saving to tasks.json" : "Saving in this browser"); pollAgents(); });
+load().then(() => { render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); })
+  .catch((e) => setStatus("Could not load the board: " + e.message, true));
 </script>
 </body>
 </html>

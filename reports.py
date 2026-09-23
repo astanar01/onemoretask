@@ -1,25 +1,55 @@
-"""Per-task message log shared by report.py (the agent side) and server.py (the board side).
+"""Per-project board storage shared by report.py (the agent side) and server.py (the board side).
 
-agent_reports/<task_id>.json is a list of {at, status, message, from, images?}; it is
-kept out of git (.gitignore) because it is run chatter, not task data.
+A project's board lives in `board_dir(root)`: <root>/.task_board/ (or, for a repo that
+already keeps one there, <root>/tools/task_board/). It holds
+- tasks.json            the board itself (commit it)
+- images/               images pasted into a card's notes (commit them)
+- agent_reports/        <task_id>.json message logs + images/ from replies and
+                        report.py --image; run chatter, kept out of git
 
-Images are stored by content hash: task images (pasted into a card's notes) in
-images/, committed with tasks.json; images on log entries (Claude's screenshots,
-images pasted into a reply) in agent_reports/images/.
+A log is a list of {at, status, message, from, images?, session?}. Images are
+stored by content hash.
 """
 import fcntl
 import hashlib
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DIR = os.path.join(HERE, "agent_reports")
-TASK_IMAGES = os.path.join(HERE, "images")
-LOG_IMAGES = os.path.join(DIR, "images")
 IMAGE_EXTS = {b"\x89PNG": ".png", b"\xff\xd8\xff": ".jpg", b"GIF8": ".gif"}
 MAX_IMAGE = 25 * 1024 * 1024
+
+
+def board_dir(root):
+    legacy = os.path.join(root, "tools", "task_board")
+    if os.path.exists(os.path.join(legacy, "tasks.json")):
+        return legacy
+    return os.path.join(root, ".task_board")
+
+
+def ensure_board(board):
+    """Create the board folder; a new one gets a .gitignore for the run chatter."""
+    os.makedirs(board, exist_ok=True)
+    ignore = os.path.join(board, ".gitignore")
+    if not os.path.exists(ignore) and os.path.basename(board) == ".task_board":
+        with open(ignore, "w") as f:
+            f.write("agent_reports/\n")
+
+
+def project_root(path="."):
+    """The git top level containing `path`, else `path` itself."""
+    r = subprocess.run(["git", "-C", path, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else os.path.abspath(path)
+
+
+def task_images(board):
+    return os.path.join(board, "images")
+
+
+def log_images(board):
+    return os.path.join(board, "agent_reports", "images")
 
 
 def image_ext(data):
@@ -50,29 +80,30 @@ def image_path(folder, name):
     return os.path.join(folder, name)
 
 
-def _path(task_id):
+def _path(board, task_id):
     if not re.fullmatch(r"[0-9a-z]+", task_id):
         raise ValueError(f"bad task id {task_id!r}")
-    return os.path.join(DIR, task_id + ".json")
+    return os.path.join(board, "agent_reports", task_id + ".json")
 
 
-def read(task_id):
+def read(board, task_id):
     try:
-        with open(_path(task_id), encoding="utf-8") as f:
+        with open(_path(board, task_id), encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
 
-def append(task_id, status, message, sender, session=None, images=None):
-    os.makedirs(DIR, exist_ok=True)
+def append(board, task_id, status, message, sender, session=None, images=None):
+    path = _path(board, task_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
     if images:
-        entry["images"] = images  # names in LOG_IMAGES
+        entry["images"] = images  # names in log_images(board)
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
-    with open(_path(task_id), "a+", encoding="utf-8") as f:
+    with open(path, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
         try:
