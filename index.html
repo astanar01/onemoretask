@@ -89,7 +89,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 /* detail panel */
 #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
-#panel { background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: flex; flex-direction: column; padding: 20px 28px 20px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+#panel { position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: flex; flex-direction: column; padding: 20px 28px 20px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
 #panel .crumb { font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 6px; }
 #panel .crumb a { color: var(--accent); cursor: pointer; }
 #d-title { width: 100%; font-size: calc(18px * var(--ts)); font-weight: 600; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; }
@@ -171,6 +171,14 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .hint { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 4px; }
 #panel.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; }
 #d-reply-box { flex: 1; display: flex; flex-direction: column; }
+.x-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(18px * var(--ts)); line-height: 1; cursor: pointer; }
+.x-close:hover { background: var(--line); color: var(--text); }
+#panel #d-title { width: calc(100% - 34px); }
+#lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; justify-content: center; align-items: center; padding: 40px; }
+#lightbox.open { display: flex; }
+#lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+#lightbox .x-close { position: fixed; top: 14px; right: 18px; color: #fff; background: rgba(0,0,0,.4); }
+#lightbox .x-close:hover { background: rgba(255,255,255,.2); color: #fff; }
 .panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: calc(12px * var(--ts)); align-items: center; }
 </style>
 </head>
@@ -191,6 +199,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 
 <div id="overlay">
   <div id="panel">
+    <button class="x-close" id="d-x" title="Close">✕</button>
     <div class="crumb" id="d-crumb"></div>
     <input id="d-title" placeholder="Task title">
     <div class="panel-cols">
@@ -228,6 +237,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     </div>
   </div>
 </div>
+<div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
 
 <script>
 "use strict";
@@ -722,6 +732,18 @@ $("#d-newsub").addEventListener("keydown", (e) => {
   renderDetail(); $("#d-newsub").focus();
 });
 $("#d-close").onclick = closeDetail;
+$("#d-x").onclick = closeDetail;
+
+// Image thumbs open full size in a lightbox over the board, not a new tab.
+function openLightbox(src) { $("#lightbox img").src = src; $("#lightbox").classList.add("open"); }
+function closeLightbox() { $("#lightbox").classList.remove("open"); $("#lightbox img").removeAttribute("src"); }
+const lightboxOpen = () => $("#lightbox").classList.contains("open");
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a.thumb");
+  if (!a || e.target.closest(".x") || e.metaKey || e.ctrlKey) return;
+  e.preventDefault(); openLightbox(a.href);
+});
+$("#lightbox").addEventListener("click", (e) => { if (e.target.tagName !== "IMG") closeLightbox(); });
 $("#d-to-done").onclick = () => { moveToDone(openId); closeDetail(); };
 $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeDetail(); });
 
@@ -743,7 +765,8 @@ $("#d-delete").onclick = () => {
 };
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && openId) closeDetail();
+  if (e.key === "Escape" && lightboxOpen()) closeLightbox();
+  else if (e.key === "Escape" && openId) closeDetail();
   else if (e.key === "/" && !openId && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("#search").focus(); }
 });
 
