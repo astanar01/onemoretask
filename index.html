@@ -83,7 +83,6 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .add-card { margin: 0 8px 8px; }
 .add-card button { width: 100%; text-align: left; border: 0; background: transparent; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
 .add-card button:hover { background: var(--line); color: var(--text); }
-.add-card textarea { width: 100%; resize: none; border: 1px solid var(--accent); border-radius: 6px; padding: 6px 8px; background: var(--card); }
 .add-col { min-width: 220px; }
 
 /* detail panel */
@@ -172,7 +171,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 <div id="overlay">
   <div id="panel">
     <div class="crumb" id="d-crumb"></div>
-    <input id="d-title">
+    <input id="d-title" placeholder="Task title">
     <div class="panel-cols">
     <div class="panel-left">
     <div class="fields">
@@ -216,6 +215,7 @@ let useServer = true;
 let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
 let P = null;              // current project id; every /api call carries it
 let openId = null;         // task shown in the detail panel
+let draftId = null;        // task made by "+ Add task"; dropped on close if left empty
 let drag = null;           // { kind:'card'|'col', id }
 
 function defaultState() {
@@ -532,18 +532,7 @@ function addCardEl(col) {
   wrap.className = "add-card";
   const btn = document.createElement("button");
   btn.textContent = "+ Add task";
-  btn.onclick = () => {
-    const ta = document.createElement("textarea");
-    ta.rows = 2; ta.placeholder = "Task title — Enter to add, Esc to stop";
-    wrap.replaceChildren(ta); ta.focus();
-    ta.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        if (ta.value.trim()) { addTask(ta.value, col.id); render(); document.querySelector(`[data-col="${col.id}"] .add-card button`).click(); }
-      } else if (e.key === "Escape") render();
-    });
-    ta.addEventListener("blur", () => { if (!ta.value.trim()) render(); });
-  };
+  btn.onclick = () => { const t = addTask("", col.id); draftId = t.id; render(); openDetail(t.id); };
   wrap.appendChild(btn);
   return wrap;
 }
@@ -597,7 +586,16 @@ function openDetail(id) {
   renderDetail();
   $("#d-title").focus();
 }
-function closeDetail() { openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { settleDraft(); openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+
+// A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
+function settleDraft() {
+  const t = draftId && task(draftId);
+  draftId = null;
+  if (!t || t.title.trim()) return;
+  if (!t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
+  else { t.title = "Untitled"; touch(t); }
+}
 
 function renderDetail() {
   const t = task(openId);
@@ -639,7 +637,7 @@ function renderDetail() {
 }
 
 $("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value; touch(t); });
-$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
+$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
