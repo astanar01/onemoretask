@@ -20,8 +20,14 @@ a permission prompt, or it stopped without reporting) or finished. Entering
 needs_you or finished raises a macOS notification. A reply typed on the card
 stops the idle session and resumes it with the reply as its next message
 (`claude --bg --resume` on a live session would start a copy instead).
+
+Images pasted into a card's notes save to images/ (listed on the task as
+"images", committed with tasks.json); images pasted into a reply, or attached by
+the agent with `report.py --image`, save to agent_reports/images/. The prompt
+and replies hand Claude the absolute paths so it can open them with Read.
 """
 import argparse
+import base64
 import json
 import os
 import re
@@ -47,6 +53,10 @@ def load_tasks():
         return json.load(f)
 
 
+def image_lines(names, folder, indent=""):
+    return [f"{indent}- {reports.image_path(folder, n)}" for n in names]
+
+
 def build_prompt(state, t):
     by_id = {x["id"]: x for x in state["tasks"]}
     cols = {c["id"]: c for c in state["columns"]}
@@ -63,6 +73,9 @@ def build_prompt(state, t):
             out.append(f"{'  ' * depth}- [{done}] {k['title']}")
             if k.get("notes"):
                 out.append(f"{'  ' * depth}  notes: {k['notes']}")
+            if k.get("images"):
+                out.append(f"{'  ' * depth}  images:")
+                out += image_lines(k["images"], reports.TASK_IMAGES, "  " * depth + "    ")
             out += subtree(k["id"], depth + 1)
         return out
 
@@ -78,6 +91,9 @@ def build_prompt(state, t):
         lines.append("Tags: " + ", ".join(t["tags"]))
     if t.get("notes"):
         lines += ["", "Notes:", t["notes"]]
+    if t.get("images"):
+        lines += ["", "Images pasted on this task (open each with the Read tool; they are part of the brief):",
+                  *image_lines(t["images"], reports.TASK_IMAGES)]
     subs = subtree(t["id"], 0)
     if subs:
         lines += ["", "Subtasks ([x] = already done):", *subs]
@@ -88,7 +104,10 @@ def build_prompt(state, t):
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
-              f'- `{report} done "<what you did, commits, what is left>"` as your last action when the task is finished.']
+              f'- `{report} done "<what you did, commits, what is left>"` as your last action when the task is finished.',
+              "- Screenshots: any report about something you captured (a game frame, a UI shot, a render, a "
+              "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
+              f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.']
     return "\n".join(lines)
 
 
@@ -194,7 +213,7 @@ class Watcher:
 WATCH = Watcher()
 
 
-def reply(task_id, text):
+def reply(task_id, text, images=()):
     info = WATCH.snapshot().get(task_id)
     if not info or not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
@@ -210,13 +229,17 @@ def reply(task_id, text):
             break
         time.sleep(0.25)
     time.sleep(1)  # resuming the instant the pid goes has still produced a copy; the board follows either way
-    r = subprocess.run([CLAUDE, "--bg", "--resume", info["sessionId"], text],
+    message = text
+    if images:
+        message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
+            image_lines(images, reports.LOG_IMAGES))
+    r = subprocess.run([CLAUDE, "--bg", "--resume", info["sessionId"], message],
                        cwd=REPO, capture_output=True, text=True, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
-    reports.append(task_id, "reply", text, "you", session=m.group(1))
+    reports.append(task_id, "reply", text, "you", session=m.group(1), images=list(images))
     WATCH.expect(task_id, m.group(1))
 
 
@@ -256,7 +279,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        if self.path not in ("/api/agent", "/api/agent/reply"):
+        if self.path not in ("/api/agent", "/api/agent/reply", "/api/image"):
             self._send(404)
             return
         if not self._same_origin():
@@ -266,11 +289,17 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             if self.path == "/api/agent":
                 self._json(200, {"id": launch(body["taskId"])})
+            elif self.path == "/api/image":
+                folder = reports.TASK_IMAGES if body.get("kind") == "task" else reports.LOG_IMAGES
+                self._json(200, {"name": reports.store_image(base64.b64decode(body["data"]), folder)})
             else:
-                reply(body["taskId"], body["text"].strip() or "Go ahead.")
+                images = [n for n in body.get("images", []) if os.path.exists(reports.image_path(reports.LOG_IMAGES, n))]
+                reply(body["taskId"], body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
                 self._json(200, {"ok": True})
         except LookupError as e:
             self._json(404, {"error": str(e)})
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
         except PermissionError as e:
             self._json(409, {"error": str(e)})
         except Exception as e:  # noqa: BLE001

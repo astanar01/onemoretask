@@ -123,6 +123,16 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-log li .who { font-size: 11px; color: var(--muted); display: block; }
 #d-reply-wrap { display: none; margin-top: 8px; gap: 8px; align-items: flex-end; }
 #d-reply { flex: 1; min-height: 54px; resize: vertical; padding: 6px 8px; border: 1px solid var(--wait); border-radius: 6px; background: var(--card); }
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.thumbs:empty { display: none; }
+.thumb { position: relative; display: block; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .x { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; line-height: 1; padding: 3px 5px; display: none; }
+.thumb:hover .x { display: block; }
+#d-log .thumb { width: 120px; height: 80px; }
+.hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+#panel.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; }
+#d-reply-box { flex: 1; display: flex; flex-direction: column; }
 .panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: 12px; align-items: center; }
 </style>
 </head>
@@ -148,7 +158,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
         <select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select></div>
       <div style="grid-column: 1 / -1"><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
     </div>
-    <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea></div>
+    <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
+      <div class="thumbs" id="d-images"></div>
+      <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
     <div class="block">
       <label>Subtasks <span id="d-subcount"></span></label>
       <ul class="sub-list" id="d-subs"></ul>
@@ -156,7 +168,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     </div>
     <div class="block"><label>Claude</label><div id="d-agent"></div>
       <ul id="d-log"></ul>
-      <div id="d-reply-wrap"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send"></textarea><button class="btn primary" id="d-reply-send">Send reply</button></div>
+      <div id="d-reply-wrap"><div id="d-reply-box"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste images to attach"></textarea><div class="thumbs" id="d-reply-images"></div></div><button class="btn primary" id="d-reply-send">Send reply</button></div>
     </div>
     <div class="panel-foot">
       <span id="d-dates"></span>
@@ -387,9 +399,10 @@ function cardEl(t, top, nestedCount) {
       <div class="title">${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
     </div>
-    ${(kids.length || t.tags.length || t.notes || t.agent) ? `<div class="meta">
+    ${(kids.length || t.tags.length || t.notes || t.agent || (t.images || []).length) ? `<div class="meta">
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
+      ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
       ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
@@ -471,12 +484,13 @@ function onDrop(e, col) {
 
 // ---------------------------------------------------------------- detail panel
 function openDetail(id) {
+  if (id !== openId) replyImages = [];
   openId = id;
   $("#overlay").classList.add("open");
   renderDetail();
   $("#d-title").focus();
 }
-function closeDetail() { openId = null; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 function renderDetail() {
   const t = task(openId);
@@ -494,6 +508,7 @@ function renderDetail() {
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
   $("#d-notes").value = t.notes;
+  renderImages(t);
 
   const kids = children(t.id);
   $("#d-subcount").textContent = kids.length ? `(${kids.filter(isDone).length}/${kids.length} done)` : "";
@@ -573,13 +588,15 @@ function renderAgent(t) {
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
 
   const log = (ag && ag.log) || [];
-  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div></li>`).join("");
+  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, LOG_DIR)}</div>` : ""}</li>`).join("");
   $("#d-log").scrollTop = $("#d-log").scrollHeight;
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
-  $("#d-reply-wrap").style.display = ag && ag.sessionId && !working && ag.phase !== "gone" ? "flex" : "none";
+  $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
+  renderReplyImages();
 }
+const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && ag.sessionId && ag.phase !== "working" && ag.phase !== "gone"); };
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -614,12 +631,12 @@ async function sendToClaude(t) {
 
 async function sendReply() {
   const t = task(openId), text = $("#d-reply").value.trim();
-  if (!t || !text) return;
+  if (!t || (!text && !replyImages.length)) return;
   $("#d-reply-send").disabled = true;
   setStatus("Sending reply…");
   try {
-    await post("/api/agent/reply", { taskId: t.id, text });
-    $("#d-reply").value = "";
+    await post("/api/agent/reply", { taskId: t.id, text, images: replyImages });
+    $("#d-reply").value = ""; replyImages = []; renderReplyImages();
     setStatus("Reply sent — Claude is back at work");
   } catch (e) {
     setStatus("Reply failed: " + e.message, true);
@@ -665,6 +682,79 @@ function updateWaiting() {
   b.textContent = `${waiting.length} waiting on you`;
   b.onclick = () => waiting.length && openDetail(waiting[0].id);
 }
+
+// ---------------------------------------------------------------- images
+// Pasted/dropped images upload to server.py, which stores them by content hash and returns the file name.
+// Task images live in images/ (names on t.images); reply and report images in agent_reports/images/.
+const TASK_DIR = "images/", LOG_DIR = "agent_reports/images/";
+let replyImages = [];            // uploaded, waiting for Send reply
+
+function thumbItems(names, dir, removable) {
+  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="Open full size"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="Remove">✕</button>` : ""}</a>`).join("");
+}
+function bindRemove(box, list, after) {
+  box.querySelectorAll(".x").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); list.splice(+b.dataset.i, 1); after(); }));
+}
+function renderImages(t) {
+  const box = $("#d-images");
+  box.innerHTML = thumbItems(t.images, TASK_DIR, true);
+  bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
+  $("#d-img-hint").textContent = useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
+}
+function renderReplyImages() {
+  const box = $("#d-reply-images");
+  box.innerHTML = thumbItems(replyImages, LOG_DIR, true);
+  bindRemove(box, replyImages, renderReplyImages);
+}
+
+async function uploadImage(file, kind) {
+  const data = await new Promise((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",")[1]);
+    r.onerror = () => fail(r.error);
+    r.readAsDataURL(file);
+  });
+  return (await post("/api/image", { kind, data })).name;
+}
+
+// Into the reply when it is focused (or the only place it can go), else onto the task.
+async function attachFiles(files, toReply) {
+  const t = task(openId);
+  files = files.filter((f) => f.type.startsWith("image/"));
+  if (!t || !files.length) return false;
+  if (!useServer) { setStatus("Attaching images needs server.py", true); return true; }
+  setStatus(`Uploading ${files.length} image${files.length > 1 ? "s" : ""}…`);
+  try {
+    for (const f of files) {
+      const name = await uploadImage(f, toReply ? "log" : "task");
+      if (toReply) { if (!replyImages.includes(name)) replyImages.push(name); }
+      else { t.images = t.images || []; if (!t.images.includes(name)) t.images.push(name); touch(t); }
+    }
+    toReply ? renderReplyImages() : (renderImages(t), render());
+    setStatus(toReply ? "Image added to your reply" : "Image attached to the task");
+  } catch (e) {
+    setStatus("Image upload failed: " + e.message, true);
+  }
+  return true;
+}
+
+$("#overlay").addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (!files.some((f) => f.type.startsWith("image/"))) return;   // plain text pastes as usual
+  e.preventDefault();
+  attachFiles(files, document.activeElement === $("#d-reply"));
+});
+$("#panel").addEventListener("dragover", (e) => {
+  if (drag || !e.dataTransfer.types.includes("Files")) return;
+  e.preventDefault(); $("#panel").classList.add("drop-target");
+});
+$("#panel").addEventListener("dragleave", (e) => { if (!$("#panel").contains(e.relatedTarget)) $("#panel").classList.remove("drop-target"); });
+$("#panel").addEventListener("drop", (e) => {
+  if (drag || !e.dataTransfer.files.length) return;
+  e.preventDefault(); $("#panel").classList.remove("drop-target");
+  const t = task(openId);
+  attachFiles([...e.dataTransfer.files], t && replyOpen(t) && $("#d-reply-wrap").contains(e.target));
+});
 
 // ---------------------------------------------------------------- misc
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
