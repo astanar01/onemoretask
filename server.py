@@ -190,7 +190,7 @@ def build_prompt(p, state, t):
     if subs:
         lines += ["", "Subtasks ([x] = already done):", *subs]
     # The board may live outside this project's tree, so the command carries absolute paths.
-    report = f"python3 {shlex.quote(os.path.join(HERE, 'report.py'))} --board {shlex.quote(p.board)} {t['id']}"
+    report = report_cmd(p, t["id"])
     lines += ["", f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "",
               "Keep the card current with the report script (it shows on the board and alerts the user):",
@@ -201,6 +201,9 @@ def build_prompt(p, state, t):
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
               f'- `{report} done "<what you did, commits, what is left>"` as your last action when the task is finished.',
+              "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
+              f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
+              "that full answer.",
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
               f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.']
@@ -385,6 +388,10 @@ class Watcher:
 WATCH = Watcher()
 
 
+def report_cmd(p, task_id):
+    return f"python3 {shlex.quote(os.path.join(HERE, 'report.py'))} --board {shlex.quote(p.board)} {task_id}"
+
+
 def reply(p, task_id, text, images=()):
     info = WATCH.snapshot(p.id).get(task_id)
     if not info or not info.get("sessionId"):
@@ -401,6 +408,8 @@ def reply(p, task_id, text, images=()):
         time.sleep(0.25)
     time.sleep(1)  # resuming the instant the pid goes has still produced a copy; the board follows either way
     message = text
+    # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
+    message += f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
     if images:
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
