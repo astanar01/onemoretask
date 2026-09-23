@@ -27,6 +27,11 @@ notification. A reply typed on the card stops the idle session and resumes it
 with the reply as its next message (`claude --bg --resume` on a live session
 would start a copy instead).
 
+Each card with a session also shows its prompt-cache countdown (cache_info reads the
+last API call and its 5m/1h TTL tier from the session transcript under
+~/.claude/projects/). Once it runs out the card says "cache cold": a reply then
+re-reads the whole context at full price.
+
 Images pasted into a card's notes save to <board>/images/ (listed on the task as
 "images"); images pasted into a reply, or attached by the agent with
 `report.py --image`, save to <board>/agent_reports/images/. The prompt and
@@ -250,6 +255,70 @@ def list_sessions(cwd):
     return json.loads(r.stdout or "[]")
 
 
+PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
+TAIL_BYTES = 4 << 20
+_cache_memo = {}  # transcript path -> ((mtime, size), info)
+
+
+def _ts(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def cache_info(session_id):
+    """Prompt-cache state of a session's LAST API call, from its transcript:
+    {"at": call start (epoch s), "ttl": seconds, "expires": epoch s, "tokens": context size}, or None.
+    The API refreshes a cache entry's TTL on every read; the TTL tier (5m or 1h) shows in the usage's
+    cache_creation split. The call start is taken as the entry just before the reply (conservative)."""
+    if not session_id:
+        return None
+    paths = [os.path.join(PROJECTS_DIR, d, session_id + ".jsonl") for d in os.listdir(PROJECTS_DIR)]
+    paths = [x for x in paths if os.path.exists(x)]
+    if not paths:
+        return None
+    path = max(paths, key=os.path.getmtime)
+    st = os.stat(path)
+    memo = _cache_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    with open(path, "rb") as f:
+        f.seek(max(0, st.st_size - TAIL_BYTES))
+        lines = f.read().decode("utf-8", "replace").splitlines()
+    entries = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and e.get("timestamp") and not e.get("isSidechain"):
+            entries.append(e)
+    info, ttl = None, None
+    for i in range(len(entries) - 1, -1, -1):
+        m = entries[i].get("message") or {}
+        usage = entries[i].get("type") == "assistant" and m.get("usage")
+        if not usage:
+            continue
+        split = usage.get("cache_creation") or {}
+        if ttl is None and split.get("ephemeral_1h_input_tokens"):
+            ttl = 3600
+        elif ttl is None and split.get("ephemeral_5m_input_tokens"):
+            ttl = 300
+        if info is None:
+            j = i
+            while j > 0 and (entries[j - 1].get("message") or {}).get("id") == m.get("id"):
+                j -= 1
+            at = _ts(entries[j - 1]["timestamp"] if j > 0 else entries[j]["timestamp"])
+            tokens = sum(usage.get(k) or 0 for k in
+                         ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+            info = {"at": at, "tokens": tokens}
+        if ttl is not None:
+            break
+    if info:
+        info["ttl"] = ttl or 300  # tier not seen in the tail: assume the short one so "cold" is never late
+        info["expires"] = info["at"] + info["ttl"]
+    _cache_memo[path] = ((st.st_mtime, st.st_size), info)
+    return info
+
+
 class Watcher:
     """Polls session state for every task with an agent, in every remembered project; the board reads the cache."""
 
@@ -279,8 +348,12 @@ class Watcher:
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
             s = sessions.get(aid)
             phase, reason = phase_of(s, log, self.launched.get(aid, 0))
+            try:
+                cache = cache_info(s and s.get("sessionId"))
+            except OSError:
+                cache = None
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
-                                      "phase": phase, "reason": reason, "log": log}
+                                      "phase": phase, "reason": reason, "log": log, "cache": cache}
         with self.lock:
             old, self.cache = self.cache, fresh
             primed, self.primed = self.primed, True

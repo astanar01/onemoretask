@@ -127,6 +127,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .agent.needs_you { background: var(--wait); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
 .agent.finished { background: var(--ok); color: #fff; }
 @keyframes pulse { 50% { opacity: .55; } }
+.ttl { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); white-space: nowrap; }
+.ttl.low { border-color: var(--wait); color: var(--wait); }
+.ttl.cold { border-color: #c0392b; background: #c0392b; color: #fff; }
 .card.needs-you { outline: 2px solid var(--wait); }
 .card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .card.unread .title { font-weight: 600; }
@@ -434,6 +437,7 @@ function matches(t, q) {
 }
 
 function render() {
+  queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
   const showSubs = $("#show-subs").checked;
@@ -537,7 +541,7 @@ function cardEl(t, top, nestedCount) {
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}`;
@@ -707,9 +711,31 @@ document.addEventListener("keydown", (e) => {
 let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
 const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
+// Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
+// re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
+function cacheChip(ag, long) {
+  const c = ag && ag.cache;
+  if (!c || ag.phase === "working" || ag.phase === "gone") return "";
+  return `<span class="ttl" data-exp="${c.expires}" data-tok="${c.tokens}" data-ttl="${c.ttl}" data-long="${long ? 1 : ""}"></span>`;
+}
+function tickCache() {
+  const nowS = Date.now() / 1000;
+  const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + "h" + (m % 60 ? " " + (m % 60) + "m" : "") : m + "m"; };
+  for (const el of document.querySelectorAll(".ttl")) {
+    const left = +el.dataset.exp - nowS, tok = Math.round(+el.dataset.tok / 1000) + "k tokens", tier = el.dataset.ttl >= 3600 ? "1h" : "5m";
+    el.className = "ttl" + (left <= 0 ? " cold" : left < 300 ? " low" : "");
+    el.title = left > 0 ? `Prompt cache (${tier} TTL) expires in ${dur(left)}. A reply before then reads ${tok} from cache.`
+      : `Prompt cache expired ${dur(-left)} ago. A reply re-reads ${tok} at full cost.`;
+    el.textContent = el.dataset.long
+      ? (left > 0 ? `cache warm · ${dur(left)} left · ${tok}` : `cache expired ${dur(-left)} ago · reply re-reads ${tok} at full cost`)
+      : (left > 0 ? `cache ${dur(left)}` : "cache cold");
+  }
+}
+setInterval(tickCache, 15000);
 const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
 
 function renderAgent(t) {
+  queueMicrotask(tickCache);   // fill the cache chips this render creates
   const ag = t.agent && agents[t.id];
   const working = ag && ag.phase === "working";
   // The launch button sits in the left pane; the right pane only appears once a session exists.
@@ -720,7 +746,7 @@ function renderAgent(t) {
   send.title = useServer ? "Start a new background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
   $("#d-right").style.display = t.agent ? "" : "none";
-  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>
+  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${cacheChip(ag, true)}
       <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
   const code = $("#d-agent code");
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
