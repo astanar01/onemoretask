@@ -97,6 +97,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .panel-cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; }
 .actions { display: flex; gap: 10px; align-items: center; }
+#d-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
 .panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
 .panel-right #d-log li { padding: 2px 0 2px 16px; }
@@ -198,7 +199,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <ul class="sub-list" id="d-subs"></ul>
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
     </div>
-    <div class="block actions"><button class="btn primary" id="d-send"></button><button class="btn danger" id="d-delete">Delete</button></div>
+    <div class="block actions"><button class="btn primary" id="d-send"></button><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option></select><button class="btn danger" id="d-delete">Delete</button></div>
     </div>
     <div class="panel-right" id="d-right">
     <div class="block"><label>Claude</label><div id="d-agent"></div>
@@ -752,8 +753,13 @@ function renderAgent(t) {
   send.disabled = !useServer;
   send.title = useServer ? "Start a background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
+  const model = $("#d-model");
+  model.style.display = send.style.display;
+  model.disabled = !useServer;
+  try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
+  model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} };
   $("#d-right").style.display = t.agent ? "" : "none";
-  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${cacheChip(ag, true)}
+  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${t.agent.model ? `<span>${esc(t.agent.model)}</span>` : ""}${cacheChip(ag, true)}
       <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
   const code = $("#d-agent code");
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
@@ -785,8 +791,9 @@ async function sendToClaude(t) {
   render(); $("#d-col").value = t.column;
   if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
   try {
-    const res = await post("/api/agent", { p: P, taskId: t.id });
-    t.agent = { id: res.id, started: now() };
+    const model = $("#d-model").value;
+    const res = await post("/api/agent", { p: P, taskId: t.id, model });
+    t.agent = { id: res.id, started: now(), ...(model && { model }) };
     touch(t);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
     setStatus("Claude session " + res.id + " started");

@@ -16,7 +16,10 @@ then tasks live only in that browser's localStorage.
 "Send to Claude" (task panel) starts `claude --bg` in the project folder with
 the task's title, notes, subtasks and parent chain as the prompt. The session
 shows in `claude agents`; `claude attach <id>` opens it. Permission mode
-defaults to auto (--permission-mode to change).
+defaults to auto (--permission-mode to change). The model picker beside the
+button passes --model (an alias like fable / opus / sonnet / haiku, or blank for
+the CLI default). The session keeps it across replies; Haiku has no auto mode,
+so it runs with manual permission prompts.
 
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
@@ -59,6 +62,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY = os.path.expanduser("~/.config/task_board/projects.json")
 CLAUDE = shutil.which("claude") or os.path.expanduser("~/.local/bin/claude")
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
 PERMISSION_MODE = "auto"
 
 
@@ -217,7 +221,15 @@ def notify(title, subtitle, message):
 
 
 # ---------------------------------------------------------------- agents
-def launch(p, task_id):
+def model_args(model):
+    if not model:
+        return []
+    if not MODEL.fullmatch(model):
+        raise ValueError(f"bad model name: {model!r}")
+    return ["--model", model]
+
+
+def launch(p, task_id, model=""):
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -225,13 +237,15 @@ def launch(p, task_id):
     if t.get("agent"):
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
-    r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, build_prompt(p, state, t)],
+    r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
+                        build_prompt(p, state, t)],
                        cwd=p.path, capture_output=True, text=True, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
-    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {m.group(1)})", "you", session=m.group(1))
+    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {m.group(1)}, model {model or 'default'})",
+                   "you", session=m.group(1))
     WATCH.expect(p, task_id, m.group(1))
     return m.group(1)
 
@@ -419,6 +433,7 @@ def reply(p, task_id, text, images=()):
     if images:
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
+    # No flags here: a bg session keeps its saved options (model included), and any flag on --resume forks a copy.
     r = subprocess.run([CLAUDE, "--bg", "--resume", info["sessionId"], message],
                        cwd=p.path, capture_output=True, text=True, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
@@ -521,7 +536,7 @@ class Handler(SimpleHTTPRequestHandler):
                 forget_project(body["p"])
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                self._json(200, {"id": launch(project(body["p"]), body["taskId"])})
+                self._json(200, {"id": launch(project(body["p"]), body["taskId"], body.get("model") or "")})
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
