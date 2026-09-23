@@ -55,12 +55,10 @@ import base64
 import hashlib
 import json
 import os
-import py_compile
 import re
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -536,7 +534,6 @@ class Watcher:
 
     def run(self):
         while True:
-            restart_if_changed()
             try:
                 self.poll()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
@@ -549,28 +546,6 @@ class Watcher:
 
 
 WATCH = Watcher()
-
-# A running server never picks up edits to its own code, so an old one kept sending replies without the
-# "post your answer on the card" line. It re-execs itself when its sources change and still compile.
-SOURCES = [os.path.join(HERE, n) for n in ("server.py", "reports.py")]
-_started = {f: os.path.getmtime(f) for f in SOURCES}
-ACTION = threading.Lock()  # held by launch/reply so a restart never cuts one off mid-way
-
-
-def restart_if_changed():
-    if all(os.path.getmtime(f) == m for f, m in _started.items()):
-        return
-    for f in SOURCES:
-        try:
-            py_compile.compile(f, doraise=True)
-        except py_compile.PyCompileError as e:
-            print("not restarting, source does not compile:", e)
-            _started.update({f: os.path.getmtime(f) for f in SOURCES})
-            return
-    with ACTION:
-        print("task board: code changed, restarting")
-        os.execv(sys.executable, sys.orig_argv)  # same interpreter flags, script path and cwd
-
 
 def report_cmd(p, task_id):
     return f"python3 {shlex.quote(os.path.join(HERE, 'report.py'))} --board {shlex.quote(p.board)} {task_id}"
@@ -702,8 +677,7 @@ class Handler(SimpleHTTPRequestHandler):
                 forget_project(body["p"])
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                with ACTION:
-                    aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
+                aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
                 self._json(200, {"id": aid})
             elif path == "/api/image":
                 p = project(body["p"])
@@ -713,9 +687,8 @@ class Handler(SimpleHTTPRequestHandler):
                 p = project(body["p"])
                 images = [n for n in body.get("images", [])
                           if os.path.exists(reports.image_path(reports.log_images(p.board), n))]
-                with ACTION:
-                    reply(p, body["taskId"],
-                          body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
+                reply(p, body["taskId"],
+                      body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
                 self._json(200, {"ok": True})
         self._errors(handle)
 
