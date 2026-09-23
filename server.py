@@ -101,6 +101,9 @@ def build_prompt(state, t):
     lines += ["", "Follow CLAUDE.md. Commit your work; never push. Do not edit tools/task_board/tasks.json "
               "(the board owns it).", "",
               "Keep the card current with the report script (it shows on the board and alerts the user):",
+              "- Format every message for reading on the card: short paragraphs and `- ` bullet lists separated by "
+              "blank lines (real newlines inside the quoted argument), never one run-on block. A progress line may be "
+              "a single sentence.",
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
