@@ -95,6 +95,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
 .panel-cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; }
+.actions { display: flex; gap: 10px; align-items: center; }
 .panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
 .panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
 .panel-right #d-log li { padding: 2px 0 2px 16px; }
@@ -191,9 +192,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <ul class="sub-list" id="d-subs"></ul>
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
     </div>
-    <div class="block"><button class="btn danger" id="d-delete">Delete</button></div>
+    <div class="block actions"><button class="btn primary" id="d-send"></button><button class="btn danger" id="d-delete">Delete</button></div>
     </div>
-    <div class="panel-right">
+    <div class="panel-right" id="d-right">
     <div class="block"><label>Claude</label><div id="d-agent"></div>
       <ul id="d-log"></ul>
       <div id="d-reply-wrap"><div id="d-reply-box"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste images to attach"></textarea><div class="thumbs" id="d-reply-images"></div></div><button class="btn primary" id="d-reply-send">Send reply</button></div>
@@ -711,11 +712,16 @@ const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
 function renderAgent(t) {
   const ag = t.agent && agents[t.id];
   const working = ag && ag.phase === "working";
-  $("#d-agent").innerHTML = `<button class="btn ${t.agent ? "" : "primary"}" id="d-send" ${working || !useServer ? "disabled" : ""}
-      title="${useServer ? "Start a new background Claude session on this task" : "Needs server.py"}">${t.agent ? "New Claude session" : "Send to Claude"}</button>
-    ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>
-      <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : ""}`;
-  $("#d-send").onclick = () => sendToClaude(t);
+  // The launch button sits in the left pane; the right pane only appears once a session exists.
+  const send = $("#d-send");
+  send.textContent = t.agent ? "New Claude session" : "Send to Claude";
+  send.classList.toggle("primary", !t.agent);
+  send.disabled = !!working || !useServer;
+  send.title = useServer ? "Start a new background Claude session on this task" : "Needs server.py";
+  send.onclick = () => sendToClaude(t);
+  $("#d-right").style.display = t.agent ? "" : "none";
+  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>
+      <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
   const code = $("#d-agent code");
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
 
