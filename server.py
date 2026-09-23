@@ -351,6 +351,10 @@ def phase_of(session, log, launched_at):
     # can stay "working" on an idle session after a --resume, so it only counts when there is no live status.
     live = session and session.get("status")
     busy = live == "busy" and st != "blocked" or not live and st == "working"
+    # "done" is the agent's last action, so it wins over "busy": a background shell that never exits (a headless
+    # Chrome screenshot) keeps the session "busy" forever.
+    if session is not None and last.get("from") == "claude" and last.get("status") in ("done", "answer"):
+        return "finished", last["message"]
     # Just after a launch or reply the session is still starting (absent, or stopped from the reply's stop).
     if busy or (last.get("from") == "you" and time.time() - launched_at < 45):
         return "working", ""
