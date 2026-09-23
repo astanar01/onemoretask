@@ -96,9 +96,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .panel-cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; }
 .panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
-.panel-right #d-log { margin-top: 14px; gap: 10px; padding-right: 6px; }
-.panel-right #d-log li { padding: 10px 14px; }
-.panel-right #d-log li .who { margin-bottom: 4px; }
+.panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
+.panel-right #d-log li { padding: 2px 0 2px 16px; }
+.panel-right #d-log li .who { margin-bottom: 8px; }
 .panel-right #d-reply-wrap { margin-top: 14px; gap: 12px; }
 .panel-right > .block:first-child, .panel-left > .fields:first-child { margin-top: 12px; }
 .panel-right #d-log { max-height: 62vh; }
@@ -132,7 +132,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: calc(12px * var(--ts)); color: var(--muted); }
 #d-agent code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: copy; }
 #d-log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-#d-log li { background: var(--card); border-radius: 6px; padding: 6px 8px; border-left: 3px solid var(--line); word-wrap: break-word; }
+#d-log li { padding: 2px 0 2px 12px; line-height: 1.55; border-left: 3px solid var(--line); word-wrap: break-word; }
 #d-log li .msg { white-space: pre-wrap; }
 #d-log li.k-question { border-left-color: var(--wait); }
 #d-log li.k-done { border-left-color: var(--ok); }
