@@ -240,8 +240,12 @@ def phase_of(session, log, launched_at):
     """(phase, reason) from the CLI's session record and the card's message log."""
     last = log[-1] if log else {}
     st = session and session.get("state")
+    # "status" is the live turn (busy / idle; absent once the process exits). "state" is the CLI's summary and
+    # can stay "working" on an idle session after a --resume, so it only counts when there is no live status.
+    live = session and session.get("status")
+    busy = live == "busy" and st != "blocked" or not live and st == "working"
     # Just after a launch or reply the session is still starting (absent, or stopped from the reply's stop).
-    if st == "working" or (last.get("from") == "you" and time.time() - launched_at < 45):
+    if busy or (last.get("from") == "you" and time.time() - launched_at < 45):
         return "working", ""
     if session is None:
         return "gone", "Session was removed"
