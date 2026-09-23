@@ -160,6 +160,11 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-log li.k-done, #d-log li.k-answer { border-left-color: var(--ok); }
 #d-log li.k-you { border-left-color: var(--accent); }
 #d-log li .who { font-size: calc(11px * var(--ts)); color: var(--muted); display: block; }
+#d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
+#d-log .mark.sent { color: var(--ok); font-weight: 700; }
+#d-log .mark.sending { color: var(--accent); }
+#d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 #d-reply-wrap { display: none; margin-top: 8px; gap: 8px; flex-direction: column; }
 .reply-row { display: flex; gap: 10px; align-items: center; }
 #d-reply { flex: 1; min-height: 84px; resize: vertical; padding: 6px 8px; border: 1px solid var(--wait); border-radius: 6px; background: var(--card); }
@@ -775,6 +780,17 @@ document.addEventListener("keydown", (e) => {
 // server.py starts `claude --bg` for a task and watches it. tasks.json keeps only { id, started } on the
 // task; the live phase (working / needs_you / finished / gone), reason and message log come from /api/agents.
 let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
+// Messages show in the log the moment you send them: a turning cog until the server confirms, then a checkmark.
+let pending = {};                // task id -> [{ from, status, message, images, at, state: "sending" | "sent", base }]
+const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
+const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
+function addPending(t, status, message, images) {
+  const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
+  (pending[t.id] = pending[t.id] || []).push(m);
+  return m;
+}
+function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
+const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
 const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
@@ -818,14 +834,20 @@ function renderAgent(t) {
   try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
   model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} };
   if (!t.agent) loadDefaultModel();
-  $("#d-right").style.display = t.agent ? "" : "none";
+  const pend = pending[t.id] || [];
+  if (pend.length) send.style.display = model.style.display = "none";
+  $("#d-right").style.display = t.agent || pend.length ? "" : "none";
   $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${t.agent.model ? `<span>${esc(t.agent.model)}</span>` : ""}${cacheChip(ag, true)}
       <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
   const code = $("#d-agent code");
   if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
 
   const log = (ag && ag.log) || [];
-  $("#d-log").innerHTML = log.slice(-30).map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  // A sent message stays on screen as pending until the poll brings its logged copy.
+  pending[t.id] = pend.filter((m) => m.state === "sending" || !log.some((e, i) => i >= m.base && e.from === "you" && e.status === m.status && (m.status === "launch" || e.message === m.message)));
+  if (!pending[t.id].length) delete pending[t.id];
+  const shown = log.slice(-30).concat(pending[t.id] || []);
+  $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-log").scrollTop = $("#d-log").scrollHeight;
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
@@ -863,9 +885,12 @@ async function post(url, body) {
   return res;
 }
 
+
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   setStatus("Starting Claude…");
+  const pm = addPending(t, "launch", "Sending to Claude" + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
@@ -877,8 +902,10 @@ async function sendToClaude(t) {
     t.agent = { id: res.id, started: now(), ...(model && { model }) };
     touch(t);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
+    pm.state = "sent";
     setStatus("Claude session " + res.id + " started");
   } catch (e) {
+    dropPending(t, pm);
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // else its "Saved" would replace the error
     setStatus("Send to Claude failed: " + e.message, true);
@@ -893,13 +920,19 @@ async function sendReply() {
   if (!t || (!text && !replyImages.length)) return;
   $("#d-reply-send").disabled = true;
   setStatus("Sending reply…");
+  const images = replyImages, pm = addPending(t, "reply", text, images);
+  $("#d-reply").value = ""; replyImages = []; renderReplyImages(); refreshAgent(t);
   try {
-    await post("/api/agent/reply", { p: P, taskId: t.id, text, images: replyImages });
-    $("#d-reply").value = ""; replyImages = []; renderReplyImages();
+    await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
+    pm.state = "sent";
     setStatus("Reply sent — Claude is back at work");
   } catch (e) {
+    dropPending(t, pm);
+    // Hand the unsent message back so nothing typed is lost.
+    if (openId === t.id && !$("#d-reply").value) { $("#d-reply").value = text; replyImages = images; renderReplyImages(); }
     setStatus("Reply failed: " + e.message, true);
   }
+  refreshAgent(t);
   $("#d-reply-send").disabled = false;
   await pollAgents();
 }
