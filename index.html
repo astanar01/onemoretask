@@ -140,6 +140,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .card.unread .title { font-weight: 600; }
 .card.unread .title::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: .8em; vertical-align: 1px; }
+.btn.to-done { border-color: var(--ok); color: var(--ok); }
+.btn.to-done:hover { background: var(--ok); color: #fff; }
+.card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: calc(12px * var(--ts)); }
 #d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: calc(12px * var(--ts)); color: var(--muted); }
@@ -215,7 +218,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     </div>
     <div class="panel-foot">
       <span id="d-dates"></span>
-      <button class="btn primary" id="d-close">Close</button>
+      <span><button class="btn to-done" id="d-to-done" title="The work is finished — move this task to the done column">✓ Move to done</button>
+      <button class="btn primary" id="d-close">Close</button></span>
     </div>
   </div>
 </div>
@@ -371,10 +375,15 @@ function nextOrder(colId) {
   const inCol = state.tasks.filter((t) => t.column === colId);
   return inCol.length ? Math.max(...inCol.map((t) => t.order)) + 1 : 0;
 }
+function firstOrder(colId) {
+  const inCol = state.tasks.filter((t) => t.column === colId);
+  return inCol.length ? Math.min(...inCol.map((t) => t.order)) - 1 : 0;
+}
 
+// New cards go on top of their column; new subtasks go at the end of their parent's list.
 function addTask(title, colId, parent = null) {
   const t = { id: uid(), title: title.trim(), notes: "", priority: "", tags: [], column: colId,
-              parent, order: nextOrder(colId), created: now(), updated: now() };
+              parent, order: parent ? nextOrder(colId) : firstOrder(colId), created: now(), updated: now() };
   state.tasks.push(t);
   save();
   return t;
@@ -553,8 +562,11 @@ function cardEl(t, top, nestedCount) {
       ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
-    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}`;
+    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}
+    ${inReview(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
+  const td = el.querySelector(".to-done");
+  if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
   const tw = el.querySelector(".twisty");
   if (tw) tw.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapsed(t.id); });
   el.addEventListener("dragstart", (e) => {
@@ -683,6 +695,7 @@ function renderDetail() {
   $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
   renderAgent(t);
   $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
+  $("#d-to-done").style.display = inReview(t) ? "" : "none";
   disarmDelete();
 }
 
@@ -704,6 +717,7 @@ $("#d-newsub").addEventListener("keydown", (e) => {
   renderDetail(); $("#d-newsub").focus();
 });
 $("#d-close").onclick = closeDetail;
+$("#d-to-done").onclick = () => { moveToDone(openId); closeDetail(); };
 $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeDetail(); });
 
 // Two-step delete instead of window.confirm (a modal dialog blocks browser automation).
@@ -756,6 +770,8 @@ function tickCache() {
 }
 setInterval(tickCache, 15000);
 const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
+function inReview(t) { const r = colNamed(/review/i); return !!(r && t.column === r.id); }
+function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
 function renderAgent(t) {
   queueMicrotask(tickCache);   // fill the cache chips this render creates
