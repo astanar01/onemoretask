@@ -114,6 +114,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .fields label, .block > label { display: block; font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 3px; }
 .fields select, .fields input, #d-notes { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #d-notes { min-height: 90px; resize: vertical; }
+.fields label.check { display: flex; align-items: center; gap: 6px; margin: 22px 0 0; color: var(--fg); cursor: pointer; }
+.fields label.check input { width: auto; }
 .block { margin-top: 14px; }
 .sub-list { list-style: none; margin: 4px 0 6px; padding: 0; }
 .sub-list li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; }
@@ -190,6 +192,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <div><label for="d-prio">Priority</label>
         <select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select></div>
       <div style="grid-column: 1 / -1"><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
+      <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
+      <div><label for="d-submodel">Subagent model</label>
+        <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
     </div>
     <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
       <div class="thumbs" id="d-images"></div>
@@ -222,7 +227,7 @@ const $ = (s) => document.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
-let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated}] }
+let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?}] }
 let useServer = true;
 let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
 let P = null;              // current project id; every /api call carries it
@@ -629,7 +634,7 @@ function settleDraft() {
   const t = draftId && task(draftId);
   draftId = null;
   if (!t || t.title.trim()) return;
-  if (!t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
+  if (!t.notes.trim() && !t.tags.length && !t.priority && !t.delegate && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
   else { t.title = "Untitled"; touch(t); }
 }
 
@@ -649,9 +654,13 @@ function renderDetail() {
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
   $("#d-notes").value = t.notes;
+  $("#d-delegate").checked = !!t.delegate;
+  $("#d-submodel").value = t.subagentModel || "";
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
   const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
+  $("#d-delegate").disabled = sent;
+  $("#d-submodel").disabled = sent || !t.delegate;
   $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
@@ -682,6 +691,11 @@ $("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t &&
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
+$("#d-delegate").addEventListener("change", (e) => {
+  const t = task(openId); t.delegate = e.target.checked; touch(t);
+  $("#d-submodel").disabled = !t.delegate;
+});
+$("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
 $("#d-newsub").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;

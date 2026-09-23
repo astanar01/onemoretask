@@ -21,6 +21,10 @@ button passes --model (an alias like fable / opus / sonnet / haiku, or blank for
 the CLI default). The session keeps it across replies; Haiku has no auto mode,
 so it runs with manual permission prompts.
 
+A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
+`subagentModel`) gets a planning brief in its prompt: analyse the task, split
+it, and hand the independent parts to subagents on the chosen model.
+
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
 every remembered project, turns session state + the latest report into a phase:
@@ -195,6 +199,8 @@ def build_prompt(p, state, t):
         lines += ["", "Subtasks ([x] = already done):", *subs]
     # The board may live outside this project's tree, so the command carries absolute paths.
     report = report_cmd(p, t["id"])
+    if t.get("delegate"):
+        lines += ["", *delegate_lines(t.get("subagentModel") or "", report)]
     lines += ["", f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "",
               "Keep the card current with the report script (it shows on the board and alerts the user):",
@@ -218,6 +224,24 @@ def notify(title, subtitle, message):
     esc = lambda x: x.replace("\\", "\\\\").replace('"', '\\"')[:200]
     subprocess.run(["osascript", "-e", f'display notification "{esc(message)}" with title "{esc(title)}" '
                     f'subtitle "{esc(subtitle)}" sound name "Glass"'], capture_output=True, timeout=10)
+
+
+def delegate_lines(model, report):
+    if model and not MODEL.fullmatch(model):
+        model = ""
+    use = (f'- Run every subagent on the "{model}" model: pass `model: "{model}"` on each Agent call.' if model
+           else "- Subagents use this session's model (leave the Agent `model` unset).")
+    return ["Planning (this task is marked \"divide in subtasks / use subagents\"):",
+            "- Before changing anything, analyse the brief carefully and work out how to split it: the parts, what "
+            "each needs to know, and which depend on others.",
+            "- Delegate each part that can stand alone to a subagent (the Agent tool). Launch independent parts in one "
+            "message so they run in parallel; run dependent parts after what they need. Keep tiny or tightly coupled "
+            "parts yourself.",
+            "- Give each subagent a self-contained prompt: the goal, the files, the constraints (incl. CLAUDE.md "
+            "rules), how to verify, and what to return. Subagents do not commit or post to the card; you do.",
+            use,
+            f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching subagents, '
+            "then check and integrate their results yourself before reporting done."]
 
 
 # ---------------------------------------------------------------- agents
