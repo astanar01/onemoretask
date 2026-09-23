@@ -222,6 +222,8 @@ def launch(p, task_id):
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
         raise LookupError("no such task (save first?)")
+    if t.get("agent"):
+        raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
     r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, build_prompt(p, state, t)],
                        cwd=p.path, capture_output=True, text=True, timeout=60)

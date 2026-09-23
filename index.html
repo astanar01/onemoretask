@@ -120,6 +120,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .sub-list li.done .t { text-decoration: line-through; color: var(--muted); }
 .sub-list li .c { font-size: calc(11px * var(--ts)); color: var(--muted); }
 .sub-list li .n { font-size: calc(11px * var(--ts)); color: var(--muted); }
+#d-title:read-only, #d-tags:read-only, #d-notes:read-only { color: var(--muted); cursor: default; }
+#d-title:read-only:hover { border-color: transparent; background: transparent; }
 #d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
 :root { --wait: #e67e22; --ok: #3c9d6b; }
 .agent { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--accent); }
@@ -190,7 +192,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
       <div class="thumbs" id="d-images"></div>
       <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
-    <div class="block">
+    <div class="block" id="d-subblock">
       <label>Subtasks <span id="d-subcount"></span></label>
       <ul class="sub-list" id="d-subs"></ul>
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
@@ -645,6 +647,10 @@ function renderDetail() {
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
   $("#d-notes").value = t.notes;
+  // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
+  const sent = !!t.agent;
+  for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
+  $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
   const kids = children(t.id);
@@ -663,6 +669,7 @@ function renderDetail() {
     ul.appendChild(li);
   }
   $("#d-newsub").value = "";
+  $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
   renderAgent(t);
   $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
   disarmDelete();
@@ -737,13 +744,12 @@ const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
 function renderAgent(t) {
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const ag = t.agent && agents[t.id];
-  const working = ag && ag.phase === "working";
-  // The launch button sits in the left pane; the right pane only appears once a session exists.
+  // Send is one-shot: it sits in the left pane until the task has a session, then the right pane takes over.
   const send = $("#d-send");
-  send.textContent = t.agent ? "New Claude session" : "Send to Claude";
-  send.classList.toggle("primary", !t.agent);
-  send.disabled = !!working || !useServer;
-  send.title = useServer ? "Start a new background Claude session on this task" : "Needs server.py";
+  send.textContent = "Send to Claude";
+  send.style.display = t.agent ? "none" : "";
+  send.disabled = !useServer;
+  send.title = useServer ? "Start a background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
   $("#d-right").style.display = t.agent ? "" : "none";
   $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${cacheChip(ag, true)}
@@ -867,9 +873,10 @@ function bindRemove(box, list, after) {
 }
 function renderImages(t) {
   const box = $("#d-images");
-  box.innerHTML = thumbItems(t.images, fileDir("images"), true);
+  box.innerHTML = thumbItems(t.images, fileDir("images"), !t.agent);
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
-  $("#d-img-hint").textContent = useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
+  $("#d-img-hint").textContent = t.agent ? "Sent to Claude — the task is locked. Add anything new as a reply."
+    : useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
@@ -892,6 +899,10 @@ async function attachFiles(files, toReply) {
   const t = task(openId);
   files = files.filter((f) => f.type.startsWith("image/"));
   if (!t || !files.length) return false;
+  if (!toReply && t.agent) {   // a sent task is locked; images go to the reply instead
+    if (!replyOpen(t)) { setStatus("This task was sent to Claude — attach images to a reply", true); return true; }
+    toReply = true;
+  }
   if (!useServer) { setStatus("Attaching images needs server.py", true); return true; }
   setStatus(`Uploading ${files.length} image${files.length > 1 ? "s" : ""}…`);
   try {
