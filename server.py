@@ -34,7 +34,11 @@ working, needs_you (a question, a permission prompt, or it stopped without
 reporting) or finished. Entering needs_you or finished raises a macOS
 notification. A reply typed on the card stops the idle session and resumes it
 with the reply as its next message (`claude --bg --resume` on a live session
-would start a copy instead).
+would start a copy instead). If the session then stops without calling report.py, the
+watcher copies its chat answer from the transcript onto the card (status "answer").
+
+The server re-execs itself when server.py or reports.py change (and still compile), so
+a running board never keeps serving old logic.
 
 Each card with a session also shows its prompt-cache countdown (cache_info reads the
 last API call and its 5m/1h TTL tier from the session transcript under
@@ -51,10 +55,12 @@ import base64
 import hashlib
 import json
 import os
+import py_compile
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -255,12 +261,6 @@ def model_args(model):
     return ["--model", model]
 
 
-def launch(p, task_id, model=""):
-    state = load_tasks(p)
-    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
-    if not t:
-        raise LookupError("no such task (save first?)")
-    if t.get("agent"):
 DEFAULT_CACHE = os.path.expanduser("~/.config/task_board/default_model.json")
 DEFAULT_TTL = 24 * 3600
 _default_lock = threading.Lock()
@@ -320,6 +320,12 @@ def default_model(p):
     return {"model": cached.get("model"), "source": "account"}
 
 
+def launch(p, task_id, model=""):
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    if not t:
+        raise LookupError("no such task (save first?)")
+    if t.get("agent"):
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
     r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
@@ -351,7 +357,7 @@ def phase_of(session, log, launched_at):
     # An explicit report beats the CLI's own guess (it marks some finished sessions "blocked").
     if last.get("status") == "question":
         return "needs_you", last["message"]
-    if last.get("status") == "done":
+    if last.get("status") in ("done", "answer"):
         return "finished", last["message"]
     if st == "blocked":
         return "needs_you", "Waiting on a permission prompt or a question in the session — attach to answer"
@@ -372,24 +378,18 @@ def _ts(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
-def cache_info(session_id):
-    """Prompt-cache state of a session's LAST API call, from its transcript:
-    {"at": call start (epoch s), "ttl": seconds, "expires": epoch s, "tokens": context size}, or None.
-    The API refreshes a cache entry's TTL on every read; the TTL tier (5m or 1h) shows in the usage's
-    cache_creation split. The call start is taken as the entry just before the reply (conservative)."""
+def transcript_path(session_id):
     if not session_id:
         return None
     paths = [os.path.join(PROJECTS_DIR, d, session_id + ".jsonl") for d in os.listdir(PROJECTS_DIR)]
     paths = [x for x in paths if os.path.exists(x)]
-    if not paths:
-        return None
-    path = max(paths, key=os.path.getmtime)
-    st = os.stat(path)
-    memo = _cache_memo.get(path)
-    if memo and memo[0] == (st.st_mtime, st.st_size):
-        return memo[1]
+    return max(paths, key=os.path.getmtime) if paths else None
+
+
+def transcript_tail(path):
+    """Main-thread transcript entries from the last TAIL_BYTES of the file."""
     with open(path, "rb") as f:
-        f.seek(max(0, st.st_size - TAIL_BYTES))
+        f.seek(max(0, os.path.getsize(path) - TAIL_BYTES))
         lines = f.read().decode("utf-8", "replace").splitlines()
     entries = []
     for line in lines:
@@ -399,6 +399,46 @@ def cache_info(session_id):
             continue
         if isinstance(e, dict) and e.get("timestamp") and not e.get("isSidechain"):
             entries.append(e)
+    return entries
+
+
+def last_answer(session_id, reply_text):
+    """The chat text that ends the session's turn answering `reply_text` (the text after its last tool
+    result), or "". Used when an agent answers a card reply in chat and never calls report.py."""
+    path = transcript_path(session_id)
+    if not path:
+        return ""
+    texts, found = [], False
+    for e in transcript_tail(path):
+        content = (e.get("message") or {}).get("content")
+        if e.get("type") == "user":
+            blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content or []
+            if any(isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").startswith(reply_text)
+                   for b in blocks):
+                texts, found = [], True
+            elif any(isinstance(b, dict) and b.get("type") == "tool_result" for b in blocks):
+                texts = []
+            elif found and not e.get("isMeta") and any(isinstance(b, dict) and b.get("type") == "text" for b in blocks):
+                break  # a later message typed into the session itself; its answer is not the card's
+        elif found and e.get("type") == "assistant" and isinstance(content, list):
+            texts += [b["text"].strip() for b in content if isinstance(b, dict) and b.get("type") == "text"
+                      and b.get("text", "").strip()]
+    return "\n\n".join(texts)
+
+
+def cache_info(session_id):
+    """Prompt-cache state of a session's LAST API call, from its transcript:
+    {"at": call start (epoch s), "ttl": seconds, "expires": epoch s, "tokens": context size}, or None.
+    The API refreshes a cache entry's TTL on every read; the TTL tier (5m or 1h) shows in the usage's
+    cache_creation split. The call start is taken as the entry just before the reply (conservative)."""
+    path = transcript_path(session_id)
+    if not path:
+        return None
+    st = os.stat(path)
+    memo = _cache_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    entries = transcript_tail(path)
     info, ttl = None, None
     for i in range(len(entries) - 1, -1, -1):
         m = entries[i].get("message") or {}
@@ -456,6 +496,17 @@ class Watcher:
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
             s = sessions.get(aid)
             phase, reason = phase_of(s, log, self.launched.get(aid, 0))
+            if phase == "needs_you" and s and s.get("state") != "blocked" and log and log[-1].get("from") == "you":
+                # It stopped after a card reply without calling report.py: its answer is only in the chat, which
+                # the user never sees. Copy that answer onto the card.
+                try:
+                    text = last_answer(s.get("sessionId"), log[-1]["message"])
+                except OSError:
+                    text = ""
+                if text:
+                    reports.append(p.board, t["id"], "answer", text, "claude")
+                    log = reports.read(p.board, t["id"])
+                    phase, reason = phase_of(s, log, self.launched.get(aid, 0))
             try:
                 cache = cache_info(s and s.get("sessionId"))
             except OSError:
@@ -479,6 +530,7 @@ class Watcher:
 
     def run(self):
         while True:
+            restart_if_changed()
             try:
                 self.poll()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
@@ -491,6 +543,27 @@ class Watcher:
 
 
 WATCH = Watcher()
+
+# A running server never picks up edits to its own code, so an old one kept sending replies without the
+# "post your answer on the card" line. It re-execs itself when its sources change and still compile.
+SOURCES = [os.path.join(HERE, n) for n in ("server.py", "reports.py")]
+_started = {f: os.path.getmtime(f) for f in SOURCES}
+ACTION = threading.Lock()  # held by launch/reply so a restart never cuts one off mid-way
+
+
+def restart_if_changed():
+    if all(os.path.getmtime(f) == m for f, m in _started.items()):
+        return
+    for f in SOURCES:
+        try:
+            py_compile.compile(f, doraise=True)
+        except py_compile.PyCompileError as e:
+            print("not restarting, source does not compile:", e)
+            _started.update({f: os.path.getmtime(f) for f in SOURCES})
+            return
+    with ACTION:
+        print("task board: code changed, restarting")
+        os.execv(sys.executable, sys.orig_argv)  # same interpreter flags, script path and cwd
 
 
 def report_cmd(p, task_id):
@@ -594,6 +667,8 @@ class Handler(SimpleHTTPRequestHandler):
                 else:
                     self._send(200, b"null")
             self._errors(tasks)
+        elif path == "/api/default-model":
+            self._errors(lambda: self._json(200, default_model(project(pid))))
         elif path == "/api/agents":
             self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
         else:
@@ -621,7 +696,9 @@ class Handler(SimpleHTTPRequestHandler):
                 forget_project(body["p"])
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                self._json(200, {"id": launch(project(body["p"]), body["taskId"], body.get("model") or "")})
+                with ACTION:
+                    aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
+                self._json(200, {"id": aid})
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
@@ -630,8 +707,9 @@ class Handler(SimpleHTTPRequestHandler):
                 p = project(body["p"])
                 images = [n for n in body.get("images", [])
                           if os.path.exists(reports.image_path(reports.log_images(p.board), n))]
-                reply(p, body["taskId"], body["text"].strip() or ("See the attached images." if images else "Go ahead."),
-                      images)
+                with ACTION:
+                    reply(p, body["taskId"],
+                          body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
                 self._json(200, {"ok": True})
         self._errors(handle)
 
@@ -667,8 +745,6 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if "/api/" not in self.path and "/files/" not in self.path:
             super().log_message(fmt, *args)
-        elif path == "/api/default-model":
-            self._errors(lambda: self._json(200, default_model(project(pid))))
 
 
 def main():
