@@ -506,6 +506,11 @@ function nextOrder(colId) {
   const inCol = state.tasks.filter((t) => t.column === colId);
   return inCol.length ? Math.max(...inCol.map((t) => t.order)) + 1 : 0;
 }
+// The first card in the column other than `skip` (null = empty column).
+function topCard(colId, skip) {
+  const inCol = state.tasks.filter((t) => t.column === colId && t.id !== skip).sort((a, b) => a.order - b.order);
+  return inCol.length ? inCol[0].id : null;
+}
 function firstOrder(colId) {
   const inCol = state.tasks.filter((t) => t.column === colId);
   return inCol.length ? Math.min(...inCol.map((t) => t.order)) - 1 : 0;
@@ -1213,7 +1218,8 @@ async function pollAgents() {
       const t = task(id), was = agents[id] && agents[id].phase;
       if (!t || !polledOnce || was === a.phase) continue;
       const review = colNamed(/review/i), prog = colNamed(/progress|doing/i);
-      if (a.phase === "finished" && review && !isDone(t) && t.column !== review.id) moveTask(t.id, review.id, null);
+      // Newest finished work goes on top of Review, even if the card was already there.
+      if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
       if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
     }
     const changed = JSON.stringify(next) !== JSON.stringify(agents);
