@@ -534,6 +534,71 @@ def cache_info(session_id):
     return info
 
 
+SUB_TAIL = 256 << 10
+_sub_memo = {}  # subagent transcript path -> ((mtime, size), row)
+
+
+def _action(block):
+    """'Edit · index.html' / 'Bash · Run the tests' from a tool_use block."""
+    a = block.get("input") or {}
+    arg = (os.path.basename(a["file_path"]) if a.get("file_path") else
+           a.get("description") or a.get("pattern") or a.get("query") or a.get("url") or "")
+    return (block.get("name") or "tool") + (" · " + str(arg).splitlines()[0][:80] if arg else "")
+
+
+def subagents(session_id):
+    """The session's Agent-tool subagents from <session>/subagents/agent-<id>.{meta.json,jsonl}:
+    [{id, name, type, started, updated, finished, action}], oldest first. finished = its last entry is an
+    end_turn reply; a subagent cut off mid-run stays unfinished (the board shows it as stopped)."""
+    path = transcript_path(session_id)
+    folder = path and os.path.join(path[:-len(".jsonl")], "subagents")
+    if not folder or not os.path.isdir(folder):
+        return []
+    rows = []
+    for name in os.listdir(folder):
+        if not name.endswith(".jsonl"):
+            continue
+        f = os.path.join(folder, name)
+        st = os.stat(f)
+        memo = _sub_memo.get(f)
+        if memo and memo[0] == (st.st_mtime, st.st_size):
+            rows.append(memo[1])
+            continue
+        try:
+            with open(f[:-len(".jsonl")] + ".meta.json", encoding="utf-8") as m:
+                meta = json.load(m)
+        except (OSError, ValueError):
+            meta = {}
+        with open(f, "rb") as fh:
+            first = fh.readline()
+            fh.seek(max(0, st.st_size - SUB_TAIL))
+            tail = fh.read().decode("utf-8", "replace").splitlines()
+        entries = []
+        for line in tail:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict) and e.get("type") in ("user", "assistant"):
+                entries.append(e)
+        try:
+            started = _ts(json.loads(first)["timestamp"])
+        except (ValueError, KeyError, TypeError):
+            started = st.st_mtime
+        last = entries[-1] if entries else {}
+        msg = last.get("message") or {}
+        action = next((_action(b) for e in reversed(entries) for b in reversed((e.get("message") or {}).get("content") or [])
+                       if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") != "SubagentHandback"), "")
+        row = {"id": name[len("agent-"):-len(".jsonl")], "name": meta.get("description") or "Subagent",
+               "type": meta.get("agentType") or "", "started": started,
+               "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
+               "finished": last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
+               "action": action}
+        _sub_memo[f] = ((st.st_mtime, st.st_size), row)
+        rows.append(row)
+    return sorted(rows, key=lambda r: r["started"])
+
+
 class Watcher:
     """Polls session state for every task with an agent, in every remembered project; the board reads the cache."""
 
@@ -578,8 +643,12 @@ class Watcher:
                 cache = cache_info(s and s.get("sessionId"))
             except OSError:
                 cache = None
+            try:
+                subs = subagents(s and s.get("sessionId"))
+            except OSError:
+                subs = []
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
-                                      "phase": phase, "reason": reason, "log": log, "cache": cache}
+                                      "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs}
         with self.lock:
             old, self.cache = self.cache, fresh
             primed, self.primed = self.primed, True

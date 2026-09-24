@@ -263,6 +263,12 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-prompt-note:empty { display: none; }
 #d-prompt-note { margin: 0 0 6px; }
 #panel.sent .actions { margin-top: 16px; }
+.sa-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sa-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
+.sa-list .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-list .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: calc(12px * var(--ts)); }
+.sa-list .act { grid-column: 1 / -1; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent.stopped { background: var(--line); color: var(--muted); }
 @media (max-width: 480px) { .ov-cards { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
@@ -312,6 +318,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
         </div>
         <div class="ov-box" id="d-crit"><div class="crit-head">Completion criteria<span id="d-crit-n"></span></div><div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></div>
         <div class="ov-box next"><span class="ov-ico st" data-ico="bolt" data-s="18"></span><div><span class="lbl">Next action</span><div id="d-next"></div></div></div>
+        <div class="ov-box" id="d-subagents"><div class="crit-head">Subagents<span id="d-sa-n"></span></div><ul class="sa-list" id="d-sa-list"></ul></div>
         <div class="ov-box" id="d-prompt"><button class="pr-head"><span class="ov-ico" data-ico="doc" data-s="18"></span><b>Original prompt</b><span class="chev" data-ico="chev"></span></button>
           <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></div>
       </div>
@@ -995,6 +1002,23 @@ function nextAction(t, ag) {
   return "Claude is working — nothing to do yet.";
 }
 
+// Subagents come from the session's transcripts (server: subagents()). Unfinished while the session is not
+// working means it was cut off, so it shows as stopped rather than running forever.
+function renderSubagents(ag) {
+  const subs = (ag && ag.subagents) || [];
+  $("#d-subagents").style.display = subs.length ? "" : "none";
+  const run = subs.filter((s) => !s.finished && ag.phase === "working").length;
+  $("#d-sa-n").textContent = run ? `${run} running of ${subs.length}` : `${subs.length}`;
+  const dur = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "<1m" : m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
+  $("#d-sa-list").innerHTML = subs.map((s) => {
+    const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
+    const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
+    return `<li title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
+      <span class="meta"><span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
+      ${s.action ? `<span class="act">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}</li>`;
+  }).join("");
+}
+
 function renderOverview(t) {
   const sent = !!t.agent;
   $("#panel").classList.toggle("sent", sent);
@@ -1021,6 +1045,7 @@ function renderOverview(t) {
   $("#d-crit-n").textContent = `${done} of ${kids.length}`;
   $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
   $("#d-next").textContent = nextAction(t, ag);
+  renderSubagents(ag);
   if ($("#d-prompt").classList.contains("open")) loadPrompt(t);
   paintGit(t);
   loadGit().then(() => { const o = openId && task(openId); if (o && o.agent) paintGit(o); });
