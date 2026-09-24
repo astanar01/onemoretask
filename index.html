@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Task Board</title>
+<script>try { const t = localStorage.getItem("task-board:theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}</script>
 <style>
 :root {
   --ts: 1;
@@ -12,12 +13,21 @@
   --drop: #7a4fd6; --shadow: 0 1px 2px rgba(0,0,0,.08), 0 1px 1px rgba(0,0,0,.04);
   --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b;
 }
+/* Theme: follows the system unless the header's Theme menu sets data-theme on <html>. */
+:root { color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
     --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
     --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
+  --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
+  --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -39,6 +49,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 #project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
+#theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
 #text-size { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: calc(13px * var(--ts)); }
 
@@ -202,6 +213,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <input id="search" type="search" placeholder="Filter tasks…">
   <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <span class="grow"></span>
+  <button class="btn" id="theme"></button>
   <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <span id="status"></span>
@@ -1109,6 +1121,22 @@ $("#text-size").addEventListener("change", (e) => {
   applyTextSize(e.target.value);
   try { localStorage.setItem(LS_KEY + ":ts", e.target.value); } catch (_) {}
 });
+// Theme: "" follows the system; the <head> script applies the saved choice before first paint.
+const THEMES = { "": ["◐", "System"], light: ["☀", "Light"], dark: ["☾", "Dark"] };
+function showTheme() {
+  const [icon, name] = THEMES[document.documentElement.dataset.theme || ""];
+  $("#theme").textContent = icon;
+  $("#theme").title = `Theme: ${name} (click to change)`;
+}
+$("#theme").addEventListener("click", () => {
+  const order = ["", "light", "dark"];
+  const next = order[(order.indexOf(document.documentElement.dataset.theme || "") + 1) % order.length];
+  if (next) document.documentElement.dataset.theme = next;
+  else delete document.documentElement.dataset.theme;
+  try { if (next) localStorage.setItem(LS_KEY + ":theme", next); else localStorage.removeItem(LS_KEY + ":theme"); } catch (_) {}
+  showTheme();
+});
+showTheme();
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}

@@ -66,6 +66,8 @@ the git repo you run it from.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session.
 
+The ◐ button in the header switches the theme: System (follows your computer), Light, or Dark.
+
 To see a session in the terminal: `claude agents` lists them and `claude attach <id>` opens one.
 
 ### Posting from an agent
