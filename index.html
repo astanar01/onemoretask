@@ -203,6 +203,67 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #lightbox .x-close { position: fixed; top: 14px; right: 18px; color: #fff; background: rgba(0,0,0,.4); }
 #lightbox .x-close:hover { background: rgba(255,255,255,.2); color: #fff; }
 .panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: calc(12px * var(--ts)); align-items: center; }
+/* sent task: the left pane swaps the edit form for an overview (#panel.sent) */
+#d-ov, #d-meta { display: none; }
+#panel.sent #d-ov { display: block; }
+#panel.sent #d-meta { display: flex; }
+#panel.sent #d-title { color: var(--text); font-size: calc(22px * var(--ts)); }
+#panel.sent .fields, #panel.sent #d-notesblock, #panel.sent #d-subblock { display: none; }
+#d-meta { align-items: center; gap: 10px; margin: 2px 0 0 7px; color: var(--muted); font-size: calc(13px * var(--ts)); }
+#d-meta .sep { width: 1px; height: 1em; background: var(--line); }
+#d-meta span, .chip span, .tab { display: inline-flex; align-items: center; gap: 6px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 10px 0 14px; }
+.tab { border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--muted); padding: 8px 14px; }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+.badge { background: var(--col); color: var(--text); border-radius: 6px; padding: 0 7px; font-size: calc(11px * var(--ts)); }
+.badge:empty { display: none; }
+#d-ov[data-tab="images"] #d-tab-overview, #d-ov:not([data-tab="images"]) #d-allimgs { display: none; }
+.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.img-grid .thumb { width: auto; height: 96px; }
+.img-grid:empty::before { content: "No images yet."; color: var(--muted); }
+.ov-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ov-card, .ov-box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.ov-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; min-width: 0; }
+.ov-card > div { min-width: 0; }
+.ov-ico { flex: none; display: flex; color: var(--muted); margin-top: 1px; }
+.ov-ico.st { color: var(--accent); }
+.ov-ico.fl { color: var(--wait); }
+.lbl { display: block; font-size: calc(12px * var(--ts)); color: var(--muted); }
+.sel { position: relative; display: inline-flex; align-items: center; max-width: 100%; }
+.sel select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; font-weight: 600; padding: 0 20px 0 0; max-width: 100%; text-overflow: ellipsis; cursor: pointer; }
+.sel select:focus-visible { outline: 1px solid var(--accent); border-radius: 4px; }
+.sel > [data-ico] { position: absolute; right: 0; display: flex; pointer-events: none; color: var(--muted); }
+[data-ico] { display: inline-flex; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.chips[hidden], .chip[hidden] { display: none; }
+.chip { display: inline-flex; border: 1px solid var(--line); background: var(--card); border-radius: 999px; font-size: calc(13px * var(--ts)); overflow: hidden; }
+.chip > span { padding: 5px 12px; }
+.chip > .k { color: var(--muted); border-right: 1px solid var(--line); }
+.chip .dirty { color: var(--muted); font-weight: 400; }
+.ov-box { margin-top: 12px; padding: 12px 14px; }
+.crit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-weight: 600; }
+.crit-head span { font-weight: 400; color: var(--muted); font-size: calc(12px * var(--ts)); }
+.crit-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 10px 0 6px; }
+.crit-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+#d-crit .sub-list { margin: 0; }
+#d-crit .sub-list li { padding: 5px 0; }
+#d-crit .sub-list li:hover { background: transparent; }
+#d-crit .sub-list li .t:hover { color: var(--accent); }
+#d-crit .sub-list li .c { display: none; }
+#d-crit .sub-list input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.ov-box.next { display: flex; gap: 10px; align-items: flex-start; }
+.pr-head { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; text-align: left; }
+.pr-head b { flex: 1; font-weight: 400; }
+.pr-head .chev { display: flex; color: var(--muted); transition: transform .15s; }
+#d-prompt.open .chev { transform: rotate(180deg); }
+.pr-body { display: none; margin-top: 10px; }
+#d-prompt.open .pr-body { display: block; }
+#d-prompt pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; font-size: calc(12px * var(--ts)); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+#d-prompt-note:empty { display: none; }
+#d-prompt-note { margin: 0 0 6px; }
+#panel.sent .actions { margin-top: 16px; }
+@media (max-width: 480px) { .ov-cards { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -226,6 +287,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     <button class="x-close" id="d-x" title="Close">✕</button>
     <div class="crumb" id="d-crumb"></div>
     <input id="d-title" placeholder="Task title">
+    <div id="d-meta"></div>
     <div class="panel-cols">
     <div class="panel-left">
     <div class="fields">
@@ -237,7 +299,25 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <div><label for="d-submodel">Subagent model</label>
         <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
     </div>
-    <div class="block"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
+    <div id="d-ov">
+      <div class="tabs"><button class="tab" data-tab="overview">Overview</button><button class="tab" data-tab="images">All images <span data-ico="image"></span><span class="badge" id="d-imgcount"></span></button></div>
+      <div id="d-tab-overview">
+        <div class="ov-cards">
+          <div class="ov-card"><span class="ov-ico st" data-ico="status" data-s="18"></span><div><span class="lbl">Status</span><span class="sel" id="d-col-slot"><span data-ico="chev" data-s="14"></span></span></div></div>
+          <div class="ov-card"><span class="ov-ico fl" data-ico="flag" data-s="18"></span><div><span class="lbl">Priority</span><span class="sel" id="d-prio-slot"><span data-ico="chev" data-s="14"></span></span></div></div>
+        </div>
+        <div class="chips" id="d-chips">
+          <span class="chip" id="d-git"><span class="k"><span data-ico="branch"></span>Git</span><span class="v"></span></span>
+          <span class="chip" id="d-rel"><span class="k"><span data-ico="tag"></span>Release</span><span class="v"></span></span>
+        </div>
+        <div class="ov-box" id="d-crit"><div class="crit-head">Completion criteria<span id="d-crit-n"></span></div><div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></div>
+        <div class="ov-box next"><span class="ov-ico st" data-ico="bolt" data-s="18"></span><div><span class="lbl">Next action</span><div id="d-next"></div></div></div>
+        <div class="ov-box" id="d-prompt"><button class="pr-head"><span class="ov-ico" data-ico="doc" data-s="18"></span><b>Original prompt</b><span class="chev" data-ico="chev"></span></button>
+          <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></div>
+      </div>
+      <div class="img-grid" id="d-allimgs"></div>
+    </div>
+    <div class="block" id="d-notesblock"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
       <div class="thumbs" id="d-images"></div>
       <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
     <div class="block" id="d-subblock">
@@ -702,6 +782,7 @@ function renderDetail() {
   $("#d-crumb").innerHTML = chain.length
     ? "Subtask of " + chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ")
     : "Task";
+  $("#d-crumb").style.display = t.agent && !chain.length ? "none" : "";
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
@@ -878,6 +959,108 @@ function renderAgent(t) {
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   renderReplyImages();
+  renderOverview(t);
+}
+
+// ---------------------------------------------------------------- sent-task overview (left pane)
+const ICONS = {
+  status: `<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>`,
+  flag: `<path d="M5 21V4h12l-2.5 4.5L17 13H5"/>`,
+  branch: `<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 4-3 5-6 5s-6 1-6 3"/>`,
+  tag: `<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>`,
+  bolt: `<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>`,
+  doc: `<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>`,
+  chev: `<path d="M6 9l6 6 6-6"/>`,
+  image: `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>`,
+};
+const icon = (k, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
+document.querySelectorAll("[data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
+
+// Form elements move between the edit form and the overview, so each ID exists once.
+const place = (el, box, before = null) => { if (el.parentNode !== box) box.insertBefore(el, before); };
+let ovFor = null, ovTab = "overview";
+function showTab() {
+  $("#d-ov").dataset.tab = ovTab;
+  document.querySelectorAll("#d-ov .tab").forEach((b) => b.classList.toggle("on", b.dataset.tab === ovTab));
+}
+document.querySelectorAll("#d-ov .tab").forEach((b) => (b.onclick = () => { ovTab = b.dataset.tab; showTab(); }));
+
+function nextAction(t, ag) {
+  if (isDone(t)) return "Nothing — this task is done.";
+  if (!ag || ag.phase === "working") return "Claude is working — nothing to do yet.";
+  if (ag.phase === "gone") return "Session removed — nothing to do.";
+  const last = (ag.log || []).filter((e) => e.from !== "you").pop();
+  if (ag.phase === "needs_you") return last && last.status === "question" ? "Answer Claude's question." : ag.reason || "Claude is waiting on you.";
+  if (ag.phase === "finished" || (last && last.status === "done")) return inReview(t) ? "Review the work, then move it to done." : "Review the work.";
+  return "Claude is working — nothing to do yet.";
+}
+
+function renderOverview(t) {
+  const sent = !!t.agent;
+  $("#panel").classList.toggle("sent", sent);
+  if (!sent) {
+    place($("#d-col"), $("label[for=d-col]").parentNode);
+    place($("#d-prio"), $("label[for=d-prio]").parentNode);
+    place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
+    place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
+    return;
+  }
+  place($("#d-col"), $("#d-col-slot"), $("#d-col-slot").firstChild);
+  place($("#d-prio"), $("#d-prio-slot"), $("#d-prio-slot").firstChild);
+  place($("#d-subs"), $("#d-crit-slot"));
+  place($("#d-images"), $("#d-prompt-imgs"));
+  if (ovFor !== t.id) { ovFor = t.id; ovTab = "overview"; $("#d-prompt").classList.remove("open"); }
+  showTab();
+  const ag = agents[t.id];
+  const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => e.images || []))];
+  $("#d-imgcount").textContent = own.length + fromLog.length || "";
+  const grid = thumbItems(own, fileDir("images")) + thumbItems(fromLog, fileDir("agent_reports/images"));
+  if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;
+  const kids = children(t.id), done = kids.filter(isDone).length;
+  $("#d-crit").style.display = kids.length ? "" : "none";
+  $("#d-crit-n").textContent = `${done} of ${kids.length}`;
+  $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
+  $("#d-next").textContent = nextAction(t, ag);
+  if ($("#d-prompt").classList.contains("open")) loadPrompt(t);
+  paintGit(t);
+  loadGit().then(() => { const o = openId && task(openId); if (o && o.agent) paintGit(o); });
+}
+
+// GET /api/git -> { branch, tag, dirty }; cached per project for 30 s. A failed fetch just hides the chips.
+let gitInfo = { pid: null, at: 0, data: null };
+async function loadGit() {
+  const pid = P;
+  if (!useServer || !pid || (gitInfo.pid === pid && Date.now() - gitInfo.at < 30000)) return;
+  gitInfo = { pid, at: Date.now(), data: gitInfo.pid === pid ? gitInfo.data : null };
+  let data = null;
+  try { const r = await fetch(api("/api/git"), { cache: "no-store" }); if (r.ok) data = await r.json(); } catch (_) {}
+  if (gitInfo.pid === pid) gitInfo.data = data;
+}
+function paintGit(t) {
+  const g = (gitInfo.pid === P && gitInfo.data) || {};
+  $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (g.branch ? `<i class="sep"></i><span>${icon("branch", 14)}${esc(g.branch)}</span>` : "");
+  $("#d-git").hidden = !g.branch;
+  $("#d-git .v").innerHTML = g.branch ? esc(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes">•</span>` : "") : "";
+  $("#d-rel").hidden = !g.tag;
+  $("#d-rel .v").textContent = g.tag || "";
+  $("#d-chips").hidden = !g.branch && !g.tag;
+}
+
+// GET /api/prompt&t=<id> -> { prompt, saved }. Fixed once sent, so kept per task; failures retry on the next open.
+const prompts = {};
+$("#d-prompt .pr-head").onclick = () => { const t = task(openId); if ($("#d-prompt").classList.toggle("open") && t) loadPrompt(t); };
+async function loadPrompt(t) {
+  const key = P + ":" + t.id;
+  if (!prompts[key] && useServer) {
+    $("#d-prompt-text").textContent = "Loading…";
+    prompts[key] = fetch(api("/api/prompt") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .catch(() => { delete prompts[key]; return null; });
+  }
+  const res = await prompts[key];
+  if (openId !== t.id) return;
+  $("#d-prompt-text").textContent = (res && res.prompt) || t.notes || "No notes.";
+  $("#d-prompt-note").textContent = res && res.saved === false ? "Rebuilt from the current card (sent before prompts were saved)." : "";
 }
 // Names the model a launch with no --model gets. The server may still be probing the account default (null).
 let defaultModel = { pid: null, model: null, at: 0 };
