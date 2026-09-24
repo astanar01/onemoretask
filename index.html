@@ -99,8 +99,12 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
 .panel-right > .block { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .actions { display: flex; gap: 10px; align-items: center; }
-.trust { border: 1px solid var(--danger); border-radius: 8px; padding: 10px 12px; }
-.trust p { margin: 0 0 10px; }
+#trust-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open { display: flex; }
+#trust-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions { justify-content: flex-end; }
 #d-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
 .panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
@@ -230,7 +234,6 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
     </div>
     <div class="block actions"><button class="btn primary" id="d-send"></button><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option></select><button class="btn danger" id="d-delete">Delete</button></div>
-    <div class="block trust" id="d-trust" style="display:none"><p>Claude doesn't trust <b id="d-trust-path"></b> yet. Trusting it lets Claude read, edit and run files in this folder, the same as accepting the prompt in <code>claude</code>.</p><div class="actions"><button class="btn primary" id="d-trust-yes">Trust folder and send</button><button class="btn" id="d-trust-no">Cancel</button></div></div>
     </div>
     <div class="panel-right" id="d-right">
     <div class="block"><label>Claude</label><div id="d-agent"></div>
@@ -247,6 +250,11 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   </div>
 </div>
 <div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
+<div id="trust-modal" role="dialog" aria-modal="true" aria-labelledby="trust-title"><div class="box">
+  <h3 id="trust-title">Trust this folder?</h3>
+  <p>Claude doesn't trust <b id="trust-path"></b> yet. Trusting it lets Claude read, edit and run files in this folder, the same as accepting the prompt in <code>claude</code>.</p>
+  <div class="actions"><button class="btn" id="trust-no">Cancel</button><button class="btn primary" id="trust-yes">Trust folder and send</button></div>
+</div></div>
 
 <script>
 "use strict";
@@ -774,7 +782,8 @@ $("#d-delete").onclick = () => {
 };
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && lightboxOpen()) closeLightbox();
+  if (e.key === "Escape" && trustOpen()) closeTrust(true);
+  else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && openId) closeDetail();
   else if (e.key === "/" && !openId && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("#search").focus(); }
 });
@@ -831,7 +840,6 @@ function renderAgent(t) {
   send.disabled = !useServer;
   send.title = useServer ? "Start a background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
-  renderTrust(t);
   const model = $("#d-model");
   model.style.display = send.style.display;
   model.disabled = !useServer;
@@ -891,24 +899,29 @@ async function post(url, body) {
 }
 
 // `claude --bg` refuses a folder whose trust prompt was never accepted; ask here instead of in a terminal.
-let trustAsk = null;             // task id whose send is waiting on the trust question
-function renderTrust(t) {
-  const show = trustAsk === t.id && !t.agent;
-  $("#d-trust").style.display = show ? "" : "none";
-  if (!show) return;
-  $("#d-trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || "this folder";
-  $("#d-trust-no").onclick = () => { trustAsk = null; renderTrust(t); setStatus("Not sent: folder not trusted"); };
-  $("#d-trust-yes").onclick = async () => {
-    $("#d-trust-yes").disabled = true;
+// An in-page modal, not window.confirm (a browser dialog blocks browser automation).
+const trustOpen = () => $("#trust-modal").classList.contains("open");
+function closeTrust(cancelled) {
+  $("#trust-modal").classList.remove("open");
+  if (cancelled) setStatus("Not sent: folder not trusted");
+}
+function askTrust(t) {
+  $("#trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || "this folder";
+  $("#trust-no").onclick = () => closeTrust(true);
+  $("#trust-yes").onclick = async () => {
+    $("#trust-yes").disabled = true;
     try {
       await post("/api/projects/trust", { p: P });
-      trustAsk = null; renderTrust(t);
+      closeTrust(false);
       await sendToClaude(t);
     } catch (e) {
       setStatus("Trust failed: " + e.message, true);
-    } finally { $("#d-trust-yes").disabled = false; }
+    } finally { $("#trust-yes").disabled = false; }
   };
+  $("#trust-modal").classList.add("open");
+  $("#trust-yes").focus();
 }
+$("#trust-modal").addEventListener("mousedown", (e) => { if (e.target.id === "trust-modal") closeTrust(true); });
 
 
 async function sendToClaude(t) {
@@ -933,7 +946,7 @@ async function sendToClaude(t) {
     dropPending(t, pm);
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // else its "Saved" would replace the error
-    if (e.untrusted) { trustAsk = t.id; setStatus("Claude needs you to trust this folder first", true); }
+    if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
     else setStatus("Send to Claude failed: " + e.message, true);
   }
   render();
