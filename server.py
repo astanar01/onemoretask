@@ -21,7 +21,9 @@ button passes --model (an alias like fable / opus / sonnet / haiku, or blank for
 the CLI default, which the picker names: the "model" key from the settings files,
 else a one-off `claude -p` probe of the account default, about $0.09, cached 24h in
 ~/.config/task_board/default_model.json). The session keeps it across replies; Haiku has no auto mode,
-so it runs with manual permission prompts.
+so it runs with manual permission prompts. A folder Claude does not trust yet makes the
+card ask first; "Trust folder and send" sets hasTrustDialogAccepted for it in ~/.claude.json
+(what accepting the CLI's trust prompt does) and retries.
 
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
 `subagentModel`) gets a delegation brief in its prompt (never plan mode): analyse the task, split
@@ -320,6 +322,29 @@ def default_model(p):
     return {"model": cached.get("model"), "source": "account"}
 
 
+CLAUDE_JSON = os.path.expanduser("~/.claude.json")
+
+
+class UntrustedError(Exception):
+    """The CLI refuses `--bg` in a folder whose trust prompt was never accepted."""
+
+
+def trust_folder(p):
+    """Record what accepting Claude's trust prompt records: projects[<path>].hasTrustDialogAccepted.
+    Running sessions rewrite this file too, so read-modify-replace in one short step, then read back."""
+    with open(CLAUDE_JSON, encoding="utf-8") as f:
+        cfg = json.load(f)
+    cfg.setdefault("projects", {}).setdefault(p.path, {})["hasTrustDialogAccepted"] = True
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CLAUDE_JSON), suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    os.chmod(tmp, os.stat(CLAUDE_JSON).st_mode & 0o777)
+    os.replace(tmp, CLAUDE_JSON)
+    with open(CLAUDE_JSON, encoding="utf-8") as f:
+        if not json.load(f).get("projects", {}).get(p.path, {}).get("hasTrustDialogAccepted"):
+            raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
+
+
 def launch(p, task_id, model=""):
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
@@ -334,6 +359,8 @@ def launch(p, task_id, model=""):
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
+        if re.search(r"not trusted", out, re.I):
+            raise UntrustedError(p.path)
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
     reports.append(p.board, task_id, "launch", f"Sent to Claude (session {m.group(1)}, model {model or 'default'})",
                    "you", session=m.group(1))
@@ -622,6 +649,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(400, {"error": str(e)})
         except PermissionError as e:
             self._json(409, {"error": str(e)})
+        except UntrustedError as e:
+            self._json(409, {"error": f"Claude does not trust {e} yet", "untrusted": True})
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)})
 
@@ -658,7 +687,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         path, _ = self._route()
         routes = ("/api/agent", "/api/agent/reply", "/api/image", "/api/projects", "/api/projects/pick",
-                  "/api/projects/forget")
+                  "/api/projects/forget", "/api/projects/trust")
         if path not in routes:
             self._send(404)
             return
@@ -675,6 +704,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, open_project(folder).info() if folder else {"cancelled": True})
             elif path == "/api/projects/forget":
                 forget_project(body["p"])
+                self._json(200, {"ok": True})
+            elif path == "/api/projects/trust":
+                trust_folder(project(body["p"]))
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
                 aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
