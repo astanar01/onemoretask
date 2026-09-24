@@ -96,6 +96,7 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 ├── .gitignore            keeps agent_reports/ out of git
 └── agent_reports/
     ├── <task_id>.json    the messages on that card (you and Claude)
+    ├── <task_id>.prompt.txt  the exact prompt Claude got when the task was sent
     └── images/           images from replies and report.py --image
 ```
 
