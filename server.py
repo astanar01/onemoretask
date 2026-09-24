@@ -427,8 +427,24 @@ def phase_of(session, log, launched_at):
     if last.get("status") in ("done", "answer"):
         return "finished", last["message"]
     if st == "blocked":
+        # The CLI marks a turn "blocked" when its own end-of-turn summary sounds like it waits on you
+        # ("awaiting reload test"), so a finished turn that ended on a progress note lands here too.
+        detail = job_detail(session.get("id"))
+        if last.get("from") == "claude" and last.get("status") == "progress":
+            return "needs_you", "Stopped after a progress note without reporting done — reply to check on it" + (f" (CLI: {detail})" if detail else "")
+        if detail:
+            return "needs_you", f"Stopped in the session: {detail} — reply, or attach if it asks for a permission"
         return "needs_you", "Waiting on a permission prompt or a question in the session — attach to answer"
     return "needs_you", "Stopped without reporting — attach or reply to check on it"
+
+
+def job_detail(job_id):
+    """The CLI's one-line summary of where a background session stopped ('' if unknown)."""
+    try:
+        with open(os.path.join(os.path.expanduser("~/.claude/jobs"), job_id or "", "state.json")) as f:
+            return (json.load(f).get("detail") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
 
 
 def list_sessions(cwd):
