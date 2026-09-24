@@ -699,7 +699,7 @@ function cardEl(t, top, nestedCount) {
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}
-    ${inReview(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
+    ${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -832,7 +832,6 @@ function renderDetail() {
   $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
   renderAgent(t);
   $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
-  $("#d-to-done").style.display = inReview(t) ? "" : "none";
   disarmDelete();
 }
 
@@ -933,6 +932,13 @@ function tickCache() {
 setInterval(tickCache, 15000);
 const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
 function inReview(t) { const r = colNamed(/review/i); return !!(r && t.column === r.id); }
+// No "Move to done" while Claude still has work: running, a reply in flight, or a reply it has not answered yet.
+function canFinish(t) {
+  if (!inReview(t)) return false;
+  const ag = t.agent && agents[t.id], last = ag && ag.log && ag.log[ag.log.length - 1];
+  if ((pending[t.id] || []).length) return false;
+  return !ag || ag.phase === "gone" || (ag.phase !== "working" && !(last && last.from === "you"));
+}
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
 function renderAgent(t) {
@@ -966,6 +972,7 @@ function renderAgent(t) {
   const shown = log.slice(-30).concat(pending[t.id] || []);
   $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-log").scrollTop = $("#d-log").scrollHeight;
+  $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
