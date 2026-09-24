@@ -86,6 +86,10 @@ def _path(board, task_id):
     return os.path.join(board, "agent_reports", task_id + ".json")
 
 
+def prompt_path(board, task_id):
+    return _path(board, task_id)[:-len(".json")] + ".prompt.txt"
+
+
 def read(board, task_id):
     try:
         with open(_path(board, task_id), encoding="utf-8") as f:

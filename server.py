@@ -353,8 +353,13 @@ def launch(p, task_id, model=""):
     if t.get("agent"):
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
+    prompt = build_prompt(p, state, t)
+    path = reports.prompt_path(p.board, task_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(prompt)
     r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
-                        build_prompt(p, state, t)],
+                        prompt],
                        cwd=p.path, capture_output=True, text=True, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
@@ -366,6 +371,37 @@ def launch(p, task_id, model=""):
                    "you", session=m.group(1))
     WATCH.expect(p, task_id, m.group(1))
     return m.group(1)
+
+
+def task_prompt(p, task_id):
+    path = reports.prompt_path(p.board, task_id)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {"prompt": f.read(), "saved": True}
+    except FileNotFoundError:
+        pass
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    if not t:
+        raise LookupError("no such task")
+    return {"prompt": build_prompt(p, state, t), "saved": False}
+
+
+def git_info(p):
+    def git(*args):
+        try:
+            r = subprocess.run(["git", "-C", p.path, *args], capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout.strip() if r.returncode == 0 else None
+
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch is None:
+        return {"branch": None, "tag": None, "dirty": False}
+    if branch == "HEAD":
+        branch = git("rev-parse", "--short", "HEAD")
+    return {"branch": branch, "tag": git("describe", "--tags", "--abbrev=0") or None,
+            "dirty": bool(git("status", "--porcelain"))}
 
 
 def phase_of(session, log, launched_at):
@@ -681,6 +717,11 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(lambda: self._json(200, default_model(project(pid))))
         elif path == "/api/agents":
             self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
+        elif path == "/api/git":
+            self._errors(lambda: self._json(200, git_info(project(pid))))
+        elif path == "/api/prompt":
+            tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
+            self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
         else:
             super().do_GET()
 
