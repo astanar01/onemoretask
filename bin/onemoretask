@@ -1,22 +1,32 @@
-#!/bin/zsh
+#!/bin/sh
 # Start the task board server, then open it in the browser. If it is already running, just open it.
 # Extra arguments go to server.py (e.g. --port 9000, --project PATH).
-dir=${${(%):-%x}:A:h:h}
+self=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$0")
+dir=$(dirname "$(dirname "$self")")
+
 port=8765
-for ((i = 1; i <= $#; i++)); do
-  case ${@[i]} in
-    --port) port=${@[i+1]} ;;
-    --port=*) port=${@[i]#--port=} ;;
-  esac
+prev=
+for a in "$@"; do
+  case $a in --port=*) port=${a#--port=} ;; esac
+  [ "$prev" = --port ] && port=$a
+  prev=$a
 done
 url=http://127.0.0.1:$port
 
-if curl -s -o /dev/null -m 1 $url/; then
+browse() { if command -v open >/dev/null; then open "$1"; else xdg-open "$1" >/dev/null 2>&1; fi; }
+
+if curl -s -o /dev/null -m 1 "$url/"; then
   echo "Task board already running: $url"
-  open $url
+  browse "$url"
   exit 0
 fi
 
 # Open the page once the server answers, then hand this shell over to the server (Ctrl-C stops it).
-( for _ in {1..50}; do curl -s -o /dev/null -m 1 $url/ && { open $url; exit; }; sleep 0.2; done ) &!
-exec python3 $dir/server.py "$@"
+(
+  i=0
+  while [ $i -lt 50 ]; do
+    curl -s -o /dev/null -m 1 "$url/" && { browse "$url"; exit; }
+    sleep 0.2; i=$((i + 1))
+  done
+) &
+exec python3 "$dir/server.py" "$@"
