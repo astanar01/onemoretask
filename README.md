@@ -83,6 +83,109 @@ python3 report.py --board <project>/.task_board <task_id> done "what I did, what
 
 Add `--image <file>` to attach a screenshot.
 
+## Where your tasks are saved
+
+Everything is plain files on your computer. There is no database and no account.
+
+Each project keeps its board in a `.task_board/` folder at the project's root:
+
+```
+<project>/.task_board/
+├── tasks.json            the board: columns and tasks
+├── images/               images pasted into a task's notes
+├── .gitignore            keeps agent_reports/ out of git
+└── agent_reports/
+    ├── <task_id>.json    the messages on that card (you and Claude)
+    └── images/           images from replies and report.py --image
+```
+
+- **Commit** `tasks.json` and `images/` if you want the board in git. `agent_reports/` is
+  left out by the `.gitignore` the board creates.
+- **Images** are named by a hash of their content, e.g. `3f9a1c0b7d2e4a61.png`.
+  PNG, JPEG, GIF and WebP, up to 25 MB each.
+- A project that already has `tools/task_board/tasks.json` keeps using that folder.
+
+### `tasks.json`
+
+```json
+{
+  "version": 1,
+  "columns": [
+    { "id": "mufe2liudtw8l", "name": "To Do", "done": false },
+    { "id": "mufe2liuhd9ph", "name": "Done", "done": true }
+  ],
+  "tasks": [
+    {
+      "id": "mufeqdivus3yp",
+      "title": "Add a 7-day forecast view",
+      "notes": "Show highs, lows and rain chance.",
+      "priority": "high",
+      "tags": ["ui"],
+      "column": "mufe2liudtw8l",
+      "parent": null,
+      "order": 0,
+      "created": "2026-09-24T10:46:58.039Z",
+      "updated": "2026-09-24T10:56:30.709Z",
+      "agent": { "id": "04cc185b", "started": "2026-09-24T10:48:28.936Z", "model": "opus" }
+    }
+  ]
+}
+```
+
+- `priority` is `""`, `"low"`, `"med"` or `"high"`.
+- `parent` is the id of the parent task, or `null` for a top-level task. Subtasks are just
+  tasks with a parent.
+- `done: true` marks the column whose tasks count as finished.
+- `agent` is only there once the task was sent to Claude. It holds the Claude session id.
+- Optional fields: `images` (file names in `images/`), `delegate` and `subagentModel`
+  (the **Divide in subtasks** options).
+
+### Card messages: `agent_reports/<task_id>.json`
+
+A list of messages, oldest first:
+
+```json
+[
+  { "at": "2026-09-24T10:48:28+00:00", "status": "launch", "message": "Sent to Claude (session 04cc185b, model opus)", "from": "you", "session": "04cc185b" },
+  { "at": "2026-09-24T10:49:24+00:00", "status": "done", "message": "Added the forecast view.", "from": "claude" }
+]
+```
+
+`status` is `launch`, `reply`, `progress`, `question`, `done` or `answer`. `images` (file
+names) and `session` are added when they apply.
+
+### Outside the project
+
+| File | What it holds |
+|---|---|
+| `~/.config/task_board/projects.json` | The projects you opened, for the project menu |
+| `~/.config/task_board/default_model.json` | The name of your default Claude model, cached for 24 hours |
+| `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |
+| Your browser's local storage | View settings only: theme, text size, show subtasks, collapsed groups, last project, last model picked, which cards you have read |
+
+If you open `index.html` straight from disk (a `file://` page) instead of running the
+server, the board is saved in the browser's local storage only.
+
+## Privacy: everything stays on your computer
+
+onemoretask has no cloud service, no account, no analytics and no tracking.
+
+- The server listens only on `127.0.0.1`, so other computers can't reach it.
+- It only accepts changes from the board page itself. Other websites open in your
+  browser can't use it to start agents or write files.
+- The page loads nothing from the internet: no fonts, scripts or images from other sites.
+- Your tasks, messages and images are only saved in the files listed above.
+
+What does leave your computer, and why:
+
+- **Send to Claude and replies.** They run Claude Code (`claude`), which sends the task's
+  title, notes, subtasks and your replies to Anthropic, plus any image Claude opens, the same
+  as when you use Claude Code in a terminal. No task data goes out until you click Send.
+- **The default model name.** To show the name of your default model, the board runs
+  `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
+  skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
+- **Install and update.** The install command downloads the app from GitHub.
+
 ## Update
 
 Run the install command again. It pulls the latest version into `~/.onemoretask`.
