@@ -4,6 +4,12 @@ A local kanban board that hands cards to Claude Code. Write a task, click **Send
 and the agent works on it in the background, posting its progress, questions and results
 back onto the card.
 
+![The board: one task Claude is working on, one waiting on you, one finished](docs/screenshots/board.png)
+
+| Claude asks you a question | Claude reports it is done |
+|---|---|
+| ![A card with Claude's question and a reply box](docs/screenshots/question.png) | ![A card with Claude's progress and final report](docs/screenshots/finished.png) |
+
 ## Requirements
 
 - macOS or Linux
