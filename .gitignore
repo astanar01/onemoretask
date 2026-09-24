@@ -1,2 +1,3 @@
 agent_reports/
 __pycache__/
+.task_board/agent_reports/
