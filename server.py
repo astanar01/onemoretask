@@ -411,11 +411,13 @@ def review(p, task_id, level):
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
     log = reports.read(p.board, task_id)
-    since = next((e["at"] for e in log if e.get("status") == "launch"), t["agent"].get("started"))
+    since = next((e["at"] for e in reversed(log) if e.get("status") == "launch"), t["agent"].get("started"))
     commits = task_commits(p, since)
     if not commits:
         raise PermissionError("No commits since the task was sent — nothing to review")
-    report = next((e["message"] for e in reversed(log) if e.get("from") == "claude"
+    # The task's own report, not an earlier reviewer's findings: stop at the first review.
+    first_review = next((i for i, e in enumerate(log) if e.get("status") == "review"), len(log))
+    report = next((e["message"] for e in reversed(log[:first_review]) if e.get("from") == "claude"
                    and e.get("status") in ("done", "answer")), "(no final report)")
     board_rel = os.path.relpath(p.board, p.path)
     rep = report_cmd(p, task_id)
