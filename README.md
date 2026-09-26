@@ -65,6 +65,10 @@ the git repo you run it from.
    and on macOS you get a notification when it needs you or finishes.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session.
+6. **Review the code.** A finished card in the Review column has a **Review code** button.
+   It starts a fresh Claude session that finds the task's commits, runs Claude Code's
+   `/code-review` on them, and posts the findings on the card. Pick the depth in the
+   task panel: Low, Medium (default) or High. Reply to have it fix the findings.
 
 The ◐ button in the header switches the theme: System (follows your computer), Light, or Dark.
 
@@ -152,7 +156,7 @@ A list of messages, oldest first:
 ]
 ```
 
-`status` is `launch`, `reply`, `progress`, `question`, `done` or `answer`. `images` (file
+`status` is `launch`, `reply`, `review`, `progress`, `question`, `done` or `answer`. `images` (file
 names) and `session` are added when they apply.
 
 ### Outside the project

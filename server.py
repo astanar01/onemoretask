@@ -39,6 +39,11 @@ with the reply as its next message (`claude --bg --resume` on a live session
 would start a copy instead). If the session then stops without calling report.py, the
 watcher copies its chat answer from the transcript onto the card (status "answer").
 
+"Review code" (a finished card in Review) starts a fresh `claude --bg` session on the task's model that picks
+the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
+card's report), runs the built-in /code-review skill on them at the chosen depth (low / medium / high), and posts
+the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
+
 The server re-execs itself when server.py or reports.py change (and still compile), so
 a running board never keeps serving old logic.
 
@@ -210,8 +215,12 @@ def build_prompt(p, state, t):
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report)]
     lines += ["", f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
-              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "",
-              "Keep the card current with the report script (it shows on the board and alerts the user):",
+              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
+    return "\n".join(lines)
+
+
+def card_lines(report):
+    return ["Keep the card current with the report script (it shows on the board and alerts the user):",
               "- Format every message for reading on the card: short paragraphs and `- ` bullet lists separated by "
               "blank lines (real newlines inside the quoted argument), never one run-on block. A progress line may be "
               "a single sentence.",
@@ -225,7 +234,6 @@ def build_prompt(p, state, t):
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
               f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.']
-    return "\n".join(lines)
 
 
 def notify(title, subtitle, message):
@@ -358,6 +366,14 @@ def launch(p, task_id, model=""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(prompt)
+    aid = start_session(p, name, prompt, model)
+    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {aid}, model {model or 'default'})",
+                   "you", session=aid)
+    WATCH.expect(p, task_id, aid)
+    return aid
+
+
+def start_session(p, name, prompt, model):
     r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
                         prompt],
                        cwd=p.path, capture_output=True, text=True, timeout=60)
@@ -367,10 +383,64 @@ def launch(p, task_id, model=""):
         if re.search(r"not trusted", out, re.I):
             raise UntrustedError(p.path)
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
-    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {m.group(1)}, model {model or 'default'})",
-                   "you", session=m.group(1))
-    WATCH.expect(p, task_id, m.group(1))
     return m.group(1)
+
+
+REVIEW_LEVELS = ("low", "medium", "high")
+
+
+def task_commits(p, since):
+    """[(short sha, subject)] on HEAD committed since `since` (ISO time), newest first."""
+    r = subprocess.run(["git", "-C", p.path, "log", f"--since={since}", "--format=%h %s", "HEAD"],
+                       capture_output=True, text=True, timeout=10)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.strip() or "git log failed")
+    return [tuple(x.split(" ", 1)) if " " in x else (x, "") for x in r.stdout.splitlines() if x]
+
+
+def review(p, task_id, level):
+    """Start a fresh session that code-reviews the task's commits and posts the findings on its card. The card
+    then follows the reviewer, so a reply ("fix 1 and 3") goes to the session that holds the findings."""
+    if level not in REVIEW_LEVELS:
+        raise ValueError(f"bad review level: {level!r}")
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    if not t or not t.get("agent"):
+        raise LookupError("this task was never sent to Claude")
+    info = WATCH.snapshot(p.id).get(task_id)
+    if info and info["phase"] == "working":
+        raise PermissionError("Claude is still working — wait until it stops")
+    log = reports.read(p.board, task_id)
+    since = next((e["at"] for e in log if e.get("status") == "launch"), t["agent"].get("started"))
+    commits = task_commits(p, since)
+    if not commits:
+        raise PermissionError("No commits since the task was sent — nothing to review")
+    report = next((e["message"] for e in reversed(log) if e.get("from") == "claude"
+                   and e.get("status") in ("done", "answer")), "(no final report)")
+    board_rel = os.path.relpath(p.board, p.path)
+    rep = report_cmd(p, task_id)
+    prompt = "\n".join([
+        f"Code review for a task on the project task board ({board_rel}).", "",
+        f"Task: {t['title']}", f"Task id: {task_id}", *(["", "Task notes:", t["notes"]] if t.get("notes") else []),
+        "", f"Another Claude session did this task. It was sent at {since}. Its last report on the card:", report, "",
+        "Commits on HEAD since then, newest first. Other sessions commit to the same branch, so some may belong "
+        "to other tasks:", *[f"- {sha} {subj}" for sha, subj in commits], "",
+        "Steps:",
+        "1. Pick the commits that belong to this task: match them to the report above (`git show --stat <sha>` "
+        f'when unsure). Post them with `{rep} progress "Reviewing <shas>"`.',
+        f'2. Review them with the code-review skill: the Skill tool, skill "code-review", args "{level} <the shas>". '
+        "Review only in this turn: no --fix, no file changes, no commits.",
+        f'3. Post the findings with `{rep} done "..."`, most severe first. For each: severity, file:line, the '
+        "problem, a concrete input or state that breaks it, and the fix you suggest. If the skill reported them "
+        "through a findings tool, still post them on the card. If nothing survived, say so. End by asking which "
+        "findings to fix.",
+        "If a later reply asks for fixes: make them, verify them, commit (never push), and report done.", "",
+        f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
+        "(the board owns it).", "", *card_lines(rep)])
+    aid = start_session(p, "review: " + t["title"][:58], prompt, t["agent"].get("model") or "")
+    reports.append(p.board, task_id, "review", f"Code review started ({level}, session {aid})", "you", session=aid)
+    WATCH.expect(p, task_id, aid)
+    return aid
 
 
 def task_prompt(p, task_id):
@@ -812,7 +882,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = self._route()
-        routes = ("/api/agent", "/api/agent/reply", "/api/image", "/api/projects", "/api/projects/pick",
+        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/image", "/api/projects", "/api/projects/pick",
                   "/api/projects/forget", "/api/projects/trust")
         if path not in routes:
             self._send(404)
@@ -837,6 +907,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/agent":
                 aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
                 self._json(200, {"id": aid})
+            elif path == "/api/agent/review":
+                self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium")})
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
