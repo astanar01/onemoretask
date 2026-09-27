@@ -320,7 +320,10 @@ def card_lines(report):
               "that full answer.",
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
-              f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.']
+              f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.',
+              # A quoted path opening a PowerShell line is a string, not a command, so report.py would never run.
+              *(["- Run the report script with the Bash tool (Git Bash), never PowerShell: the command is bash syntax."]
+                if WINDOWS else [])]
 
 
 def notify(title, subtitle, message):
@@ -989,7 +992,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=HERE, **kwargs)
 
     def guess_type(self, path):
-        return TYPES.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
+        return TYPES.get(os.path.splitext(path)[1].lower()) or super().guess_type(path)
 
     def _send(self, code, body=b"", ctype="application/json"):
         self.send_response(code)
