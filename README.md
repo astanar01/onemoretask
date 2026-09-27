@@ -32,6 +32,9 @@ It:
 - downloads the app to `~/.onemoretask`
 - adds the `onemoretask` command to `~/.local/bin`
 - adds `~/.local/bin` to your PATH if it isn't there yet (then open a new terminal)
+- installs the [task-observer](https://github.com/rebelytics/one-skill-to-rule-them-all) skill in
+  `~/.claude/skills/task-observer` if you don't have it yet (see [Skill observations](#skill-observations)).
+  Your own copy is never changed. Set `ONEMORETASK_NO_OBSERVER=1` to skip this.
 
 Already cloned the repo? Run `./install.sh` inside it instead. It uses that copy.
 
@@ -51,7 +54,8 @@ irm https://raw.githubusercontent.com/astanar01/onemoretask/main/install.ps1 | i
 ```
 
 It downloads the app to `%USERPROFILE%\.onemoretask`, puts `onemoretask.cmd` in
-`%USERPROFILE%\.local\bin`, and adds that folder to your user PATH. Open a new terminal after.
+`%USERPROFILE%\.local\bin`, adds that folder to your user PATH, and installs the task-observer skill
+the same way. Open a new terminal after.
 
 Already cloned the repo? Run `powershell -ExecutionPolicy Bypass -File install.ps1` inside it.
 
@@ -100,6 +104,20 @@ the git repo you run it from.
    from there if it is not installed in `~/.claude/skills/`), and
    posts the findings on the card. Pick the budget in the task panel: Low, Medium (default)
    or High. Reply to have it fix the findings.
+
+### Skill observations
+
+The install command also adds the [task-observer](https://github.com/rebelytics/one-skill-to-rule-them-all)
+skill. It notes what could make your Claude skills better while Claude works: a correction you made,
+a step that kept failing, a workflow worth keeping. Every session the board starts is told to run it.
+
+- The **Observations** button in the header shows how many are open. It reads
+  `<project>/skill-observations/` and `~/.claude/skill-observations/` (both the older `log.md` and
+  the newer `observation-log/` folder).
+- Click it to see the list. Click an observation to read it.
+- Tick the ones you want and click **Apply**. The board makes a new card, "Apply N skill
+  observations", and sends it to Claude. Claude edits the skills, marks each observation done, and
+  reports on the card like any task. It asks you first if one needs a decision, such as a new skill.
 
 The ◐ button in the header switches the theme: System (follows your computer), Light, or Dark.
 
@@ -196,6 +214,8 @@ names) and `session` are added when they apply.
 |---|---|
 | `~/.config/task_board/projects.json` | The projects you opened, for the project menu |
 | `~/.config/task_board/default_model.json` | The name of your default Claude model, cached for 24 hours |
+| `~/.claude/skills/task-observer/` | The task-observer skill, installed by the install command |
+| `<project>/skill-observations/`, `~/.claude/skill-observations/` | Observations the skill logs. The board only reads them |
 | `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |
 | Your browser's local storage | View settings only: theme, text size, show subtasks, collapsed groups, last project, last model picked, which cards you have read |
 
@@ -220,7 +240,7 @@ What does leave your computer, and why:
 - **The default model name.** To show the name of your default model, the board runs
   `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
   skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
-- **Install and update.** The install command downloads the app from GitHub.
+- **Install and update.** The install command downloads the app and the task-observer skill from GitHub.
 
 ## Update
 
@@ -235,6 +255,7 @@ server code until restarted.
 rm ~/.local/bin/onemoretask
 rm -rf ~/.onemoretask
 rm -rf ~/.config/task_board   # remembered projects and settings
+rm -rf ~/.claude/skills/task-observer   # only if you don't want the skill any more
 ```
 
 On Windows (PowerShell):
