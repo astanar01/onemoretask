@@ -68,12 +68,10 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .col-head .icon:hover { background: var(--line); color: var(--text); }
 .col-head .done-flag { font-size: calc(11px * var(--ts)); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .cards { padding: 4px 8px 8px; overflow-y: auto; min-height: 40px; display: flex; flex-direction: column; gap: 8px; }
-.drop-line { height: 3px; background: var(--drop); border-radius: 2px; margin: -2px 0; }
 
 .card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); cursor: grab; }
 .card:hover { outline: 1px solid var(--line); }
 .group { display: flex; flex-direction: column; gap: 6px; }
-.group.dragging { opacity: .35; }
 .children { display: flex; flex-direction: column; gap: 6px; margin-left: 12px; padding-left: 8px; border-left: 2px solid var(--line); }
 .children:empty, .group.collapsed > .children { display: none; }
 .card .row { display: flex; align-items: flex-start; gap: 4px; }
@@ -418,7 +416,7 @@ let projects = [];         // [{ id, path, name, board }] from server.py, most r
 let P = null;              // current project id; every /api call carries it
 let openId = null;         // task shown in the detail panel
 let draftId = null;        // task made by "+ Add task"; dropped on close if left empty
-let drag = null;           // { kind:'card'|'col', id }
+let drag = null;           // the column being dragged: { id }
 
 function defaultState() {
   const cols = [["To Do", false], ["In Progress", false], ["Review", false], ["Done", true]]
@@ -696,7 +694,7 @@ function render() {
     };
     head.addEventListener("dragstart", (e) => {
       if (e.target !== head) return;
-      drag = { kind: "col", id: col.id }; el.classList.add("col-drag");
+      drag = { id: col.id }; el.classList.add("col-drag");
       e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", col.id);
     });
     head.addEventListener("dragend", () => { drag = null; render(); });
@@ -708,8 +706,7 @@ function render() {
     for (const t of cards) if (!shown.has(t.parent)) list.appendChild(groupEl(t, kidsOf, true));
     el.appendChild(list);
 
-    el.addEventListener("dragover", (e) => onDragOver(e, el, list));
-    el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) clearDropLine(); });
+    el.addEventListener("dragover", (e) => { if (drag) e.preventDefault(); });
     el.addEventListener("drop", (e) => onDrop(e, col));
 
     el.appendChild(addCardEl(col));
@@ -746,7 +743,6 @@ function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
   const ag = t.agent && agents[t.id];
   el.className = "card" + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
-  el.draggable = true;
   el.dataset.id = t.id;
   const kids = descendants(t.id);
   const doneKids = kids.filter(isDone).length;
@@ -776,13 +772,6 @@ function cardEl(t, top, nestedCount) {
   if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(t); });
   const tw = el.querySelector(".twisty");
   if (tw) tw.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapsed(t.id); });
-  el.addEventListener("dragstart", (e) => {
-    e.stopPropagation();
-    drag = { kind: "card", id: t.id };
-    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id);
-    requestAnimationFrame(() => el.parentElement.classList.add("dragging"));
-  });
-  el.addEventListener("dragend", () => { drag = null; clearDropLine(); el.parentElement.classList.remove("dragging"); render(); });
   return el;
 }
 
@@ -797,44 +786,14 @@ function addCardEl(col) {
 }
 
 // ---------------------------------------------------------------- drag & drop
-let dropLine = null;
-function clearDropLine() { if (dropLine) { dropLine.remove(); dropLine = null; } }
-
-function onDragOver(e, colEl, list) {
-  if (!drag) return;
-  e.preventDefault();
-  if (drag.kind === "col") return;
-  // A card drops among its siblings: inside its parent's group if the parent is in this column.
-  const t = task(drag.id);
-  const pg = t.parent && list.querySelector(`.group[data-id="${t.parent}"]`);
-  const box = pg ? pg.querySelector(":scope > .children") : list;
-  if (pg) pg.classList.remove("collapsed");
-  const before = groupAfterPointer(box, e.clientY);
-  if (!dropLine) { dropLine = document.createElement("div"); dropLine.className = "drop-line"; }
-  if (before) box.insertBefore(dropLine, before); else box.appendChild(dropLine);
-}
-
-function groupAfterPointer(box, y) {
-  for (const g of box.querySelectorAll(":scope > .group:not(.dragging)")) {
-    const r = g.firstElementChild.getBoundingClientRect();
-    if (y < r.top + r.height / 2) return g;
-  }
-  return null;
-}
-
+// Only columns drag. Cards move on their own (Claude starts, finishes, a review runs) or by their buttons.
 function onDrop(e, col) {
   e.preventDefault();
   if (!drag) return;
-  if (drag.kind === "col") {
-    const from = state.columns.findIndex((c) => c.id === drag.id);
-    const to = state.columns.indexOf(col);
-    if (from >= 0 && from !== to) { const [c] = state.columns.splice(from, 1); state.columns.splice(to, 0, c); save(); }
-  } else {
-    let next = dropLine && dropLine.nextElementSibling;
-    while (next && (!next.classList.contains("group") || next.classList.contains("dragging"))) next = next.nextElementSibling;
-    moveTask(drag.id, col.id, next ? next.dataset.id : null);
-  }
-  drag = null; clearDropLine(); render();
+  const from = state.columns.findIndex((c) => c.id === drag.id);
+  const to = state.columns.indexOf(col);
+  if (from >= 0 && from !== to) { const [c] = state.columns.splice(from, 1); state.columns.splice(to, 0, c); save(); }
+  drag = null; render();
 }
 
 // ---------------------------------------------------------------- detail panel
