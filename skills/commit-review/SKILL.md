@@ -95,10 +95,12 @@ prove it or measure how sure you are.
    test turn at high only.
 3. Mark each finding by what the test showed:
    - **Reproduced** — the test ran and showed the failure. Quote the key output line.
-   - **Refuted** — the test ran and the code behaved. Drop the finding (list it in one line
+   - **Refuted** — the test ran the breaking input and the code behaved. Drop the finding (list it in one line
      under "checked and fine" so the reader knows it was looked at).
-   - **Not reproduced — confidence high / medium / low** — you could not run a test (say
-     exactly why: needs the running app, a browser, network, real user data, timing). Give
+   - **Not reproduced — confidence high / medium / low** — you could not run a test, or the
+     test ran but cannot trigger the failure (a race, timing, real data — do NOT mark that
+     Refuted). Say exactly why: needs the running app, a browser, network, real user data,
+     timing. Give
      the confidence and what it rests on (e.g. "high: traced every line, the only unknown is
      X"). A reader should be able to decide from this line whether to trust it.
 
