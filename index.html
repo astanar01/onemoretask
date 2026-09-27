@@ -815,7 +815,7 @@ function openDetail(id) {
   renderDetail();
   $("#d-title").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { showPanelError(""); settleDraft(); openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
 function settleDraft() {
@@ -1027,6 +1027,10 @@ function renderAgent(t) {
   pending[t.id] = pend.filter((m) => m.state === "sending" || !log.some((e, i) => i >= m.base && e.from === "you" && (m.status === "reply" || m.status === "note" ? (e.status === "reply" || e.status === "note") && e.message === m.message : e.status === m.status)));
   if (!pending[t.id].length) delete pending[t.id];
   const shown = log.slice(-30).concat(pending[t.id] || []);
+  // Polls re-render this list: only follow the end when opening a card or already at the bottom, so reading older text is not yanked away.
+  const dl = $("#d-log"), keepTop = dl.scrollTop;
+  const follow = dl.dataset.task !== t.id || dl.scrollHeight - dl.scrollTop - dl.clientHeight < 40;
+  dl.dataset.task = t.id;
   $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
@@ -1034,7 +1038,6 @@ function renderAgent(t) {
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
-  $("#d-log").scrollTop = $("#d-log").scrollHeight;
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   const busy = ag && ag.phase === "working";
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it reads this after its current step. Cmd+Enter to send, paste images to attach"
@@ -1042,6 +1045,8 @@ function renderAgent(t) {
   $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
   renderReplyImages();
   renderOverview(t);
+  // Last: the reply box and images above change the log's height.
+  dl.scrollTop = follow ? dl.scrollHeight : keepTop;
 }
 
 // ---------------------------------------------------------------- sent-task overview (left pane)
