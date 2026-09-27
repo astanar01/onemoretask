@@ -12,9 +12,12 @@ back onto the card.
 
 ## Requirements
 
-- macOS or Linux
-- `python3`, `git`, `curl`
+- macOS, Linux or Windows
+- Python 3.7 or newer, and `git`
 - [Claude Code](https://claude.com/claude-code) (the `claude` command), for Send to Claude
+
+Desktop notifications are macOS only. The **Open folder…** dialog works on macOS and Windows;
+on Linux, paste the folder's path. Everything else works the same on all three.
 
 ## Install
 
@@ -32,6 +35,26 @@ It:
 
 Already cloned the repo? Run `./install.sh` inside it instead. It uses that copy.
 
+### Windows
+
+No WSL needed. First install:
+
+- Python from [python.org](https://www.python.org/downloads/), or `winget install Python.Python.3.12`
+- [Git for Windows](https://git-scm.com/download/win), or `winget install Git.Git`.
+  Claude Code on Windows needs its Git Bash anyway.
+- Claude Code with its native Windows installer (`claude.exe`), so `claude` works from PowerShell
+
+Then run this in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/astanar01/onemoretask/main/install.ps1 | iex
+```
+
+It downloads the app to `%USERPROFILE%\.onemoretask`, puts `onemoretask.cmd` in
+`%USERPROFILE%\.local\bin`, and adds that folder to your user PATH. Open a new terminal after.
+
+Already cloned the repo? Run `powershell -ExecutionPolicy Bypass -File install.ps1` inside it.
+
 ## Run
 
 ```bash
@@ -40,6 +63,8 @@ onemoretask
 
 This starts the board and opens http://127.0.0.1:8765 in your browser. If the board is
 already running, it just opens the page. Press **Ctrl-C** in the terminal to stop it.
+It works the same in PowerShell, cmd or a macOS/Linux terminal. Without the command,
+run `python3 launch.py` (Windows: `py launch.py`) in the app folder.
 
 ### Options
 
@@ -206,6 +231,14 @@ server code until restarted.
 rm ~/.local/bin/onemoretask
 rm -rf ~/.onemoretask
 rm -rf ~/.config/task_board   # remembered projects and settings
+```
+
+On Windows (PowerShell):
+
+```powershell
+Remove-Item ~\.local\bin\onemoretask.cmd
+Remove-Item -Recurse -Force ~\.onemoretask
+Remove-Item -Recurse -Force ~\.config\task_board
 ```
 
 Your boards stay in each project's `.task_board/` folder.

@@ -1,0 +1,5 @@
+# Windows scripts need CRLF; sh scripts break with it (a Windows clone with core.autocrlf would add it).
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+bin/onemoretask text eol=lf

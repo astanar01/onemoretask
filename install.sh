@@ -5,15 +5,22 @@
 # Downloads (or updates) the repo in $ONEMORETASK_DIR (default ~/.onemoretask) unless run from a clone,
 # then links bin/onemoretask into ~/.local/bin and adds that folder to PATH if needed.
 set -e
+case $(uname -s 2>/dev/null) in
+  MINGW*|MSYS*|CYGWIN*)
+    echo "On Windows, install from PowerShell instead:"
+    echo "  irm https://raw.githubusercontent.com/astanar01/onemoretask/main/install.ps1 | iex"
+    exit 1 ;;
+esac
 REPO=${ONEMORETASK_REPO:-https://github.com/astanar01/onemoretask.git}
 BIN=$HOME/.local/bin
 
-for tool in python3 git curl; do
+for tool in python3 git; do
   command -v $tool >/dev/null || { echo "onemoretask needs $tool — install it first."; exit 1; }
 done
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 7))' || { echo "onemoretask needs Python 3.7 or newer."; exit 1; }
 
 here=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
-if [ -f "$here/server.py" ] && [ -f "$here/bin/onemoretask" ]; then
+if [ -f "$here/server.py" ] && [ -f "$here/launch.py" ] && [ -f "$here/bin/onemoretask" ]; then
   dir=$here
 else
   dir=${ONEMORETASK_DIR:-$HOME/.onemoretask}
