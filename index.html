@@ -433,16 +433,28 @@ const api = (url) => url + "?p=" + encodeURIComponent(P);
 const project = () => projects.find((p) => p.id === P);
 
 // ---------------------------------------------------------------- projects
+// Tasks of a project that need you: a question/stop, or finished work you haven't opened since (see isUnread).
+function attentionCount(p) {
+  const a = p.attention || {};
+  return (a.waiting || []).length
+    + Object.entries(a.finished || {}).filter(([id, at]) => (Date.parse(at) || 0) > (seen[id] || 0)).length;
+}
 function renderProjects() {
   const sel = $("#project");
   sel.style.display = useServer ? "" : "none";
   const dup = (n) => projects.filter((p) => p.name === n).length > 1;
-  sel.innerHTML = (P ? "" : `<option value="" disabled>No project</option>`)
-    + projects.map((p) => `<option value="${p.id}" title="${esc(p.path)}">${esc(dup(p.name) ? p.path.replace(/^\/Users\/[^/]+/, "~") : p.name)}</option>`).join("")
+  const label = (p) => {
+    const n = attentionCount(p), name = dup(p.name) ? p.path.replace(/^\/Users\/[^/]+/, "~") : p.name;
+    return n ? `${name} * (${n})` : name;
+  };
+  const html = (P ? "" : `<option value="" disabled>No project</option>`)
+    + projects.map((p) => `<option value="${p.id}" title="${esc(p.path)}">${esc(label(p))}</option>`).join("")
     + `<option disabled>──────────</option><option value=":pick">Open folder…</option><option value=":path">Open a path…</option>`
     + (P ? `<option value=":forget">Remove this project from the list</option>` : "");
+  if (sel.innerHTML !== html) sel.innerHTML = html;   // rebuilding closes an open menu, so only on change
   sel.value = P || "";
-  sel.title = project() ? project().path : "Project";
+  const waiting = projects.filter((p) => p.id !== P && attentionCount(p)).map((p) => p.name);
+  sel.title = (project() ? project().path : "Project") + (waiting.length ? "\nNeeds you: " + waiting.join(", ") : "");
 }
 
 async function switchProject(id) {
@@ -595,7 +607,7 @@ function isUnread(t) {
 function markSeen(ids) {
   let changed = false;
   for (const id of ids) { const at = lastClaudeAt(id); if (at > (seen[id] || 0)) { seen[id] = at; changed = true; } }
-  if (changed) try { localStorage.setItem(LS_KEY + ":seen", JSON.stringify(seen)); } catch (_) {}
+  if (changed) { try { localStorage.setItem(LS_KEY + ":seen", JSON.stringify(seen)); } catch (_) {} renderProjects(); }
   return changed;
 }
 
@@ -1282,25 +1294,35 @@ async function pollAgents() {
   if (!useServer || !P) return;
   const pid = P;
   try {
-    const r = await fetch(api("/api/agents"), { cache: "no-store" });
+    const [r, rp] = await Promise.all([fetch(api("/api/agents"), { cache: "no-store" }), fetch("/api/projects", { cache: "no-store" })]);
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
+    if (rp.ok) projects = await rp.json();
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
+    let moved = false;
     for (const [id, a] of Object.entries(next)) {
       const t = task(id), was = agents[id] && agents[id].phase;
-      if (!t || !polledOnce || was === a.phase) continue;
+      if (!t) continue;
       const review = colNamed(/review/i), prog = colNamed(/progress|doing/i);
+      // A finish the page never saw change (closed tab, reload, server restart) still reaches Review
+      // if Claude's last message is newer than the card's last edit or move.
+      const last = [...(a.log || [])].reverse().find((e) => e.from !== "you");
+      const missed = a.phase === "finished" && review && t.column !== review.id
+        && last && Date.parse(last.at) > (Date.parse(t.updated) || 0);
+      if (missed && !isDone(t)) { moveTask(t.id, review.id, topCard(review.id, t.id)); moved = true; continue; }
+      if (!polledOnce || was === a.phase) continue;
       // Newest finished work goes on top of Review, even if the card was already there.
       if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
       if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
     }
-    const changed = JSON.stringify(next) !== JSON.stringify(agents);
+    const changed = moved || JSON.stringify(next) !== JSON.stringify(agents);
     agents = next;
     if (!polledOnce && !seenPrimed) markSeen(Object.keys(next));
     if (openId) markSeen([openId]);   // news that lands while you have the card open is read
     polledOnce = true;
     updateWaiting();
+    renderProjects();
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
   } catch (e) {

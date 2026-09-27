@@ -779,12 +779,14 @@ class Watcher:
                                            "reason": "", "log": reports.read(p.board, task_id)}
 
     def poll(self):
-        work = []
+        work, done_cols = [], set()
         for p in projects():
             try:
-                work += [(p, t) for t in load_tasks(p)["tasks"] if t.get("agent")]
+                state = load_tasks(p)
             except (OSError, ValueError):
                 continue
+            work += [(p, t) for t in state["tasks"] if t.get("agent")]
+            done_cols |= {c["id"] for c in state.get("columns", []) if c.get("done")}
         sessions = {s["id"]: s for s in list_sessions(HERE)} if work else {}
         fresh = {}
         for p, t in work:
@@ -812,7 +814,8 @@ class Watcher:
             except OSError:
                 subs = []
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
-                                      "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs}
+                                      "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
+                                      "closed": t.get("column") in done_cols}
         with self.lock:
             old, self.cache = self.cache, fresh
             primed, self.primed = self.primed, True
@@ -839,6 +842,20 @@ class Watcher:
     def snapshot(self, pid):
         with self.lock:
             return {tid: v for (p, tid), v in self.cache.items() if p == pid}
+
+    def attention(self, pid):
+        """Tasks in a project that wait on the user: a question/stop, or finished work (with the time of
+        Claude's last message, so the board can tell whether it was opened since). Done cards don't count."""
+        waiting, finished = [], {}
+        with self.lock:
+            for (p, tid), v in self.cache.items():
+                if p != pid or v.get("closed"):
+                    continue
+                if v["phase"] == "needs_you":
+                    waiting.append(tid)
+                elif v["phase"] == "finished":
+                    finished[tid] = next((e.get("at") for e in reversed(v["log"]) if e.get("from") != "you"), None)
+        return {"waiting": waiting, "finished": finished}
 
 
 WATCH = Watcher()
@@ -946,7 +963,7 @@ class Handler(SimpleHTTPRequestHandler):
                     self._send(200, fh.read(), "image/" + ("jpeg" if ext == "jpg" else ext))
             self._errors(serve)
         elif path == "/api/projects":
-            self._json(200, [p.info() for p in projects()])
+            self._json(200, [{**p.info(), "attention": WATCH.attention(p.id)} for p in projects()])
         elif path == "/api/tasks":
             def tasks():
                 p = project(pid)
