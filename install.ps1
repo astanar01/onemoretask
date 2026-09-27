@@ -11,7 +11,9 @@
 # alone. Never fails the install.
 function Get-ObserverSums($dir) {
     $full = (Resolve-Path -LiteralPath $dir).Path
-    $lines = Get-ChildItem -LiteralPath $full -Recurse -File -Force | Where-Object { $_.Name -ne '.install-sums' } |
+    # Explorer/Finder metadata files appear when the folder is opened; they are not edits.
+    $lines = Get-ChildItem -LiteralPath $full -Recurse -File -Force |
+        Where-Object { @('.install-sums', 'Thumbs.db', 'desktop.ini', '.DS_Store') -notcontains $_.Name } |
         ForEach-Object { "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash) $($_.FullName.Substring($full.Length))" }
     (@($lines) | Sort-Object) -join "`n"
 }
@@ -21,6 +23,7 @@ function Install-TaskObserver($src) {
     if (-not $root) { $root = Join-Path $HOME '.claude' }
     $dir = Join-Path $root 'skills\task-observer'
     $sumsFile = Join-Path $dir '.install-sums'
+    $new = $null; $old = $null   # local: a caller's $new would otherwise leak into the catch block
     try {
         $hasSkill = Test-Path (Join-Path $dir 'SKILL.md')
         if ($hasSkill -and -not (Test-Path (Join-Path $dir 'FORKED_FROM'))) {
@@ -36,13 +39,19 @@ function Install-TaskObserver($src) {
             Write-Host '  To get the new version instead, delete that folder and run the install again.'
             return
         }
-        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop }
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Copy-Item -Recurse -Force (Join-Path $src '*') $dir -ErrorAction Stop
-        [IO.File]::WriteAllText($sumsFile, (Get-ObserverSums $dir))
+        # Copy next to it first and swap only once the copy is whole, so a failed copy keeps the old skill.
+        $new = "$dir.new-$PID"; $old = "$dir.old-$PID"
+        New-Item -ItemType Directory -Force -Path $new -ErrorAction Stop | Out-Null
+        Copy-Item -Recurse -Force (Join-Path $src '*') $new -ErrorAction Stop
+        [IO.File]::WriteAllText((Join-Path $new '.install-sums'), (Get-ObserverSums $new))
+        if (Test-Path -LiteralPath $dir) { Move-Item -LiteralPath $dir $old -ErrorAction Stop }
+        Move-Item -LiteralPath $new $dir -ErrorAction Stop
+        Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "Installed the task-observer skill in $dir"
     } catch {
-        Write-Host "Note: task-observer skill step failed ($($_.Exception.Message)) - skipped." -ForegroundColor Yellow
+        if ($old -and -not (Test-Path -LiteralPath $dir) -and (Test-Path -LiteralPath $old)) { Move-Item -LiteralPath $old $dir -ErrorAction SilentlyContinue }
+        if ($new) { Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue }
+        Write-Host "Note: task-observer skill step failed ($($_.Exception.Message)) - skipped, the old copy is kept." -ForegroundColor Yellow
     }
 }
 

@@ -300,7 +300,8 @@ def build_prompt(p, state, t):
     lines.append("")
     if observations.installed():
         lines.append("Invoke the task-observer skill at the start and log its observations to "
-                     f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}.")
+                     f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Never commit "
+                     f"{' or '.join(d + '/' for d in OBSERVER_DIRS)} (the board keeps them out of git).")
     lines += [f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
     return "\n".join(lines)
@@ -457,6 +458,8 @@ def launch(p, task_id, model=""):
     if t.get("agent"):
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
+    if observations.installed():
+        exclude_observer_dirs(p)
     prompt = build_prompt(p, state, t)
     path = reports.prompt_path(p.board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -467,6 +470,28 @@ def launch(p, task_id, model=""):
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid
+
+
+OBSERVER_DIRS = ("skill-observations", "skill-updates")
+
+
+def exclude_observer_dirs(p):
+    """Keep the task-observer log and staged skills out of the project's commits: list them in the repo's
+    info/exclude (local only, unlike .gitignore). Best effort; a folder that is not a git repo is skipped."""
+    try:
+        r = subprocess.run(["git", "-C", p.path, "rev-parse", "--git-path", "info/exclude"],
+                           capture_output=True, timeout=10, **TEXT)
+        if r.returncode != 0:
+            return
+        path = os.path.join(p.path, r.stdout.strip())
+        text = open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else ""
+        missing = [f"/{d}/" for d in OBSERVER_DIRS if f"/{d}/" not in text.splitlines()]
+        if missing:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(("" if not text or text.endswith("\n") else "\n") + "\n".join(missing) + "\n")
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def inbox_settings(p, task_id):

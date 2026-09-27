@@ -1442,7 +1442,8 @@ function obsNotes(list) {
   return ["Apply these task-observer observations (the user clicked Apply on the board: that is explicit approval for exactly these).",
     "Load the task-observer skill first and follow its rules for acting on observations and for editing skills.",
     ...list.map((o) => `- #${o.id} ${o.title}${(o.skill || []).length ? ` (skill: ${o.skill.join(", ")})` : ""} — ${o.file}`),
-    "Edit the live skill files, then mark each observation actioned in the file listed (edit its status line in place). If one needs a decision (new skill, removing content, conflicting), ask on the card instead of guessing."].join("\n");
+    "The Apply click also approves the install: stage each change the way the skill says, then in this same session copy the staged file over the live skill (the folder the skill loads from) and check the live file has the change. Only then mark each observation actioned in the file listed (edit its status line in place). A change that is staged but not installed does not count as applied.",
+    "If one needs a decision (new skill, removing content, conflicting), ask on the card instead of guessing."].join("\n");
 }
 function obsTitle(list) { return list.length === 1 ? `Apply skill observation #${list[0].id}` : `Apply ${list.length} skill observations`; }
 

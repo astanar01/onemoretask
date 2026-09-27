@@ -44,7 +44,8 @@ echo "Linked $BIN/onemoretask"
 # copy is left alone. Never fails the install.
 if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
   obs=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/task-observer
-  obs_sums() { (cd "$obs" && find . -type f ! -name .install-sums -exec cksum {} + | LC_ALL=C sort); }
+  # .DS_Store: Finder adds it when the folder is opened, which is not an edit.
+  obs_sums() { (cd "$obs" && find . -type f ! -name .install-sums ! -name .DS_Store -exec cksum {} + | LC_ALL=C sort); }
   if [ -f "$obs/SKILL.md" ] && [ ! -f "$obs/FORKED_FROM" ]; then
     echo "Kept your own task-observer skill in $obs as is."
   elif [ ! -f "$obs/SKILL.md" ] && [ -d "$obs" ] && [ -n "$(ls -A "$obs" 2>/dev/null)" ]; then
@@ -52,11 +53,19 @@ if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
   elif [ -f "$obs/.install-sums" ] && [ "$(obs_sums)" != "$(cat "$obs/.install-sums")" ]; then
     echo "Kept the task-observer skill in $obs: it was edited since the last install."
     echo "  To get the new version instead, delete that folder and run the install again."
-  elif rm -rf "$obs" && mkdir -p "$obs" && cp -R "$dir/skills/task-observer/." "$obs/" \
-      && obs_sums > "$obs/.install-sums"; then
-    echo "Installed the task-observer skill in $obs"
   else
-    echo "Note: could not install the task-observer skill in $obs — skipped."
+    # Copy next to it first and swap only once the copy is whole, so a failed copy keeps the old skill.
+    new=$obs.new-$$ old=$obs.old-$$
+    if mkdir -p "$new" && cp -R "$dir/skills/task-observer/." "$new/" \
+        && (obs=$new; obs_sums > "$new/.install-sums") \
+        && { [ ! -e "$obs" ] || mv "$obs" "$old"; } && mv "$new" "$obs"; then
+      rm -rf "$old"
+      echo "Installed the task-observer skill in $obs"
+    else
+      [ -e "$obs" ] || [ ! -e "$old" ] || mv "$old" "$obs"
+      rm -rf "$new"
+      echo "Note: could not install the task-observer skill in $obs — skipped, the old copy is kept."
+    fi
   fi
 fi
 
