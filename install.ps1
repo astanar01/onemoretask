@@ -3,7 +3,46 @@
 #   From a clone:   powershell -ExecutionPolicy Bypass -File install.ps1
 # Downloads (or updates) the repo in $env:ONEMORETASK_DIR (default ~\.onemoretask) unless run from a clone,
 # then puts an onemoretask.cmd in ~\.local\bin and adds that folder to your user PATH if needed.
+# Also installs the task-observer Claude skill in ~\.claude\skills (skip: $env:ONEMORETASK_NO_OBSERVER=1).
 # No `exit` in the body: under `irm | iex` it would close the user's PowerShell window.
+
+# A fresh clone gets installed, our own clone gets updated, a user's copy is left alone. Never fails the install.
+function Install-TaskObserver {
+    $repo = $env:TASK_OBSERVER_REPO
+    if (-not $repo) { $repo = 'https://github.com/rebelytics/one-skill-to-rule-them-all.git' }
+    $root = $env:CLAUDE_CONFIG_DIR
+    if (-not $root) { $root = Join-Path $HOME '.claude' }
+    $dir = Join-Path $root 'skills\task-observer'
+    $norm = { param($u) "$u".Trim().TrimEnd('/') -replace '\.git$', '' }
+    $env:GIT_TERMINAL_PROMPT = '0'
+    try {
+        if (-not (Test-Path (Join-Path $dir 'SKILL.md'))) {
+            if ((Test-Path $dir) -and @(Get-ChildItem -Force $dir).Count -gt 0) {
+                Write-Host "Note: $dir has files but no SKILL.md - left alone, task-observer skill not installed." -ForegroundColor Yellow
+                return
+            }
+            New-Item -ItemType Directory -Force -Path (Split-Path $dir) | Out-Null
+            git clone -q --depth 1 "$repo" "$dir" | Out-Host
+            if ($LASTEXITCODE -eq 0) { Write-Host "Installed the task-observer skill in $dir" }
+            else { Write-Host 'Note: could not download the task-observer skill - skipped.' -ForegroundColor Yellow }
+            return
+        }
+        # Check .git here: ~\.claude itself may be a repo, and git -C would read its origin.
+        $origin = $null
+        if (Test-Path (Join-Path $dir '.git')) { $origin = git -C "$dir" remote get-url origin 2>$null }
+        if ($origin -and ((& $norm $origin) -eq (& $norm $repo))) {
+            git -C "$dir" pull --ff-only -q | Out-Host
+            if ($LASTEXITCODE -eq 0) { Write-Host 'Updated the task-observer skill' }
+            else { Write-Host "Note: could not update the task-observer skill in $dir - kept as is." -ForegroundColor Yellow }
+        } else {
+            Write-Host "Kept your own task-observer skill in $dir as is."
+        }
+    } catch {
+        Write-Host "Note: task-observer skill step failed ($($_.Exception.Message)) - skipped." -ForegroundColor Yellow
+    } finally {
+        Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
+    }
+}
 
 function Install-OneMoreTask {
     $repo = $env:ONEMORETASK_REPO
@@ -63,6 +102,8 @@ function Install-OneMoreTask {
     try { $oem = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage) } catch { $oem = [Text.Encoding]::ASCII }
     [IO.File]::WriteAllText($shim, "@echo off`r`n`"$target`" %*`r`n", $oem)
     Write-Host "Installed $shim"
+
+    if ($env:ONEMORETASK_NO_OBSERVER -ne '1') { Install-TaskObserver }
 
     $inSession = @($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $bin.TrimEnd('\')
     $key = 'HKCU:\Environment'
