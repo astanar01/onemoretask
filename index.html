@@ -718,7 +718,7 @@ function cardEl(t, top, nestedCount) {
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} depth)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
+    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });

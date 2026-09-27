@@ -67,7 +67,8 @@ the git repo you run it from.
    session.
 6. **Review the code.** A finished card in the Review column has a **Review code** button.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
-   skill on them (one cheap pass; the skill lives in `~/.claude/skills/commit-review/`), and
+   skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it
+   from there if it is not installed in `~/.claude/skills/`), and
    posts the findings on the card. Pick the budget in the task panel: Low, Medium (default)
    or High. Reply to have it fix the findings.
 

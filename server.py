@@ -41,7 +41,7 @@ watcher copies its chat answer from the transcript onto the card (status "answer
 
 "Review code" (a finished card in Review) starts a fresh `claude --bg` session on the task's model that picks
 the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
-card's report), runs the commit-review skill (~/.claude/skills; one cheap pass, not /code-review) on them at the
+card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
@@ -428,13 +428,12 @@ def review(p, task_id, level):
         "Commits on HEAD since then, newest first. Other sessions commit to the same branch, so some may belong "
         "to other tasks:", *[f"- {sha} {subj}" for sha, subj in commits], "",
         "Steps:",
-        "1. Pick the commits that belong to this task: match them to the report above (`git show --stat <sha>` "
-        f'when unsure). Post them with `{rep} progress "Reviewing <shas>"`.',
-        f'2. Review them with the commit-review skill: the Skill tool, skill "commit-review", args "{level} <the shas>". '
-        "Keep to its budget for that level. Do not use /code-review, subagents or workflows. Review only in this "
-        "turn: no file changes, no commits.",
-        f'3. Post the skill\'s report with `{rep} done "..."`. If nothing survived, say so. End by asking which '
-        "findings to fix.",
+        f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "{level}" plus the candidate '
+        f"shas above). If that skill is not installed, Read {os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md')} "
+        "and follow it. It keeps only the commits that match the report above. Keep to its turn budget. Do not use "
+        "/code-review, subagents or workflows. Review only in this turn: no file changes, no commits.",
+        f'2. Post its report with `{rep} done "..."`, naming the commits you reviewed. If nothing survived, say so. '
+        "End by asking which findings to fix.",
         "If a later reply asks for fixes: make them, verify them, commit (never push), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep)])
