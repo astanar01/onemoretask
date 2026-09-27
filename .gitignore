@@ -4,3 +4,7 @@ __pycache__/
 skill-observations/
 skill-updates/
 .claude/skills/
+# Only the skills the app uses are shipped; any other skill in skills/ stays local.
+skills/*
+!skills/commit-review/
+!skills/task-observer/
