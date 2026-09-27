@@ -4,11 +4,11 @@ A local kanban board that hands cards to Claude Code. Write a task, click **Send
 and the agent works on it in the background, posting its progress, questions and results
 back onto the card.
 
-![The board: one task Claude is working on, one waiting on you, one finished](docs/screenshots/board.png)
+![The board: a task Claude splits across subagents, one waiting on you, one finished, one under code review](docs/screenshots/board.png)
 
 | Claude asks you a question | Claude reports it is done |
 |---|---|
-| ![A card with Claude's question and a reply box](docs/screenshots/question.png) | ![A card with Claude's progress and final report](docs/screenshots/finished.png) |
+| ![A card with Claude's question and a reply box](docs/screenshots/question.png) | ![A card with Claude's progress, a note you sent while it worked, its final report, and the Review code button](docs/screenshots/finished.png) |
 
 ## Requirements
 
@@ -85,25 +85,35 @@ the git repo you run it from.
 
 1. **Pick a project.** The project menu at the top switches boards. **Open folder…** adds any
    folder. Each project keeps its board in `<project>/.task_board/`. Commit `tasks.json` and
-   `images/`; `agent_reports/` is run chatter and stays out of git.
+   `images/`; `agent_reports/` is run chatter and stays out of git. A project with work
+   waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions, plus
+   finished cards you have not opened yet.
 2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes.
 3. **Send to Claude.** Pick a model (or leave the default) and send. A background Claude
    session starts in the project folder with the task as its prompt. Tick
-   **Divide in subtasks / use subagents** to let it split the work.
+   **Divide in subtasks / use subagents** to let it split the work; the card then lists each
+   subagent (running, finished or stopped) and what a running one is doing now.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
-   and on macOS you get a notification when it needs you or finishes.
+   and on macOS you get a notification when it needs you or finishes. Cards move on their own:
+   to **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
+   click **Move to done** (hidden while Claude still has work on it). You can't drag cards; to
+   move one by hand, use the Status menu in its panel. Columns still drag to reorder.
+   A **cache** chip counts down the session's prompt cache. Reply before it runs out
+   ("cache cold") and the reply reads the context from cache, at a lower price.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session. You can also write while Claude is still working, to add information or change
    course. That message is a **note**. Claude reads it right after its current step, or just
    before it would stop. The card shows "Claude has it" once it is delivered. A hook that
    the board installs on each session it starts (`inbox.py`) does this. For a session started
-   before this feature, the note goes in as soon as the session stops.
+   before this feature, the note goes in as soon as the session stops. Claude answers in the
+   language you wrote in, even if the project is in another one.
 6. **Review the code.** A finished card in the Review column has a **Review code** button.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
    skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it
    from there if it is not installed in `~/.claude/skills/`), and
    posts the findings on the card. Pick the budget in the task panel: Low, Medium (default)
-   or High. Reply to have it fix the findings.
+   or High. Every level runs a small test on each finding. The card shows **Code review** while
+   it runs. Reply to have it fix the findings.
 
 ### Skill observations
 
@@ -121,8 +131,14 @@ a step that kept failing, a workflow worth keeping. Every session the board star
   the newer `observation-log/` folder).
 - Click it to see the list. Click an observation to read it.
 - Tick the ones you want and click **Apply**. The board makes a new card, "Apply N skill
-  observations", and sends it to Claude. Claude edits the skills, marks each observation done, and
-  reports on the card like any task. It asks you first if one needs a decision, such as a new skill.
+  observations", and sends it to Claude. The click is your approval: Claude edits the skills,
+  installs them, marks each observation done, and reports on the card like any task. It asks you
+  first if one needs a decision, such as a new skill.
+- Observation logs and skill edits stay out of git. The board adds `skill-observations/`,
+  `skill-updates/` and `.claude/skills/` to the project's `.git/info/exclude` (local only, not
+  `.gitignore`) and tells each session not to commit them. Files git already tracks are not affected.
+
+![The Observations window: two observations ticked, one opened to read it](docs/screenshots/observations.png)
 
 The ◐ button in the header switches the theme: System (follows your computer), Light, or Dark.
 
@@ -221,6 +237,7 @@ names) and `session` are added when they apply.
 | `~/.config/task_board/default_model.json` | The name of your default Claude model, cached for 24 hours |
 | `~/.claude/skills/task-observer/` | The task-observer skill, copied there by the install command |
 | `<project>/skill-observations/`, `~/.claude/skill-observations/` | Observations the skill logs. The board only reads them |
+| `<project>/.git/info/exclude` | Gets `skill-observations/`, `skill-updates/` and `.claude/skills/` added, so skill work stays out of your commits |
 | `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |
 | Your browser's local storage | View settings only: theme, text size, show subtasks, collapsed groups, last project, last model picked, which cards you have read |
 
