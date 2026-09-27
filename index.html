@@ -489,7 +489,7 @@ function renderProjects() {
 
 async function switchProject(id) {
   if (saveTimer) await flush();
-  openId = null; replyImages = []; $("#overlay").classList.remove("open");
+  openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
   P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
   try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
   render(); pollAgents();
