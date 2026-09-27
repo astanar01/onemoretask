@@ -41,8 +41,8 @@ watcher copies its chat answer from the transcript onto the card (status "answer
 
 "Review code" (a finished card in Review) starts a fresh `claude --bg` session on the task's model that picks
 the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
-card's report), runs the built-in /code-review skill on them at the chosen depth (low / medium / high), and posts
-the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
+card's report), runs the commit-review skill (~/.claude/skills; one cheap pass, not /code-review) on them at the
+chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
@@ -430,11 +430,10 @@ def review(p, task_id, level):
         "Steps:",
         "1. Pick the commits that belong to this task: match them to the report above (`git show --stat <sha>` "
         f'when unsure). Post them with `{rep} progress "Reviewing <shas>"`.',
-        f'2. Review them with the code-review skill: the Skill tool, skill "code-review", args "{level} <the shas>". '
-        "Review only in this turn: no --fix, no file changes, no commits.",
-        f'3. Post the findings with `{rep} done "..."`, most severe first. For each: severity, file:line, the '
-        "problem, a concrete input or state that breaks it, and the fix you suggest. If the skill reported them "
-        "through a findings tool, still post them on the card. If nothing survived, say so. End by asking which "
+        f'2. Review them with the commit-review skill: the Skill tool, skill "commit-review", args "{level} <the shas>". '
+        "Keep to its budget for that level. Do not use /code-review, subagents or workflows. Review only in this "
+        "turn: no file changes, no commits.",
+        f'3. Post the skill\'s report with `{rep} done "..."`. If nothing survived, say so. End by asking which '
         "findings to fix.",
         "If a later reply asks for fixes: make them, verify them, commit (never push), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "

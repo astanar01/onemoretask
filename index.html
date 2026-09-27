@@ -355,7 +355,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     <div class="panel-foot">
       <span id="d-dates"></span>
       <span><span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
-      <select id="d-review-level" title="Review depth: low and medium report fewer, high-confidence findings; high looks wider and may include uncertain ones"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></span>
+      <select id="d-review-level" title="Review budget: Low reasons from the diff only, Medium also runs quick checks, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></span>
       <button class="btn to-done" id="d-to-done" title="The work is finished — move this task to the done column">✓ Move to done</button>
       <button class="btn primary" id="d-close">Close</button></span>
     </div>
