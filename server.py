@@ -152,6 +152,7 @@ def replace_file(tmp, dst):
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
 PERMISSION_MODE = "auto"
+IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
 
 
 # ---------------------------------------------------------------- projects
@@ -709,6 +710,32 @@ def last_answer(session_id, reply_text):
     return "\n\n".join(texts)
 
 
+_turn_memo = {}  # transcript path -> ((mtime, size), ended at)
+
+
+def turn_ended_at(session_id):
+    """When the session's last turn ended (epoch s), or None while a turn runs. A session that ends its turn to wait
+    on a background shell still lists as busy, and its inbox hook never fires again until that shell exits."""
+    path = transcript_path(session_id)
+    if not path:
+        return None
+    st = os.stat(path)
+    memo = _turn_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    ended = None
+    for e in reversed(transcript_tail(path)):
+        kind = e.get("type")
+        if kind == "system" and e.get("subtype") == "turn_duration":
+            ended = _ts(e["timestamp"])
+            break
+        # A queued background-task notification starts the next turn.
+        if kind in ("user", "assistant") or kind == "attachment" and (e.get("attachment") or {}).get("type") == "queued_command":
+            break
+    _turn_memo[path] = ((st.st_mtime, st.st_size), ended)
+    return ended
+
+
 def cache_info(session_id):
     """Prompt-cache state of a session's LAST API call, from its transcript:
     {"at": call start (epoch s), "ttl": seconds, "expires": epoch s, "tokens": context size}, or None.
@@ -825,9 +852,9 @@ class Watcher:
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
 
-    def _deliver(self, p, task_id, info):
+    def _deliver(self, p, task_id, info, waiting=False):
         try:
-            deliver_notes(p, task_id, info)
+            deliver_notes(p, task_id, info, waiting)
         finally:
             self.delivering.discard((p.id, task_id))
 
@@ -871,11 +898,14 @@ class Watcher:
             if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
                                                     for e in reports.pending_notes(log, "")):
                 phase, reason = "working", ""  # the Stop hook handed it a note after its done report
-            if (phase in ("finished", "needs_you") and s and not busy and reports.pending_notes(log, delivered)
-                    and (p.id, t["id"]) not in self.delivering):
+            pending = s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
+            # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
+            waiting = pending and busy and phase == "working" and time.time() - (
+                turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE
+            if pending and (phase in ("finished", "needs_you") and not busy or waiting):
                 self.delivering.add((p.id, t["id"]))
-                threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")}),
-                                 daemon=True).start()
+                threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
+                                                             waiting), daemon=True).start()
             try:
                 cache = cache_info(s and s.get("sessionId"))
             except OSError:
@@ -985,14 +1015,18 @@ def resume(p, info, message):
     return m.group(1)
 
 
-def deliver_notes(p, task_id, info):
+def deliver_notes(p, task_id, info, waiting=False):
     """Fallback for notes the inbox hook never handed over (the turn ended first, or the session predates the hook):
-    resume the idle session with them."""
+    resume the idle session with them. `waiting`: its turn had ended while a background shell still ran."""
     notes, since = reports.take_notes(p.board, task_id)
     if not notes:
         return
     try:
         message = reports.notes_message(p.board, notes)
+        if waiting:
+            message += ("\n\n(Your turn had ended while you waited on a background command. Your session was "
+                        "stopped to hand you this message, which stopped those commands too: rerun any you still "
+                        "need, and give long runs a time limit so a hang cannot stall you.)")
         message += f"\n\n(Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
         aid = resume(p, info, message)
     except Exception as e:  # noqa: BLE001 — put the notes back for the next poll

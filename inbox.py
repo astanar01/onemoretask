@@ -33,4 +33,6 @@ if name == "Stop":
     out = {"decision": "block", "reason": text}
 else:
     out = {"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}
+# Hook context is hidden in the session view; this line shows someone who attaches that the card message arrived.
+out["systemMessage"] = "Task board message: " + " / ".join(e["message"] for e in notes)
 sys.stdout.write(json.dumps(out))
