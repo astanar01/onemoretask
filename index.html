@@ -731,7 +731,7 @@ function cardEl(t, top, nestedCount) {
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>${cacheChip(ag, false)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `Claude: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -948,6 +948,8 @@ function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].fi
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
 const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
+// The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
+const reviewing = (a) => { const e = (a.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status)); return !!(e && e.status === "review"); };
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
 // One row per subagent on the card: status, name, and what a running one is doing now.
