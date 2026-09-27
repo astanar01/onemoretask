@@ -40,14 +40,20 @@ ln -sf "$dir/bin/onemoretask" "$BIN/onemoretask"
 echo "Linked $BIN/onemoretask"
 
 # task-observer skill: our fork in skills/task-observer is copied in when missing, and replaces an earlier copy
-# of it (marked by FORKED_FROM). A user's own copy is left alone. Never fails the install.
+# of it (marked by FORKED_FROM) unless a file in it changed since (checked against .install-sums). A user's own
+# copy is left alone. Never fails the install.
 if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
   obs=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/task-observer
+  obs_sums() { (cd "$obs" && find . -type f ! -name .install-sums -exec cksum {} + | LC_ALL=C sort); }
   if [ -f "$obs/SKILL.md" ] && [ ! -f "$obs/FORKED_FROM" ]; then
     echo "Kept your own task-observer skill in $obs as is."
   elif [ ! -f "$obs/SKILL.md" ] && [ -d "$obs" ] && [ -n "$(ls -A "$obs" 2>/dev/null)" ]; then
     echo "Note: $obs has files but no SKILL.md — left alone, task-observer skill not installed."
-  elif mkdir -p "$obs" && rm -rf "$obs/references" "$obs/scripts" && cp -R "$dir/skills/task-observer/." "$obs/"; then
+  elif [ -f "$obs/.install-sums" ] && [ "$(obs_sums)" != "$(cat "$obs/.install-sums")" ]; then
+    echo "Kept the task-observer skill in $obs: it was edited since the last install."
+    echo "  To get the new version instead, delete that folder and run the install again."
+  elif rm -rf "$obs" && mkdir -p "$obs" && cp -R "$dir/skills/task-observer/." "$obs/" \
+      && obs_sums > "$obs/.install-sums"; then
     echo "Installed the task-observer skill in $obs"
   else
     echo "Note: could not install the task-observer skill in $obs — skipped."

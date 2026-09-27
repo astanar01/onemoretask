@@ -7,11 +7,20 @@
 # No `exit` in the body: under `irm | iex` it would close the user's PowerShell window.
 
 # Our fork in skills\task-observer is copied in when missing, and replaces an earlier copy of it (marked by
-# FORKED_FROM). A user's own copy is left alone. Never fails the install.
+# FORKED_FROM) unless a file in it changed since (checked against .install-sums). A user's own copy is left
+# alone. Never fails the install.
+function Get-ObserverSums($dir) {
+    $full = (Resolve-Path -LiteralPath $dir).Path
+    $lines = Get-ChildItem -LiteralPath $full -Recurse -File -Force | Where-Object { $_.Name -ne '.install-sums' } |
+        ForEach-Object { "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash) $($_.FullName.Substring($full.Length))" }
+    (@($lines) | Sort-Object) -join "`n"
+}
+
 function Install-TaskObserver($src) {
     $root = $env:CLAUDE_CONFIG_DIR
     if (-not $root) { $root = Join-Path $HOME '.claude' }
     $dir = Join-Path $root 'skills\task-observer'
+    $sumsFile = Join-Path $dir '.install-sums'
     try {
         $hasSkill = Test-Path (Join-Path $dir 'SKILL.md')
         if ($hasSkill -and -not (Test-Path (Join-Path $dir 'FORKED_FROM'))) {
@@ -22,9 +31,15 @@ function Install-TaskObserver($src) {
             Write-Host "Note: $dir has files but no SKILL.md - left alone, task-observer skill not installed." -ForegroundColor Yellow
             return
         }
+        if ((Test-Path -LiteralPath $sumsFile) -and ((Get-ObserverSums $dir) -ne ([IO.File]::ReadAllText($sumsFile)))) {
+            Write-Host "Kept the task-observer skill in $dir`: it was edited since the last install."
+            Write-Host '  To get the new version instead, delete that folder and run the install again.'
+            return
+        }
+        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        foreach ($sub in 'references', 'scripts') { Remove-Item -Recurse -Force (Join-Path $dir $sub) -ErrorAction SilentlyContinue }
-        Copy-Item -Recurse -Force (Join-Path $src '*') $dir
+        Copy-Item -Recurse -Force (Join-Path $src '*') $dir -ErrorAction Stop
+        [IO.File]::WriteAllText($sumsFile, (Get-ObserverSums $dir))
         Write-Host "Installed the task-observer skill in $dir"
     } catch {
         Write-Host "Note: task-observer skill step failed ($($_.Exception.Message)) - skipped." -ForegroundColor Yellow
