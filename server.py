@@ -52,6 +52,11 @@ chosen budget (low / medium / high), and posts the findings on the card. The car
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
 
+GET /api/observations?p=<pid> lists the open entries of the task-observer skill's observation logs
+(<project>/skill-observations/ and <claude config dir>/skill-observations/, read-only; see observations.py).
+When that skill is installed, the task prompt (build_prompt, not the review prompt) tells the session to run it
+and log to <project>/skill-observations/.
+
 Each card with a session also shows its prompt-cache countdown (cache_info reads the
 last API call and its 5m/1h TTL tier from the session transcript under
 ~/.claude/projects/). Once it runs out the card says "cache cold": a reply then
@@ -79,6 +84,7 @@ from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+import observations
 import reports
 
 WINDOWS = os.name == "nt"
@@ -291,7 +297,11 @@ def build_prompt(p, state, t):
     report = report_cmd(p, t["id"])
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report)]
-    lines += ["", f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
+    lines.append("")
+    if observations.installed():
+        lines.append("Invoke the task-observer skill at the start and log its observations to "
+                     f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}.")
+    lines += [f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
     return "\n".join(lines)
 
@@ -1046,6 +1056,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
+        elif path == "/api/observations":
+            self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
