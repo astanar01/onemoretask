@@ -110,7 +110,9 @@ the git repo you run it from.
 The install command also adds the task-observer skill. The app ships its own copy in `skills/task-observer/`,
 a fork of Eoghan Henn's [one-skill-to-rule-them-all](https://github.com/rebelytics/one-skill-to-rule-them-all)
 (CC BY 4.0), so nothing is downloaded from that repo. Each install replaces the copy it put there before
-(the one with a `FORKED_FROM` file). Delete that file to keep your own edits. It notes what could make your Claude skills better while Claude works: a correction you made,
+(the one with a `FORKED_FROM` file). Delete that file to keep your own edits.
+
+The skill notes what could make your Claude skills better while Claude works: a correction you made,
 a step that kept failing, a workflow worth keeping. Every session the board starts is told to run it.
 
 - The **Observations** button in the header shows how many are open. It reads
