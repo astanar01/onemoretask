@@ -9,6 +9,9 @@ already keeps one there, <root>/tools/task_board/). It holds
 
 A log is a list of {at, status, message, from, images?, session?}. Images are
 stored by content hash.
+
+A message typed on the card while Claude works is logged as status "note". The session's inbox hook
+(inbox.py) hands it over; <task_id>.inbox.json records the `at` of the last note handed over.
 """
 import errno
 import hashlib
@@ -153,3 +156,76 @@ def append(board, task_id, status, message, sender, session=None, images=None):
         finally:
             _unlock(f)
     return entry
+
+
+def _inbox_path(board, task_id):
+    return _path(board, task_id)[:-len(".json")] + ".inbox.json"
+
+
+def _read_marker(f):
+    f.seek(0)
+    try:
+        return json.loads(f.read() or "{}").get("delivered") or ""
+    except (json.JSONDecodeError, AttributeError):
+        return ""
+
+
+def delivered(board, task_id):
+    """The `at` of the last note handed to Claude ('' if none)."""
+    try:
+        with open(_inbox_path(board, task_id), encoding="utf-8") as f:
+            return _read_marker(f)
+    except FileNotFoundError:
+        return ""
+
+
+def pending_notes(log, since):
+    # Same-format UTC isoformat strings sort in time order.
+    return [e for e in log if e.get("status") == "note" and e.get("from") == "you" and e.get("at", "") > since]
+
+
+def take_notes(board, task_id):
+    """Mark every note not handed over yet as delivered and return (notes, previous marker). The lock makes one
+    note go to one taker: the hook and the board's fallback can race at a turn's end."""
+    path = _inbox_path(board, task_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a+", encoding="utf-8") as f:
+        _lock(f)
+        try:
+            since = _read_marker(f)
+            notes = pending_notes(read(board, task_id), since)
+            if notes:
+                f.seek(0)
+                f.truncate()
+                json.dump({"delivered": notes[-1]["at"]}, f)
+        finally:
+            _unlock(f)
+    return notes, since
+
+
+def untake_notes(board, task_id, notes, since):
+    """Undo take_notes after a failed hand-over, unless a later take already moved the marker on."""
+    path = _inbox_path(board, task_id)
+    with open(path, "a+", encoding="utf-8") as f:
+        _lock(f)
+        try:
+            if notes and _read_marker(f) == notes[-1]["at"]:
+                f.seek(0)
+                f.truncate()
+                json.dump({"delivered": since}, f)
+        finally:
+            _unlock(f)
+
+
+def notes_message(board, notes):
+    """The text Claude gets for notes typed on the card while it worked."""
+    parts = ["Message from the user on the task board, sent while you were working:" if len(notes) == 1 else
+             f"{len(notes)} messages from the user on the task board, sent while you were working:"]
+    for e in notes:
+        parts.append(e["message"])
+        if e.get("images"):
+            parts.append("Images attached (open each with the Read tool):\n" + "\n".join(
+                f"- {image_path(log_images(board), n)}" for n in e["images"]))
+    parts.append("Take this into account in the work you are doing now. The user reads only the card: if it asks "
+                 "you something, answer with report.py (progress, or done when you finish).")
+    return "\n\n".join(parts)

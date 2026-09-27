@@ -194,6 +194,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-log li .who { font-size: calc(11px * var(--ts)); color: var(--muted); display: block; }
 #d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
 #d-log .mark.sent { color: var(--ok); font-weight: 700; }
+#d-log .note-state { font-style: italic; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -939,6 +940,8 @@ let agents = {};                 // task id -> { id, sessionId, state, phase, re
 let pending = {};                // task id -> [{ from, status, message, images, at, state: "sending" | "sent", base }]
 const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
 const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
+const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· Claude has it</span>`
+  : ` <span class="note-state">· waiting for Claude's next step</span>`;
 function addPending(t, status, message, images) {
   const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
   (pending[t.id] = pending[t.id] || []).push(m);
@@ -1021,18 +1024,22 @@ function renderAgent(t) {
 
   const log = (ag && ag.log) || [];
   // A sent message stays on screen as pending until the poll brings its logged copy.
-  pending[t.id] = pend.filter((m) => m.state === "sending" || !log.some((e, i) => i >= m.base && e.from === "you" && e.status === m.status && (m.status !== "reply" || e.message === m.message)));
+  pending[t.id] = pend.filter((m) => m.state === "sending" || !log.some((e, i) => i >= m.base && e.from === "you" && (m.status === "reply" || m.status === "note" ? (e.status === "reply" || e.status === "note") && e.message === m.message : e.status === m.status)));
   if (!pending[t.id].length) delete pending[t.id];
   const shown = log.slice(-30).concat(pending[t.id] || []);
-  $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
-  $("#d-log").scrollTop = $("#d-log").scrollHeight;
+  $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
+  $("#d-log").scrollTop = $("#d-log").scrollHeight;
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
+  const busy = ag && ag.phase === "working";
+  $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it reads this after its current step. Cmd+Enter to send, paste images to attach"
+    : "Answer Claude — Cmd+Enter to send, paste images to attach";
+  $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
   renderReplyImages();
   renderOverview(t);
 }
@@ -1177,7 +1184,8 @@ async function loadDefaultModel() {
   if (!defaultModel.model) setTimeout(() => { const o = openId && task(openId); if (o && !o.agent) loadDefaultModel(); }, 10000);
 }
 // Closed while a reply is in flight too: the box goes the moment you send, and comes back only if the send fails.
-const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && ag.sessionId && ag.phase !== "working" && ag.phase !== "gone" && !(pending[t.id] || []).length); };
+// Open while Claude works: the message is then a note its session reads after its current step (server: reply()).
+const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && (ag.sessionId || ag.phase === "working") && ag.phase !== "gone" && !(pending[t.id] || []).length); };
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -1270,13 +1278,14 @@ async function sendReply() {
   const t = task(openId), text = $("#d-reply").value.trim();
   if (!t || (!text && !replyImages.length)) return;
   $("#d-reply-send").disabled = true;
-  setStatus("Sending reply…");
-  const images = replyImages, pm = addPending(t, "reply", text, images);
+  const busy = agents[t.id] && agents[t.id].phase === "working";
+  setStatus(busy ? "Sending note…" : "Sending reply…");
+  const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images);
   $("#d-reply").value = ""; replyImages = []; renderReplyImages(); refreshAgent(t);
   try {
-    await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
+    const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
-    setStatus("Reply sent — Claude is back at work");
+    setStatus(res.queued ? "Note sent — Claude reads it after its current step" : "Reply sent — Claude is back at work");
   } catch (e) {
     dropPending(t, pm);
     // Hand the unsent message back so nothing typed is lost.

@@ -89,7 +89,11 @@ the git repo you run it from.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
    and on macOS you get a notification when it needs you or finishes.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
-   session.
+   session. You can also write while Claude is still working, to add information or change
+   course. That message is a **note**. Claude reads it right after its current step, or just
+   before it would stop. The card shows "Claude has it" once it is delivered. A hook that
+   the board installs on each session it starts (`inbox.py`) does this. For a session started
+   before this feature, the note goes in as soon as the session stops.
 6. **Review the code.** A finished card in the Review column has a **Review code** button.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
    skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it

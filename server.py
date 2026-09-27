@@ -39,6 +39,11 @@ with the reply as its next message (`claude --bg --resume` on a live session
 would start a copy instead). If the session then stops without calling report.py, the
 watcher copies its chat answer from the transcript onto the card (status "answer").
 
+A message typed on the card while Claude works is logged as a "note" instead. Every session the board starts
+gets inbox.py as a PostToolUse + Stop hook (--settings; a flagless --resume keeps it), which hands the note over
+after the current tool call, or blocks the stop if the turn is ending. Notes left over (the turn ended first, or
+the session predates the hook) are delivered by the watcher resuming the idle session.
+
 "Review code" (a finished card in Review) starts a fresh `claude --bg` session on the task's model that picks
 the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
 card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
@@ -443,16 +448,22 @@ def launch(p, task_id, model=""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(prompt)
-    aid = start_session(p, name, prompt, model)
+    aid = start_session(p, task_id, name, prompt, model)
     reports.append(p.board, task_id, "launch", f"Sent to Claude (session {aid}, model {model or 'default'})",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid
 
 
-def start_session(p, name, prompt, model):
-    r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model), prompt],
-                   cwd=p.path, timeout=60)
+def inbox_settings(p, task_id):
+    """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session."""
+    hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
+    return json.dumps({"hooks": {"PostToolUse": hook, "Stop": hook}})
+
+
+def start_session(p, task_id, name, prompt, model):
+    r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
+                    "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
@@ -514,7 +525,7 @@ def review(p, task_id, level):
         "If a later reply asks for fixes: make them, verify them, commit (never push), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep)])
-    aid = start_session(p, "review: " + t["title"][:58], prompt, t["agent"].get("model") or "")
+    aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, t["agent"].get("model") or "")
     reports.append(p.board, task_id, "review", f"Code review started ({level}, session {aid})", "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid
@@ -553,6 +564,7 @@ def git_info(p):
 
 def phase_of(session, log, launched_at):
     """(phase, reason) from the CLI's session record and the card's message log."""
+    log = [e for e in log if e.get("status") != "note"]  # a note sent mid-work changes nothing about the turn
     last = log[-1] if log else {}
     st = session and session.get("state")
     # "status" is the live turn (busy / idle; absent once the process exits). "state" is the CLI's summary and
@@ -771,6 +783,13 @@ class Watcher:
         self.cache = {}       # (project id, task id) -> {id, sessionId, state, phase, reason, log}
         self.launched = {}    # agent id -> launch time, for sessions not listed yet
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
+        self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
+
+    def _deliver(self, p, task_id, info):
+        try:
+            deliver_notes(p, task_id, info)
+        finally:
+            self.delivering.discard((p.id, task_id))
 
     def expect(self, p, task_id, agent_id):
         with self.lock:
@@ -794,17 +813,29 @@ class Watcher:
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
             s = sessions.get(aid)
             phase, reason = phase_of(s, log, self.launched.get(aid, 0))
-            if phase == "needs_you" and s and s.get("state") != "blocked" and log and log[-1].get("from") == "you":
+            said = [e for e in log if e.get("status") != "note"]
+            if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
                 # It stopped after a card reply without calling report.py: its answer is only in the chat, which
                 # the user never sees. Copy that answer onto the card.
                 try:
-                    text = last_answer(s.get("sessionId"), log[-1]["message"])
+                    text = last_answer(s.get("sessionId"), said[-1]["message"])
                 except OSError:
                     text = ""
                 if text:
                     reports.append(p.board, t["id"], "answer", text, "claude")
                     log = reports.read(p.board, t["id"])
                     phase, reason = phase_of(s, log, self.launched.get(aid, 0))
+            delivered = reports.delivered(p.board, t["id"])
+            busy = bool(s) and s.get("status") == "busy"
+            last_claude = next((e["at"] for e in reversed(log) if e.get("from") == "claude"), "")
+            if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
+                                                    for e in reports.pending_notes(log, "")):
+                phase, reason = "working", ""  # the Stop hook handed it a note after its done report
+            if (phase in ("finished", "needs_you") and s and not busy and reports.pending_notes(log, delivered)
+                    and (p.id, t["id"]) not in self.delivering):
+                self.delivering.add((p.id, t["id"]))
+                threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")}),
+                                 daemon=True).start()
             try:
                 cache = cache_info(s and s.get("sessionId"))
             except OSError:
@@ -815,7 +846,7 @@ class Watcher:
                 subs = []
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
-                                      "closed": t.get("column") in done_cols}
+                                      "closed": t.get("column") in done_cols, "delivered": delivered}
         with self.lock:
             old, self.cache = self.cache, fresh
             primed, self.primed = self.primed, True
@@ -860,18 +891,40 @@ class Watcher:
 
 WATCH = Watcher()
 
-def report_cmd(p, task_id):
-    # Agents run it in their shell (Git Bash on Windows, where `python3` is often missing or a Store stub).
+def script_cmd(p, task_id, script):
+    # Agents and hooks run it in their shell (Git Bash on Windows, where `python3` is often missing or a Store stub).
     q = lambda x: shlex.quote(shell_path(x))
-    return f"{q(sys.executable) if WINDOWS else 'python3'} {q(os.path.join(HERE, 'report.py'))} --board {q(p.board)} {task_id}"
+    return f"{q(sys.executable) if WINDOWS else 'python3'} {q(os.path.join(HERE, script))} --board {q(p.board)} {task_id}"
+
+
+def report_cmd(p, task_id):
+    return script_cmd(p, task_id, "report.py")
 
 
 def reply(p, task_id, text, images=()):
+    """Send a card message. While Claude works it is logged as a note for the session's inbox hook; else it
+    resumes the session. Returns True when it was queued as a note."""
     info = WATCH.snapshot(p.id).get(task_id)
-    if not info or not info.get("sessionId"):
+    if not info:
         raise LookupError("no Claude session for this task")
     if info["phase"] == "working":
-        raise PermissionError("Claude is still working — wait until it stops")
+        reports.append(p.board, task_id, "note", text, "you", images=list(images))
+        return True
+    if not info.get("sessionId"):
+        raise LookupError("no Claude session for this task")
+    # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
+    message = text + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
+    if images:
+        message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
+            image_lines(images, reports.log_images(p.board)))
+    aid = resume(p, info, message)
+    reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
+    WATCH.expect(p, task_id, aid)
+    return False
+
+
+def resume(p, info, message):
+    """Wake an idle session with `message` as its next turn; returns the session's short id."""
     # A live idle session must be stopped first, and fully (its pid gone): --resume on a
     # running one starts a copy instead of waking it.
     run_claude(["stop", info["id"]], cwd=p.path, timeout=30)
@@ -881,20 +934,34 @@ def reply(p, task_id, text, images=()):
             break
         time.sleep(0.25)
     time.sleep(1)  # resuming the instant the pid goes has still produced a copy; the board follows either way
-    message = text
-    # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
-    message += f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
-    if images:
-        message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
-            image_lines(images, reports.log_images(p.board)))
-    # No flags here: a bg session keeps its saved options (model included), and any flag on --resume forks a copy.
+    # No flags here: a bg session keeps its saved options (model and inbox hook included), and any flag on --resume
+    # forks a copy.
     r = run_claude(["--bg", "--resume", info["sessionId"], message], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
-    reports.append(p.board, task_id, "reply", text, "you", session=m.group(1), images=list(images))
-    WATCH.expect(p, task_id, m.group(1))
+    return m.group(1)
+
+
+def deliver_notes(p, task_id, info):
+    """Fallback for notes the inbox hook never handed over (the turn ended first, or the session predates the hook):
+    resume the idle session with them."""
+    notes, since = reports.take_notes(p.board, task_id)
+    if not notes:
+        return
+    try:
+        message = reports.notes_message(p.board, notes)
+        message += f"\n\n(Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
+        aid = resume(p, info, message)
+    except Exception as e:  # noqa: BLE001 — put the notes back for the next poll
+        reports.untake_notes(p.board, task_id, notes, since)
+        print("deliver notes:", e)
+        return
+    n = len(notes)
+    reports.append(p.board, task_id, "resume", f"Handed Claude {n} message{'s' if n > 1 else ''} it had not read yet",
+                   "you", session=aid)
+    WATCH.expect(p, task_id, aid)
 
 
 # ---------------------------------------------------------------- http
@@ -1022,9 +1089,9 @@ class Handler(SimpleHTTPRequestHandler):
                 p = project(body["p"])
                 images = [n for n in body.get("images", [])
                           if os.path.exists(reports.image_path(reports.log_images(p.board), n))]
-                reply(p, body["taskId"],
-                      body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
-                self._json(200, {"ok": True})
+                queued = reply(p, body["taskId"],
+                               body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
+                self._json(200, {"ok": True, "queued": queued})
         self._errors(handle)
 
     def do_PUT(self):
