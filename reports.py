@@ -10,7 +10,7 @@ already keeps one there, <root>/tools/task_board/). It holds
 A log is a list of {at, status, message, from, images?, session?}. Images are
 stored by content hash.
 """
-import fcntl
+import errno
 import hashlib
 import json
 import os
@@ -18,8 +18,16 @@ import re
 import subprocess
 from datetime import datetime, timezone
 
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
+
 IMAGE_EXTS = {b"\x89PNG": ".png", b"\xff\xd8\xff": ".jpg", b"GIF8": ".gif"}
 MAX_IMAGE = 25 * 1024 * 1024
+# Windows byte locks are mandatory: locking byte 0 would make every reader of the log fail, so lock one past any data.
+LOCK_AT = 0x7FFFFFFE
 
 
 def board_dir(root):
@@ -34,13 +42,14 @@ def ensure_board(board):
     os.makedirs(board, exist_ok=True)
     ignore = os.path.join(board, ".gitignore")
     if not os.path.exists(ignore) and os.path.basename(board) == ".task_board":
-        with open(ignore, "w") as f:
+        with open(ignore, "w", encoding="utf-8") as f:
             f.write("agent_reports/\n")
 
 
 def project_root(path="."):
     """The git top level containing `path`, else `path` itself."""
-    r = subprocess.run(["git", "-C", path, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", path, "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else os.path.abspath(path)
 
 
@@ -98,6 +107,28 @@ def read(board, task_id):
         return []
 
 
+def _lock(f):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        return
+    os.lseek(f.fileno(), LOCK_AT, os.SEEK_SET)
+    while True:
+        try:
+            msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+            return
+        except OSError as e:  # LK_LOCK gives up after 10 tries a second apart; keep waiting
+            if e.errno != getattr(errno, "EDEADLOCK", errno.EDEADLK):
+                raise
+
+
+def _unlock(f):
+    if fcntl:
+        return  # close releases the flock
+    f.flush()
+    os.lseek(f.fileno(), LOCK_AT, os.SEEK_SET)
+    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def append(board, task_id, status, message, sender, session=None, images=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -108,14 +139,17 @@ def append(board, task_id, status, message, sender, session=None, images=None):
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
     with open(path, "a+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        f.seek(0)
+        _lock(f)
         try:
-            log = json.loads(f.read() or "[]")
-        except json.JSONDecodeError:
-            log = []
-        log.append(entry)
-        f.seek(0)
-        f.truncate()
-        json.dump(log, f, indent=2, ensure_ascii=False)
+            f.seek(0)
+            try:
+                log = json.loads(f.read() or "[]")
+            except json.JSONDecodeError:
+                log = []
+            log.append(entry)
+            f.seek(0)
+            f.truncate()
+            json.dump(log, f, indent=2, ensure_ascii=False)
+        finally:
+            _unlock(f)
     return entry

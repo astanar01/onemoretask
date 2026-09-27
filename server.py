@@ -34,7 +34,7 @@ watcher thread polls `claude agents --json --all` every few seconds and, for
 every remembered project, turns session state + the latest report into a phase:
 working, needs_you (a question, a permission prompt, or it stopped without
 reporting) or finished. Entering needs_you or finished raises a macOS
-notification. A reply typed on the card stops the idle session and resumes it
+notification (none on other systems). A reply typed on the card stops the idle session and resumes it
 with the reply as its next message (`claude --bg --resume` on a live session
 would start a copy instead). If the session then stops without calling report.py, the
 watcher copies its chat answer from the transcript onto the card (status "answer").
@@ -66,6 +66,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -75,9 +76,68 @@ from urllib.parse import parse_qs, urlsplit
 
 import reports
 
+WINDOWS = os.name == "nt"
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY = os.path.expanduser("~/.config/task_board/projects.json")
-CLAUDE = shutil.which("claude") or os.path.expanduser("~/.local/bin/claude")
+TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}  # Windows would decode with the ANSI code page
+
+
+def claude_cmd(found=None):
+    """argv prefix that runs the Claude CLI. An npm .cmd shim runs through cmd.exe, which cuts a multi-line
+    argument at its first newline, so a shim is swapped for the node script it wraps when that can be found."""
+    exe = found or shutil.which("claude")
+    if not exe:
+        names = ("claude.exe", "claude") if WINDOWS else ("claude",)
+        paths = [os.path.expanduser("~/.local/bin/" + n) for n in names]
+        exe = next((x for x in paths if os.path.exists(x)), paths[0])
+    if not exe.lower().endswith((".cmd", ".bat")):
+        return [exe]
+    here = os.path.dirname(exe)
+    try:
+        with open(exe, encoding="utf-8", errors="replace") as f:
+            scripts = re.findall(r'%~?dp0%?\\([^"%*\r\n]+\.(?:c?js|mjs|exe))', f.read(), re.I)
+    except OSError:
+        scripts = []
+    rel = next((x.replace("\\", os.sep) for x in scripts if x.lower() != "node.exe"),
+               os.path.join("node_modules", "@anthropic-ai", "claude-code", "cli.js"))
+    target = os.path.join(here, rel)
+    if os.path.exists(target) and target.lower().endswith(".exe"):
+        return [target]
+    node = next((x for x in (os.path.join(here, "node.exe"), shutil.which("node")) if x and os.path.exists(x)), None)
+    return [node, target] if node and os.path.exists(target) else [exe]
+
+
+CLAUDE_CMD = claude_cmd()
+
+
+def run_claude(args, **kw):
+    cmd = CLAUDE_CMD + args
+    if CLAUDE_CMD[0].lower().endswith((".cmd", ".bat")) and any(c in a for a in args for c in '\r\n"%'):
+        raise RuntimeError(f"claude resolves to {CLAUDE_CMD[0]}, a cmd.exe script that cuts or mangles this prompt "
+                           "(newlines, quotes, %). Install the native claude.exe (see https://claude.com/claude-code) "
+                           "or keep node_modules/@anthropic-ai/claude-code/cli.js beside the shim.")
+    if WINDOWS and len(subprocess.list2cmdline(cmd)) > 32000:
+        raise ValueError("prompt too long for a Windows command line (32767 characters) — shorten the notes")
+    return subprocess.run(cmd, capture_output=True, **TEXT, **kw)
+
+
+def shell_path(path):
+    """A path an agent types into its shell: on Windows that is Git Bash, which eats backslashes."""
+    return path.replace("\\", "/") if WINDOWS else path
+
+
+def replace_file(tmp, dst):
+    """os.replace, retried on Windows while another process (a reader, a Claude session) has `dst` open."""
+    for tries in range(40 if WINDOWS else 1, 0, -1):
+        try:
+            return os.replace(tmp, dst)
+        except PermissionError:
+            if tries == 1:
+                os.unlink(tmp)
+                raise
+            time.sleep(0.05)
+
+
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
 PERMISSION_MODE = "auto"
@@ -112,7 +172,7 @@ def _write_registry(entries):
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(REGISTRY), suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump({"projects": entries}, f, indent=2)
-    os.replace(tmp, REGISTRY)
+    replace_file(tmp, REGISTRY)
 
 
 def projects():
@@ -147,11 +207,23 @@ def forget_project(pid):
 
 def pick_folder():
     """Native folder dialog; None when cancelled."""
+    if WINDOWS and shutil.which("powershell"):
+        ps = ("[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false;"
+              "Add-Type -AssemblyName System.Windows.Forms;"
+              "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+              "$d.Description = 'Choose a project folder for the task board';"
+              "$top = New-Object System.Windows.Forms.Form -Property @{TopMost = $true};"
+              "if ($d.ShowDialog($top) -eq 'OK') { $d.SelectedPath }")
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps], capture_output=True, timeout=600,
+                           **TEXT)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "folder dialog failed")
+        return r.stdout.strip().lstrip("\ufeff") or None
     if shutil.which("osascript") is None:
         raise RuntimeError("no folder dialog on this system — paste the folder's path instead")
     r = subprocess.run(["osascript", "-e", "activate", "-e",
                         'POSIX path of (choose folder with prompt "Choose a project folder for the task board")'],
-                       capture_output=True, text=True, timeout=600)
+                       capture_output=True, timeout=600, **TEXT)
     if r.returncode != 0:
         if "-128" in r.stderr:  # user cancelled
             return None
@@ -166,7 +238,7 @@ def load_tasks(p):
 
 
 def image_lines(names, folder, indent=""):
-    return [f"{indent}- {reports.image_path(folder, n)}" for n in names]
+    return [f"{indent}- {shell_path(reports.image_path(folder, n))}" for n in names]
 
 
 def build_prompt(p, state, t):
@@ -237,6 +309,8 @@ def card_lines(report):
 
 
 def notify(title, subtitle, message):
+    if shutil.which("osascript") is None:
+        return  # macOS only
     esc = lambda x: x.replace("\\", "\\\\").replace('"', '\\"')[:200]
     subprocess.run(["osascript", "-e", f'display notification "{esc(message)}" with title "{esc(title)}" '
                     f'subtitle "{esc(subtitle)}" sound name "Glass"'], capture_output=True, timeout=10)
@@ -297,15 +371,15 @@ def _probe_account_default():
     global _default_probing
     try:
         # No tools, MCP or project dir, to keep the probe cheap; the model is all we read.
-        r = subprocess.run([CLAUDE, "-p", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-                            "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
-                            "Reply: ok"], cwd=tempfile.gettempdir(), capture_output=True, text=True, timeout=180)
+        r = run_claude(["-p", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                        "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
+                        "Reply: ok"], cwd=tempfile.gettempdir(), timeout=180)
         models = list(json.loads(r.stdout).get("modelUsage") or {})
         if models:
             os.makedirs(os.path.dirname(DEFAULT_CACHE), exist_ok=True)
             with open(DEFAULT_CACHE, "w", encoding="utf-8") as fh:
                 json.dump({"model": models[0], "at": time.time()}, fh)
-    except (OSError, ValueError, subprocess.SubprocessError) as e:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
         print("default model probe:", e)
     finally:
         _default_probing = False
@@ -342,14 +416,17 @@ def trust_folder(p):
     Running sessions rewrite this file too, so read-modify-replace in one short step, then read back."""
     with open(CLAUDE_JSON, encoding="utf-8") as f:
         cfg = json.load(f)
-    cfg.setdefault("projects", {}).setdefault(p.path, {})["hasTrustDialogAccepted"] = True
+    keys = {p.path, shell_path(p.path)}  # unverified which spelling the Windows CLI keys projects by
+    for k in keys:
+        cfg.setdefault("projects", {}).setdefault(k, {})["hasTrustDialogAccepted"] = True
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CLAUDE_JSON), suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     os.chmod(tmp, os.stat(CLAUDE_JSON).st_mode & 0o777)
-    os.replace(tmp, CLAUDE_JSON)
+    replace_file(tmp, CLAUDE_JSON)
     with open(CLAUDE_JSON, encoding="utf-8") as f:
-        if not json.load(f).get("projects", {}).get(p.path, {}).get("hasTrustDialogAccepted"):
+        saved = json.load(f).get("projects", {})
+        if not all(saved.get(k, {}).get("hasTrustDialogAccepted") for k in keys):
             raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
 
 
@@ -374,9 +451,8 @@ def launch(p, task_id, model=""):
 
 
 def start_session(p, name, prompt, model):
-    r = subprocess.run([CLAUDE, "--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
-                        prompt],
-                       cwd=p.path, capture_output=True, text=True, timeout=60)
+    r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model), prompt],
+                   cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
@@ -392,7 +468,7 @@ REVIEW_LEVELS = ("low", "medium", "high")
 def task_commits(p, since):
     """[(short sha, subject)] on HEAD committed since `since` (ISO time), newest first."""
     r = subprocess.run(["git", "-C", p.path, "log", f"--since={since}", "--format=%h %s", "HEAD"],
-                       capture_output=True, text=True, timeout=10)
+                       capture_output=True, timeout=10, **TEXT)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "git log failed")
     return [tuple(x.split(" ", 1)) if " " in x else (x, "") for x in r.stdout.splitlines() if x]
@@ -429,7 +505,8 @@ def review(p, task_id, level):
         "to other tasks:", *[f"- {sha} {subj}" for sha, subj in commits], "",
         "Steps:",
         f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "{level}" plus the candidate '
-        f"shas above). If that skill is not installed, Read {os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md')} "
+        f"shas above). If that skill is not installed, Read {shell_path(os.path.join(HERE, 'skills', 'commit-review'))}"
+        "/SKILL.md "
         "and follow it. It keeps only the commits that match the report above. Keep to its turn budget. Do not use "
         "/code-review, subagents or workflows. Review only in this turn: no file changes, no commits.",
         f'2. Post its report with `{rep} done "..."`, naming the commits you reviewed. If nothing survived, say so. '
@@ -460,7 +537,7 @@ def task_prompt(p, task_id):
 def git_info(p):
     def git(*args):
         try:
-            r = subprocess.run(["git", "-C", p.path, *args], capture_output=True, text=True, timeout=5)
+            r = subprocess.run(["git", "-C", p.path, *args], capture_output=True, timeout=5, **TEXT)
         except (OSError, subprocess.SubprocessError):
             return None
         return r.stdout.strip() if r.returncode == 0 else None
@@ -511,14 +588,15 @@ def phase_of(session, log, launched_at):
 def job_detail(job_id):
     """The CLI's one-line summary of where a background session stopped ('' if unknown)."""
     try:
-        with open(os.path.join(os.path.expanduser("~/.claude/jobs"), job_id or "", "state.json")) as f:
+        path = os.path.join(os.path.expanduser("~/.claude/jobs"), job_id or "", "state.json")
+        with open(path, encoding="utf-8") as f:
             return (json.load(f).get("detail") or "").strip()
     except (OSError, ValueError, AttributeError):
         return ""
 
 
 def list_sessions(cwd):
-    r = subprocess.run([CLAUDE, "agents", "--json", "--all"], cwd=cwd, capture_output=True, text=True, timeout=30)
+    r = run_claude(["agents", "--json", "--all"], cwd=cwd, timeout=30)
     return json.loads(r.stdout or "[]")
 
 
@@ -766,7 +844,9 @@ class Watcher:
 WATCH = Watcher()
 
 def report_cmd(p, task_id):
-    return f"python3 {shlex.quote(os.path.join(HERE, 'report.py'))} --board {shlex.quote(p.board)} {task_id}"
+    # Agents run it in their shell (Git Bash on Windows, where `python3` is often missing or a Store stub).
+    q = lambda x: shlex.quote(shell_path(x))
+    return f"{q(sys.executable) if WINDOWS else 'python3'} {q(os.path.join(HERE, 'report.py'))} --board {q(p.board)} {task_id}"
 
 
 def reply(p, task_id, text, images=()):
@@ -777,7 +857,7 @@ def reply(p, task_id, text, images=()):
         raise PermissionError("Claude is still working — wait until it stops")
     # A live idle session must be stopped first, and fully (its pid gone): --resume on a
     # running one starts a copy instead of waking it.
-    subprocess.run([CLAUDE, "stop", info["id"]], cwd=p.path, capture_output=True, text=True, timeout=30)
+    run_claude(["stop", info["id"]], cwd=p.path, timeout=30)
     for _ in range(40):
         s = next((x for x in list_sessions(p.path) if x["id"] == info["id"]), None)
         if not s or "pid" not in s:
@@ -791,8 +871,7 @@ def reply(p, task_id, text, images=()):
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
     # No flags here: a bg session keeps its saved options (model included), and any flag on --resume forks a copy.
-    r = subprocess.run([CLAUDE, "--bg", "--resume", info["sessionId"], message],
-                       cwd=p.path, capture_output=True, text=True, timeout=60)
+    r = run_claude(["--bg", "--resume", info["sessionId"], message], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
@@ -805,9 +884,18 @@ def reply(p, task_id, text, images=()):
 FILE_ROUTE = re.compile(r"/files/([0-9a-f]{10})/(images|agent_reports/images)/([^/]+)")
 
 
+# Fixed types: mimetypes reads the Windows registry, which can map .js or .css to anything.
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+         ".json": "application/json", ".md": "text/plain; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg",
+         ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=HERE, **kwargs)
+
+    def guess_type(self, path):
+        return TYPES.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
 
     def _send(self, code, body=b"", ctype="application/json"):
         self.send_response(code)
@@ -947,7 +1035,7 @@ class Handler(SimpleHTTPRequestHandler):
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
                 f.write("\n")
-            os.replace(tmp, p.data)
+            replace_file(tmp, p.data)
             self._send(204)
         self._errors(write)
 
@@ -964,6 +1052,9 @@ def main():
     ap.add_argument("--permission-mode", default=PERMISSION_MODE,
                     help="permission mode for agents started with Send to Claude (default: auto)")
     args = ap.parse_args()
+    for stream in (sys.stdout, sys.stderr):  # a redirected Windows console would crash on non-ANSI names
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     PERMISSION_MODE = args.permission_mode
     if args.project:
         open_project(args.project)
