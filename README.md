@@ -32,9 +32,9 @@ It:
 - downloads the app to `~/.onemoretask`
 - adds the `onemoretask` command to `~/.local/bin`
 - adds `~/.local/bin` to your PATH if it isn't there yet (then open a new terminal)
-- installs the [task-observer](https://github.com/rebelytics/one-skill-to-rule-them-all) skill in
-  `~/.claude/skills/task-observer` if you don't have it yet (see [Skill observations](#skill-observations)).
-  Your own copy is never changed. Set `ONEMORETASK_NO_OBSERVER=1` to skip this.
+- copies the task-observer skill that ships with the app into `~/.claude/skills/task-observer`
+  (see [Skill observations](#skill-observations)). Your own copy is never changed.
+  Set `ONEMORETASK_NO_OBSERVER=1` to skip this.
 
 Already cloned the repo? Run `./install.sh` inside it instead. It uses that copy.
 
@@ -107,8 +107,10 @@ the git repo you run it from.
 
 ### Skill observations
 
-The install command also adds the [task-observer](https://github.com/rebelytics/one-skill-to-rule-them-all)
-skill. It notes what could make your Claude skills better while Claude works: a correction you made,
+The install command also adds the task-observer skill. The app ships its own copy in `skills/task-observer/`,
+a fork of Eoghan Henn's [one-skill-to-rule-them-all](https://github.com/rebelytics/one-skill-to-rule-them-all)
+(CC BY 4.0), so nothing is downloaded from that repo. Each install replaces the copy it put there before
+(the one with a `FORKED_FROM` file). Delete that file to keep your own edits. It notes what could make your Claude skills better while Claude works: a correction you made,
 a step that kept failing, a workflow worth keeping. Every session the board starts is told to run it.
 
 - The **Observations** button in the header shows how many are open. It reads
@@ -214,7 +216,7 @@ names) and `session` are added when they apply.
 |---|---|
 | `~/.config/task_board/projects.json` | The projects you opened, for the project menu |
 | `~/.config/task_board/default_model.json` | The name of your default Claude model, cached for 24 hours |
-| `~/.claude/skills/task-observer/` | The task-observer skill, installed by the install command |
+| `~/.claude/skills/task-observer/` | The task-observer skill, copied there by the install command |
 | `<project>/skill-observations/`, `~/.claude/skill-observations/` | Observations the skill logs. The board only reads them |
 | `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |
 | Your browser's local storage | View settings only: theme, text size, show subtasks, collapsed groups, last project, last model picked, which cards you have read |
@@ -240,7 +242,7 @@ What does leave your computer, and why:
 - **The default model name.** To show the name of your default model, the board runs
   `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
   skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
-- **Install and update.** The install command downloads the app and the task-observer skill from GitHub.
+- **Install and update.** The install command downloads the app from GitHub.
 
 ## Update
 

@@ -1,0 +1,4 @@
+Fork of https://github.com/rebelytics/one-skill-to-rule-them-all
+at commit c479475c551ad84d3bfa572245d053ef3ec6e112 (2026-09-25), CC BY 4.0 (see LICENSE.txt).
+Shipped with onemoretask; the installer copies this folder to ~/.claude/skills/task-observer.
+This file marks that copy as ours, so a later install may replace it. Remove it to keep your own edits.

@@ -4,7 +4,7 @@
 #   From a clone:      ./install.sh
 # Downloads (or updates) the repo in $ONEMORETASK_DIR (default ~/.onemoretask) unless run from a clone,
 # then links bin/onemoretask into ~/.local/bin and adds that folder to PATH if needed.
-# Also installs the task-observer Claude skill in ~/.claude/skills (skip: ONEMORETASK_NO_OBSERVER=1).
+# Also copies the bundled task-observer Claude skill to ~/.claude/skills (skip: ONEMORETASK_NO_OBSERVER=1).
 set -e
 case $(uname -s 2>/dev/null) in
   MINGW*|MSYS*|CYGWIN*)
@@ -39,29 +39,18 @@ chmod +x "$dir/bin/onemoretask"
 ln -sf "$dir/bin/onemoretask" "$BIN/onemoretask"
 echo "Linked $BIN/onemoretask"
 
-# task-observer skill: a fresh clone gets installed, our own clone gets updated, a user's copy is left alone.
-# Never fails the install.
+# task-observer skill: our fork in skills/task-observer is copied in when missing, and replaces an earlier copy
+# of it (marked by FORKED_FROM). A user's own copy is left alone. Never fails the install.
 if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
-  obs_repo=${TASK_OBSERVER_REPO:-https://github.com/rebelytics/one-skill-to-rule-them-all.git}
   obs=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/task-observer
-  norm() { printf '%s' "$1" | sed 's#/*$##; s#\.git$##'; }
-  if [ ! -f "$obs/SKILL.md" ]; then
-    if [ -d "$obs" ] && [ -n "$(ls -A "$obs" 2>/dev/null)" ]; then
-      echo "Note: $obs has files but no SKILL.md — left alone, task-observer skill not installed."
-    elif mkdir -p "$(dirname "$obs")" && GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "$obs_repo" "$obs"; then
-      echo "Installed the task-observer skill in $obs"
-    else
-      echo "Note: could not download the task-observer skill — skipped."
-    fi
-  # Check .git here: ~/.claude itself may be a repo, and git -C would read its origin.
-  elif [ -d "$obs/.git" ] && [ "$(norm "$(git -C "$obs" remote get-url origin 2>/dev/null)")" = "$(norm "$obs_repo")" ]; then
-    if GIT_TERMINAL_PROMPT=0 git -C "$obs" pull --ff-only -q; then
-      echo "Updated the task-observer skill"
-    else
-      echo "Note: could not update the task-observer skill in $obs — kept as is."
-    fi
-  else
+  if [ -f "$obs/SKILL.md" ] && [ ! -f "$obs/FORKED_FROM" ]; then
     echo "Kept your own task-observer skill in $obs as is."
+  elif [ ! -f "$obs/SKILL.md" ] && [ -d "$obs" ] && [ -n "$(ls -A "$obs" 2>/dev/null)" ]; then
+    echo "Note: $obs has files but no SKILL.md — left alone, task-observer skill not installed."
+  elif mkdir -p "$obs" && rm -rf "$obs/references" "$obs/scripts" && cp -R "$dir/skills/task-observer/." "$obs/"; then
+    echo "Installed the task-observer skill in $obs"
+  else
+    echo "Note: could not install the task-observer skill in $obs — skipped."
   fi
 fi
 
