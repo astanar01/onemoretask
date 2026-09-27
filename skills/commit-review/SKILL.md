@@ -1,6 +1,6 @@
 ---
 name: commit-review
-description: Cheap single-pass review of commits that were just made (or uncommitted changes) — finds real bugs, edge cases, regressions and untested paths, verifies each one against the code, and reports without changing files. Use when asked to "review the commit", "review what was just done", "check this change for bugs", or when the task board's Review code button starts a reviewer. Args "[low|medium|high] [<sha> ... | <a>..<b>]". A budget alternative to /code-review (no subagents, no multi-pass fan-out).
+description: Cheap single-pass review of commits that were just made (or uncommitted changes) — finds real bugs, edge cases, regressions and untested paths, runs a small test on each one to prove it (or states its confidence when no test can run), and reports without changing files. Use when asked to "review the commit", "review what was just done", "check this change for bugs", or when the task board's Review code button starts a reviewer. Args "[low|medium|high] [<sha> ... | <a>..<b>]". A budget alternative to /code-review (no subagents, no multi-pass fan-out).
 ---
 
 # Commit Review
@@ -68,27 +68,43 @@ Do NOT prescribe a checklist up front and do NOT report style, naming or "could 
 opinions. Only things that can go wrong.
 
 **Budget by level** — counted in TURNS after the diff turn (each turn may hold many
-parallel calls), not counting the final report post:
+parallel calls), not counting the final report post. Every level also gets the test turn(s)
+of step 4 — testing the findings is not optional at any level:
 
-| Level  | Extra turns | Checks you may run                                              |
-|--------|-------------|-----------------------------------------------------------------|
-| low    | 1           | none — reason from the diff and one batch of reads              |
-| medium | 2           | quick ones only, batched with the reads: compile/lint, a tiny script (seconds) |
-| high   | 4           | the relevant existing tests, a small repro script               |
+| Level  | Read turns | Test turns (step 4) | What the tests may be                                  |
+|--------|------------|---------------------|--------------------------------------------------------|
+| low    | 1          | 1                   | tiny repro scripts only (seconds each)                 |
+| medium | 2          | 1                   | repro scripts, compile/lint                            |
+| high   | 3          | 2                   | repro scripts, plus the related existing tests         |
 
 Never start the app, a browser, a build farm or long test suites. When the budget runs out,
 stop and report what you have.
 
-## 4. Verify before reporting
+## 4. Test every finding before reporting
 
-For every candidate finding, re-read the exact code lines and walk the failure case through
-them. Then mark it:
+A finding is a hypothesis until a test says otherwise. Do not report "this might break" —
+prove it or measure how sure you are.
 
-- **Confirmed** — you traced it through the code (or reproduced it with a check).
-- **Hypothetical** — plausible but depends on something you could not see; say what.
+1. For EACH candidate finding, write the smallest test that shows the failure: a script
+   that imports / calls the changed code with the breaking input, a shell repro on a temp
+   copy, a `grep` that proves an old name is still referenced, or the one existing test that
+   covers the path. Put scratch files in a temp dir (`$CLAUDE_JOB_DIR/tmp` if set, else
+   `mktemp -d`), never in the repo.
+2. Run ALL the repro tests in ONE turn (one Bash call that runs each and prints a labeled
+   result, or parallel calls). A test that needs a fix to the test itself gets the second
+   test turn at high only.
+3. Mark each finding by what the test showed:
+   - **Reproduced** — the test ran and showed the failure. Quote the key output line.
+   - **Refuted** — the test ran and the code behaved. Drop the finding (list it in one line
+     under "checked and fine" so the reader knows it was looked at).
+   - **Not reproduced — confidence high / medium / low** — you could not run a test (say
+     exactly why: needs the running app, a browser, network, real user data, timing). Give
+     the confidence and what it rests on (e.g. "high: traced every line, the only unknown is
+     X"). A reader should be able to decide from this line whether to trust it.
 
-Drop anything you cannot tie to a concrete input or state. Fewer real findings beat many
-guesses. If nothing survives, say so plainly — that is a valid result.
+Never use the word "hypothetical" as a mark. Drop anything you cannot tie to a concrete
+input or state. Fewer real findings beat many guesses. If nothing survives, say so
+plainly — that is a valid result.
 
 ## 5. Report
 
@@ -100,10 +116,12 @@ Most severe first. For each finding:
 - **Problem**: one sentence.
 - **Breaks when**: the concrete input or state, and what goes wrong.
 - **Fix**: the change you suggest, in a sentence or a tiny snippet.
-- **Confirmed / Hypothetical**.
+- **Proof**: Reproduced (quote the test output) / Not reproduced — confidence high, medium
+  or low, and why no test could run.
 
-Then one line: which commits you reviewed, the level, and what you did not check (e.g.
-"did not run the tests"). End by asking which findings to fix.
+Then: one line listing refuted findings ("checked and fine"), and one line with which
+commits you reviewed, the level, and what you did not check. End by asking which findings
+to fix.
 
 Write for someone reading on a small card: short lines, `- ` bullets, plain words. If you
 were told to post the report somewhere (the task board's report.py), post the full report
@@ -111,8 +129,10 @@ there — chat output alone is not seen.
 
 ## Pre-flight before posting
 
-- [ ] No files changed (`git status` shows nothing new from you).
-- [ ] Every finding has file:line, a concrete "breaks when", and a Confirmed/Hypothetical mark.
+- [ ] No files changed (`git status` shows nothing new from you; scratch tests live outside the repo).
+- [ ] Every finding has file:line, a concrete "breaks when", and a Proof line: Reproduced with
+      quoted output, or Not reproduced with a confidence level and the reason no test ran.
+- [ ] Every candidate finding had a test run on it, or a stated reason it could not.
 - [ ] No style-only or taste findings.
 - [ ] Stayed inside the level's turn budget (independent reads batched into one turn);
       said what was not checked.
