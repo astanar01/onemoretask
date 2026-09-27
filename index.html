@@ -938,6 +938,7 @@ document.addEventListener("keydown", (e) => {
 let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
 // Messages show in the log the moment you send them: a turning cog until the server confirms, then a checkmark.
 let pending = {};                // task id -> [{ from, status, message, images, at, state: "sending" | "sent", base }]
+let logFollow = false;           // next renderAgent scrolls the log to the end
 const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
 const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
 const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· Claude has it</span>`
@@ -945,6 +946,7 @@ const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span
 function addPending(t, status, message, images) {
   const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
   (pending[t.id] = pending[t.id] || []).push(m);
+  logFollow = true;   // show what you just sent even if you had scrolled up
   return m;
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
@@ -1026,12 +1028,18 @@ function renderAgent(t) {
   // A sent message stays on screen as pending until the poll brings its logged copy.
   pending[t.id] = pend.filter((m) => m.state === "sending" || !log.some((e, i) => i >= m.base && e.from === "you" && (m.status === "reply" || m.status === "note" ? (e.status === "reply" || e.status === "note") && e.message === m.message : e.status === m.status)));
   if (!pending[t.id].length) delete pending[t.id];
-  const shown = log.slice(-30).concat(pending[t.id] || []);
-  // Polls re-render this list: only follow the end when opening a card or already at the bottom, so reading older text is not yanked away.
+  const start = Math.max(0, log.length - 30), nLog = log.length - start;
+  const shown = log.slice(start).concat(pending[t.id] || []);
+  // Polls re-render this list: only follow the end when opening a card, after a send, or already at the bottom, so reading older text is not yanked away.
   const dl = $("#d-log"), keepTop = dl.scrollTop;
-  const follow = dl.dataset.task !== t.id || dl.scrollHeight - dl.scrollTop - dl.clientHeight < 40;
+  const follow = logFollow || dl.dataset.task !== t.id || dl.scrollHeight - dl.scrollTop - dl.clientHeight < 40;
+  logFollow = false;
   dl.dataset.task = t.id;
-  $("#d-log").innerHTML = shown.map((e) => `<li class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  // Not following: pin the first entry in view (by log index) to its spot, since the oldest entries drop off the top once the log passes 30.
+  const top0 = dl.getBoundingClientRect().top;
+  const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
+  const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
@@ -1046,7 +1054,8 @@ function renderAgent(t) {
   renderReplyImages();
   renderOverview(t);
   // Last: the reply box and images above change the log's height.
-  dl.scrollTop = follow ? dl.scrollHeight : keepTop;
+  const a = anchorI && dl.querySelector(`li[data-i="${anchorI}"]`);
+  dl.scrollTop = follow ? dl.scrollHeight : a ? dl.scrollTop + a.getBoundingClientRect().top - dl.getBoundingClientRect().top - anchorOff : keepTop;
 }
 
 // ---------------------------------------------------------------- sent-task overview (left pane)
