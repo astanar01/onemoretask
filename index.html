@@ -42,6 +42,10 @@ header .grow { flex: 1; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
 #status { color: var(--muted); font-size: calc(12px * var(--ts)); }
 #status.err { color: var(--danger); }
+#d-error { display: none; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); font-size: calc(13px * var(--ts)); align-items: flex-start; gap: 10px; white-space: pre-wrap; }
+#d-error.show { display: flex; }
+#d-error span { flex: 1; }
+#d-error button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 2px; }
 .btn { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 5px 10px; }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -347,6 +351,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     </div>
     </div>
     </div>
+    <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
     <div class="panel-foot">
       <span id="d-dates"></span>
       <span><span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
@@ -498,7 +503,13 @@ async function flush(keepalive = false) {
     setStatus("Save failed: " + e.message, true);
   }
 }
-function setStatus(msg, err) { const s = $("#status"); s.textContent = msg; s.className = err ? "err" : ""; }
+// The task panel covers the header status, so while it is open an error also shows inside it, above its buttons.
+function setStatus(msg, err) {
+  const s = $("#status"); s.textContent = msg; s.className = err ? "err" : "";
+  if (err && openId) showPanelError(msg); else if (!err) showPanelError("");
+}
+function showPanelError(msg) { $("#d-error span").textContent = msg; $("#d-error").classList.toggle("show", !!msg); }
+$("#d-error button").onclick = () => showPanelError("");
 // keepalive lets the pending save finish after the page is gone.
 window.addEventListener("pagehide", () => { if (saveTimer) flush(true); });
 
@@ -778,14 +789,14 @@ function onDrop(e, col) {
 
 // ---------------------------------------------------------------- detail panel
 function openDetail(id) {
-  if (id !== openId) replyImages = [];
+  if (id !== openId) { replyImages = []; showPanelError(""); }
   openId = id;
   if (markSeen([id])) render();
   $("#overlay").classList.add("open");
   renderDetail();
   $("#d-title").focus();
 }
-function closeDetail() { settleDraft(); openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { showPanelError(""); settleDraft(); openId = null; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
 function settleDraft() {
@@ -1140,7 +1151,13 @@ const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && a
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const res = await r.json();
+  const text = await r.text();
+  let res;
+  try { res = JSON.parse(text); } catch (e) {
+    // A route the running server.py does not know answers a bare 404: it predates this page's code.
+    throw new Error(r.status === 404 ? `the board server does not know ${url} — it runs older code; restart it (Ctrl-C, then onemoretask)`
+      : `the server answered ${r.status} with no details`);
+  }
   if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted });
   return res;
 }

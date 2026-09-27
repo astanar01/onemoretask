@@ -44,8 +44,8 @@ the task's commits from `git log --since=<launch>` (other sessions share the bra
 card's report), runs the built-in /code-review skill on them at the chosen depth (low / medium / high), and posts
 the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
-The server re-execs itself when server.py or reports.py change (and still compile), so
-a running board never keeps serving old logic.
+The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
+onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
 
 Each card with a session also shows its prompt-cache countdown (cache_info reads the
 last API call and its 5m/1h TTL tier from the session transcript under

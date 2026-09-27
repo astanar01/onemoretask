@@ -195,7 +195,8 @@ What does leave your computer, and why:
 
 Run the install command again. It pulls the latest version into `~/.onemoretask`.
 Installed from your own clone? Run `git pull` in it instead.
-The running board restarts itself when its code changes.
+Then restart the board (Ctrl-C in its terminal, then `onemoretask`): a running board keeps its old
+server code until restarted.
 
 ## Uninstall
 
