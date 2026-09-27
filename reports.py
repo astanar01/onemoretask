@@ -217,6 +217,10 @@ def untake_notes(board, task_id, notes, since):
             _unlock(f)
 
 
+LANGUAGE_RULE = ("Answer in the language the user wrote their latest message in (the task notes, or their newest "
+                 "reply), even when the app or project you work on uses another language.")
+
+
 def notes_message(board, notes):
     """The text Claude gets for notes typed on the card while it worked."""
     parts = ["Message from the user on the task board, sent while you were working:" if len(notes) == 1 else
@@ -227,5 +231,5 @@ def notes_message(board, notes):
             parts.append("Images attached (open each with the Read tool):\n" + "\n".join(
                 f"- {image_path(log_images(board), n)}" for n in e["images"]))
     parts.append("Take this into account in the work you are doing now. The user reads only the card: if it asks "
-                 "you something, answer with report.py (progress, or done when you finish).")
+                 "you something, answer with report.py (progress, or done when you finish). " + LANGUAGE_RULE)
     return "\n\n".join(parts)

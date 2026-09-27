@@ -318,6 +318,7 @@ def card_lines(report):
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
               "that full answer.",
+              "- " + reports.LANGUAGE_RULE,
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
               f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.',
@@ -926,7 +927,8 @@ def reply(p, task_id, text, images=()):
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
-    message = text + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`.)"
+    message = text + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
+    message += reports.LANGUAGE_RULE + ")"
     if images:
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
