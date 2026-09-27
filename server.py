@@ -300,8 +300,9 @@ def build_prompt(p, state, t):
     lines.append("")
     if observations.installed():
         lines.append("Invoke the task-observer skill at the start and log its observations to "
-                     f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Never commit "
-                     f"{' or '.join(d + '/' for d in OBSERVER_DIRS)} (the board keeps them out of git).")
+                     f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Skills it creates or "
+                     "updates stay local: never commit " + ", ".join(d + "/" for d in OBSERVER_DIRS) +
+                     " (the board keeps them out of git), and never commit a change it makes to a skill file.")
     lines += [f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
     return "\n".join(lines)
@@ -472,12 +473,12 @@ def launch(p, task_id, model=""):
     return aid
 
 
-OBSERVER_DIRS = ("skill-observations", "skill-updates")
+OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")   # log, staged skills, project skills
 
 
 def exclude_observer_dirs(p):
-    """Keep the task-observer log and staged skills out of the project's commits: list them in the repo's
-    info/exclude (local only, unlike .gitignore). Best effort; a folder that is not a git repo is skipped."""
+    """Keep the task-observer log and the skills it stages or creates out of the project's commits: list them in
+    the repo's info/exclude (local only, unlike .gitignore). Files git already tracks are not affected. Best effort; a folder that is not a git repo is skipped."""
     try:
         r = subprocess.run(["git", "-C", p.path, "rev-parse", "--git-path", "info/exclude"],
                            capture_output=True, timeout=10, **TEXT)

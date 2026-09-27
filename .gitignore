@@ -3,3 +3,4 @@ __pycache__/
 .task_board/agent_reports/
 skill-observations/
 skill-updates/
+.claude/skills/
