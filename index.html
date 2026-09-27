@@ -159,6 +159,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .agent.needs_you { background: var(--wait); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
 .agent.finished { background: var(--ok); color: #fff; }
 @keyframes pulse { 50% { opacity: .55; } }
+.subs { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--accent); color: var(--accent); white-space: nowrap; }
+.subs.running { background: var(--accent-soft); }
 .ttl { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); white-space: nowrap; }
 .ttl.low { border-color: var(--wait); color: var(--wait); }
 .ttl.cold { border-color: #c0392b; background: #c0392b; color: #fff; }
@@ -714,7 +716,7 @@ function cardEl(t, top, nestedCount) {
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>${cacheChip(ag, false)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">Claude: ${esc(phaseLabel(ag))}</span>${subagentChip(ag)}${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}
@@ -932,6 +934,15 @@ const PHASES = { working: "working", needs_you: "needs you", finished: "finished
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
+// Card chip: how many subagents the session started and how many still run. Hover lists them.
+function subagentChip(ag) {
+  const subs = (ag && ag.subagents) || [];
+  if (!subs.length) return "";
+  const st = (s) => s.finished ? "finished" : ag.phase === "working" ? "running" : "stopped";
+  const run = subs.filter((s) => st(s) === "running").length;
+  const tip = subs.map((s) => `${s.name} — ${st(s)}`).join("\n");
+  return `<span class="subs${run ? " running" : ""}" title="${esc(tip)}">${run ? `${run}/${subs.length} subagents running` : `${subs.length} subagent${subs.length > 1 ? "s" : ""}`}</span>`;
+}
 function cacheChip(ag, long) {
   const c = ag && ag.cache;
   if (!c || ag.phase === "working" || ag.phase === "gone") return "";
