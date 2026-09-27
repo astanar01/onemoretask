@@ -39,10 +39,13 @@ with the reply as its next message (`claude --bg --resume` on a live session
 would start a copy instead). If the session then stops without calling report.py, the
 watcher copies its chat answer from the transcript onto the card (status "answer").
 
-A message typed on the card while Claude works is logged as a "note" instead. Every session the board starts
-gets inbox.py as a PostToolUse + Stop hook (--settings; a flagless --resume keeps it), which hands the note over
-after the current tool call, or blocks the stop if the turn is ending. Notes left over (the turn ended first, or
-the session predates the hook) are delivered by the watcher resuming the idle session.
+A message typed on the card while Claude works is logged as a "note" instead. The watcher types it into the live
+session through `claude attach` (attach.py; POSIX only), where Claude Code queues it like anything typed at its
+terminal: read at the next step, or at once if the turn ended to wait on a background shell. It never types over a
+permission prompt. As a backup every session the board starts gets inbox.py as a PostToolUse + Stop hook
+(--settings; a flagless --resume keeps it), which hands the note over after the current tool call, or blocks the
+stop if the turn is ending. Notes left over (the turn ended first, or the session predates the hook) are delivered
+by the watcher resuming the idle session.
 
 "Review code" (a finished card in Review) starts a fresh `claude --bg` session on the task's model that picks
 the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
@@ -84,6 +87,7 @@ from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+import attach
 import observations
 import reports
 
@@ -153,6 +157,7 @@ ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
+TYPE_RETRY = 15  # seconds before typing a note into a session is tried again (a prompt was on screen)
 
 
 # ---------------------------------------------------------------- projects
@@ -851,10 +856,18 @@ class Watcher:
         self.launched = {}    # agent id -> launch time, for sessions not listed yet
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
+        self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
 
     def _deliver(self, p, task_id, info, waiting=False):
         try:
             deliver_notes(p, task_id, info, waiting)
+        finally:
+            self.delivering.discard((p.id, task_id))
+
+    def _type(self, p, task_id, aid):
+        try:
+            if not type_notes(p, task_id, aid):
+                self.typed_fail[(p.id, task_id)] = time.time()
         finally:
             self.delivering.discard((p.id, task_id))
 
@@ -899,9 +912,16 @@ class Watcher:
                                                     for e in reports.pending_notes(log, "")):
                 phase, reason = "working", ""  # the Stop hook handed it a note after its done report
             pending = s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
+            if (pending and busy and phase == "working" and attach.available() and s.get("state") != "blocked"
+                    and time.time() - self.typed_fail.get((p.id, t["id"]), 0) > TYPE_RETRY):
+                # Type it into the live session like a message at its terminal: read at its next step, or at once
+                # if it sits idle waiting on a background shell. The inbox hook stays as the backup.
+                self.delivering.add((p.id, t["id"]))
+                threading.Thread(target=self._type, args=(p, t["id"], aid), daemon=True).start()
+                pending = False
             # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
-            waiting = pending and busy and phase == "working" and time.time() - (
-                turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE
+            waiting = (pending and busy and phase == "working" and not attach.available() and time.time() - (
+                turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
             if pending and (phase in ("finished", "needs_you") and not busy or waiting):
                 self.delivering.add((p.id, t["id"]))
                 threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
@@ -1013,6 +1033,24 @@ def resume(p, info, message):
     if r.returncode != 0 or not m:
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
     return m.group(1)
+
+
+def type_notes(p, task_id, aid):
+    """Type the notes not handed over yet into the live session (`claude attach`). False if it could not, e.g. a
+    permission prompt was on screen; the notes then stay for the inbox hook or a later try."""
+    notes, since = reports.take_notes(p.board, task_id)
+    if not notes:
+        return True
+    message = reports.notes_message(p.board, notes)
+    message += f"\n\n(Post your answer on the card: `{report_cmd(p, task_id)} progress|done|question \"...\"`.)"
+    try:
+        typed, why = attach.type_into(aid, message, CLAUDE_CMD)
+    except Exception as e:  # noqa: BLE001
+        typed, why = False, str(e)
+    if not typed:
+        reports.untake_notes(p.board, task_id, notes, since)
+        print("type notes:", why)
+    return typed
 
 
 def deliver_notes(p, task_id, info, waiting=False):

@@ -933,7 +933,7 @@ let logFollow = false;           // next renderAgent scrolls the log to the end
 const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
 const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
 const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· Claude has it</span>`
-  : ` <span class="note-state">· waiting for Claude's next step</span>`;
+  : ` <span class="note-state">· sending to Claude…</span>`;
 function addPending(t, status, message, images) {
   const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
   (pending[t.id] = pending[t.id] || []).push(m);
@@ -1039,7 +1039,7 @@ function renderAgent(t) {
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   const busy = ag && ag.phase === "working";
-  $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it reads this after its current step. Cmd+Enter to send, paste images to attach"
+  $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
     : "Answer Claude — Cmd+Enter to send, paste images to attach";
   $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
   renderReplyImages();
@@ -1189,7 +1189,7 @@ async function loadDefaultModel() {
   if (!defaultModel.model) setTimeout(() => { const o = openId && task(openId); if (o && !o.agent) loadDefaultModel(); }, 10000);
 }
 // Closed while a reply is in flight too: the box goes the moment you send, and comes back only if the send fails.
-// Open while Claude works: the message is then a note its session reads after its current step (server: reply()).
+// Open while Claude works: the message is then a note, typed into its session (server: type_notes()).
 const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && (ag.sessionId || ag.phase === "working") && ag.phase !== "gone" && !(pending[t.id] || []).length); };
 
 async function post(url, body) {
@@ -1290,7 +1290,7 @@ async function sendReply() {
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
-    setStatus(res.queued ? "Note sent — Claude reads it after its current step" : "Reply sent — Claude is back at work");
+    setStatus(res.queued ? "Note sent — Claude reads it as soon as it can" : "Reply sent — Claude is back at work");
   } catch (e) {
     dropPending(t, pm);
     // Hand the unsent message back so nothing typed is lost.

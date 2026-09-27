@@ -102,10 +102,11 @@ the git repo you run it from.
    ("cache cold") and the reply reads the context from cache, at a lower price.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session. You can also write while Claude is still working, to add information or change
-   course. That message is a **note**. Claude reads it right after its current step, or just
-   before it would stop. The card shows "Claude has it" once it is delivered. A hook that
-   the board installs on each session it starts (`inbox.py`) does this. For a session started
-   before this feature, the note goes in as soon as the session stops. Claude answers in the
+   course. That message is a **note**. The board types it straight into the running
+   session (`claude attach`, like typing in Claude Code yourself), so Claude reads it as
+   soon as it can, even while it waits on a long command. The card shows "Claude has it"
+   once it is in. If a permission prompt is on screen, or on Windows, a hook the board
+   installs on each session (`inbox.py`) hands it over after the current step instead. Claude answers in the
    language you wrote in, even if the project is in another one.
 6. **Review the code.** A finished card in the Review column has a **Review code** button.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
