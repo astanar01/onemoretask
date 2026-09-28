@@ -1,0 +1,30 @@
+# Board conventions
+
+Rules for changing the board, learned the hard way.
+
+## "Always do X when Y happens" goes where Y is seen
+
+If a rule fires on a user action on the board (a card moves to done, a column
+changes), put it in `server.py`'s save path (`PUT /api/tasks`: diff the old and new
+task lists), not in an agent prompt. The agent is usually gone when the user clicks
+"Move to done", so a prompt rule can't keep the promise. Example: the changelog
+(`changelog.py`, called from `PUT /api/tasks`).
+
+## Testing against a live server
+
+- Rebuild each step's payload from the server's current file (`GET` or read
+  `tasks.json`), not from a shell variable saved earlier. Leftover state from one step
+  fakes a failure in the next.
+- Use a throwaway project on a spare port for anything that writes. Never test
+  writes on the user's real board.
+
+## Screenshots of the running board
+
+Use the `run-extras` skill (`scripts/cdp-shot.mjs`) when the Chrome extension is
+offline. Two board-specific traps:
+
+- A fresh browser profile opens whatever project is the default, not yours. Put
+  `#p=<project id>` in the URL: `http://127.0.0.1:8765/#p=<id>`.
+- Opening a card (`openDetail(id)`) can clear its unread mark on the user's real
+  board. Pick cards that are not in `/api/projects` → `attention`, or use a separate
+  server.
