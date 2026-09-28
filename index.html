@@ -83,6 +83,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .card { background: var(--card); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow); }
 .card:hover { outline: 1px solid var(--line); }
 .group { display: flex; flex-direction: column; gap: 6px; }
+.group.card-drag { opacity: .4; }
+.group.drop-before > .card { box-shadow: 0 -3px 0 var(--drop), var(--shadow); }
+.group.drop-after > .card { box-shadow: 0 3px 0 var(--drop), var(--shadow); }
 .children { display: flex; flex-direction: column; gap: 6px; margin-left: 12px; padding-left: 8px; border-left: 2px solid var(--line); }
 .children:empty, .group.collapsed > .children { display: none; }
 .card .row { display: flex; align-items: flex-start; gap: 4px; }
@@ -449,7 +452,7 @@ let projects = [];         // [{ id, path, name, board }] from server.py, most r
 let P = null;              // current project id; every /api call carries it
 let openId = null;         // task shown in the detail panel
 let draftId = null;        // task made by "+ Add task"; dropped on close if left empty
-let drag = null;           // the column being dragged: { id }
+let drag = null;           // the column being dragged: { id }, or the card: { card, box } (box = its sibling list)
 
 function defaultState() {
   const cols = [["To Do", false], ["In Progress", false], ["Review", false], ["Done", true]]
@@ -703,6 +706,7 @@ function matches(t, q) {
 }
 
 function render() {
+  if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
@@ -752,8 +756,8 @@ function render() {
     for (const t of cards) if (!shown.has(t.parent)) list.appendChild(groupEl(t, kidsOf, true));
     el.appendChild(list);
 
-    el.addEventListener("dragover", (e) => { if (drag) e.preventDefault(); });
-    el.addEventListener("drop", (e) => onDrop(e, col));
+    el.addEventListener("dragover", (e) => { if (drag && !drag.card) e.preventDefault(); else onCardDragOver(e); });
+    el.addEventListener("drop", (e) => (drag && drag.card ? onCardDrop(e) : onDrop(e, col)));
 
     el.appendChild(addCardEl(col));
     board.appendChild(el);
@@ -777,7 +781,9 @@ function groupEl(t, kidsOf, top) {
   g.className = "group" + (collapsed.has(t.id) ? " collapsed" : "");
   g.dataset.id = t.id;
   const kids = kidsOf(t.id);
-  g.appendChild(cardEl(t, top, kids.length));
+  const card = cardEl(t, top, kids.length);
+  cardDrag(card, g);
+  g.appendChild(card);
   const box = document.createElement("div");
   box.className = "children";
   for (const k of kids) box.appendChild(groupEl(k, kidsOf, false));
@@ -833,10 +839,64 @@ function addCardEl(col) {
 }
 
 // ---------------------------------------------------------------- drag & drop
-// Only columns drag. Cards move on their own (Claude starts, finishes, a review runs) or by their buttons.
+// Columns drag to reorder. Cards drag only up or down among their siblings (same column, same parent box);
+// they change column on their own (Claude starts, finishes, a review runs) or by their buttons.
+function cardDrag(el, g) {
+  el.draggable = true;
+  el.addEventListener("dragstart", (e) => {
+    if (e.target !== el) return;
+    e.stopPropagation();
+    drag = { card: g.dataset.id, box: g.parentElement };
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", g.dataset.id);
+    requestAnimationFrame(() => g.classList.add("card-drag"));
+  });
+  el.addEventListener("dragend", () => { drag = null; render(); });
+}
+// Where a card dropped at `y` lands in its box: before `before` (null = at the end).
+function cardSlot(box, y) {
+  const groups = [...box.children].filter((x) => x.classList.contains("group") && x.dataset.id !== drag.card);
+  const before = groups.find((x) => { const r = x.firstElementChild.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  return { groups, before: before || null };
+}
+function clearSlot() {
+  document.querySelectorAll(".drop-before, .drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
+}
+function showSlot(box, y) {
+  clearSlot();
+  const { groups, before } = cardSlot(box, y);
+  if (before) before.classList.add("drop-before");
+  else if (groups.length) groups[groups.length - 1].classList.add("drop-after");
+}
+// Bound on each column: anywhere in the card's own column places it by height; other columns refuse the drop.
+function onCardDragOver(e) {
+  if (!drag || !drag.card) return;
+  if (!e.currentTarget.contains(drag.box)) { clearSlot(); return; }
+  e.preventDefault();
+  showSlot(drag.box, e.clientY);
+}
+$("#board").addEventListener("dragover", (e) => { if (drag && drag.card && !e.target.closest(".column")) clearSlot(); });
+function onCardDrop(e) {
+  if (!drag || !drag.card || !e.currentTarget.contains(drag.box)) return;
+  e.preventDefault(); e.stopPropagation();
+  const { before } = cardSlot(drag.box, e.clientY);
+  const t = task(drag.card);
+  // After the box's last card = right after it in the column order, before whatever follows it there.
+  let beforeId = before ? before.dataset.id : null;
+  if (!before) {
+    const inCol = state.tasks.filter((x) => x.column === t.column && x.id !== t.id).sort((a, b) => a.order - b.order);
+    const last = [...drag.box.children].filter((x) => x.classList.contains("group") && x.dataset.id !== t.id).pop();
+    const i = last ? inCol.findIndex((x) => x.id === last.dataset.id) : -1;
+    beforeId = i >= 0 && i + 1 < inCol.length ? inCol[i + 1].id : null;
+  }
+  const sibs = [...drag.box.children].filter((x) => x.classList.contains("group"));
+  const nextSib = sibs[sibs.findIndex((x) => x.dataset.id === t.id) + 1] || null;
+  drag = null;
+  if (before !== nextSib) moveTask(t.id, t.column, beforeId, false);   // dropped back in place = no save
+  render();
+}
 function onDrop(e, col) {
   e.preventDefault();
-  if (!drag) return;
+  if (!drag || drag.card) return;
   const from = state.columns.findIndex((c) => c.id === drag.id);
   const to = state.columns.indexOf(col);
   if (from >= 0 && from !== to) { const [c] = state.columns.splice(from, 1); state.columns.splice(to, 0, c); save(); }

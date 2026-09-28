@@ -114,8 +114,9 @@ the git repo you run it from.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
    and on macOS you get a notification when it needs you or finishes. Cards move on their own:
    to **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
-   click **Move to done** (hidden while Claude still has work on it). You can't drag cards; to
-   move one by hand, use the Status menu in its panel. Columns still drag to reorder.
+   click **Move to done** (hidden while Claude still has work on it). Drag a card up or down to
+   reorder it inside its column (a subtask stays among its siblings); it can't be dragged to
+   another column. To move one by hand, use the Status menu in its panel. Columns drag to reorder.
    A **cache** chip counts down the session's prompt cache. Reply before it runs out
    ("cache cold") and the reply reads the context from cache, at a lower price.
 5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
