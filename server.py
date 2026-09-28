@@ -27,7 +27,9 @@ card ask first; "Trust folder and send" sets hasTrustDialogAccepted for it in ~/
 
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
 `subagentModel`) gets a delegation brief in its prompt (never plan mode): analyse the task, split
-it, and hand the independent parts to subagents on the chosen model.
+it, and hand the independent parts to subagents on the chosen model. A task ticked "Answer only"
+(task field `answerOnly`) gets a brief to investigate and report back on the card without changing
+files or committing.
 
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
@@ -304,6 +306,9 @@ def build_prompt(p, state, t):
         lines += ["", "Subtasks ([x] = already done):", *subs]
     # The board may live outside this project's tree, so the command carries absolute paths.
     report = report_cmd(p, t["id"])
+    answer_only = bool(t.get("answerOnly"))
+    if answer_only:
+        lines += ["", *answer_only_lines(report)]
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report)]
     lines.append("")
@@ -312,9 +317,21 @@ def build_prompt(p, state, t):
                      f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Skills it creates or "
                      "updates stay local: never commit " + ", ".join(d + "/" for d in OBSERVER_DIRS) +
                      " (the board keeps them out of git), and never commit a change it makes to a skill file.")
-    lines += [f"Follow CLAUDE.md if the project has one. Commit your work; never push. Do not edit "
+    work = "Change no files and make no commits." if answer_only else "Commit your work; never push."
+    lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
     return "\n".join(lines)
+
+
+def answer_only_lines(report):
+    return ["Answer only (this task is marked \"do not act on it, just answer me\"):",
+            "- Do NOT make the changes the task describes: no file edits, no commits, no installs, nothing that "
+            "changes the project or the machine. Reading files, searching and running read-only commands to find "
+            "the answer is fine, and so is the task-observer log if this prompt asks for one. This holds for any subagents too.",
+            "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
+            "the options and your recommendation.",
+            f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
+            "what to do next. If they then reply asking you to go ahead, that reply lifts this rule."]
 
 
 def card_lines(report):

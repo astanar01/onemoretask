@@ -109,6 +109,8 @@ the git repo you run it from.
    session starts in the project folder with the task as its prompt. Tick
    **Divide in subtasks / use subagents** to let it split the work; the card then lists each
    subagent (running, finished or stopped) and what a running one is doing now.
+   Tick **Answer only** when you just want an answer: Claude looks into it and reports back
+   on the card, but changes no files and makes no commits.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
    and on macOS you get a notification when it needs you or finishes. Cards move on their own:
    to **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
@@ -235,7 +237,7 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 - `done: true` marks the column whose tasks count as finished.
 - `agent` is only there once the task was sent to Claude. It holds the Claude session id.
 - Optional fields: `images` (file names in `images/`), `delegate` and `subagentModel`
-  (the **Divide in subtasks** options).
+  (the **Divide in subtasks** options), `answerOnly` (the **Answer only** box).
 
 ### Card messages: `agent_reports/<task_id>.json`
 

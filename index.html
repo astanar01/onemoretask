@@ -368,6 +368,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
       <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
       <div><label for="d-submodel">Subagent model</label>
         <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
+      <div style="grid-column: 1 / -1"><label class="check" style="margin-top: 0" title="Claude only looks into it and reports back: no file changes, no commits"><input type="checkbox" id="d-answeronly"> Answer only (don't change anything)</label></div>
     </div>
     <div id="d-ov">
       <div class="tabs"><button class="tab" data-tab="overview">Overview</button><button class="tab" data-tab="images">All images <span data-ico="image"></span><span class="badge" id="d-imgcount"></span></button></div>
@@ -437,7 +438,7 @@ const $ = (s) => document.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
-let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?}] }
+let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?}] }
 let useServer = true;
 let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
 let P = null;              // current project id; every /api call carries it
@@ -795,9 +796,10 @@ function cardEl(t, top, nestedCount) {
       <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: "High", med: "Medium", low: "Low" }[t.priority]} priority"></span>` : ""}${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
     </div>
-    ${(kids.length || t.tags.length || t.notes || t.agent || (t.images || []).length) ? `<div class="meta">
+    ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length) ? `<div class="meta">
       ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
+      ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
       ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `Claude: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
@@ -924,11 +926,13 @@ $("#d-newsub").addEventListener("keydown", (e) => {
 });
 $("#d-close").onclick = closeDetail;
 $("#d-x").onclick = closeDetail;
+  $("#d-answeronly").checked = !!t.answerOnly;
 
 // Image thumbs open full size in a lightbox over the board, not a new tab.
 function openLightbox(src) { $("#lightbox img").src = src; $("#lightbox").classList.add("open"); }
 function closeLightbox() { $("#lightbox").classList.remove("open"); $("#lightbox img").removeAttribute("src"); }
 const lightboxOpen = () => $("#lightbox").classList.contains("open");
+  $("#d-answeronly").disabled = sent;
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a.thumb");
   if (!a || e.target.closest(".x") || e.metaKey || e.ctrlKey) return;
@@ -964,6 +968,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------------------------------------------------------------- Send to Claude
+$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); });
 // server.py starts `claude --bg` for a task and watches it. tasks.json keeps only { id, started } on the
 // task; the live phase (working / needs_you / finished / gone), reason and message log come from /api/agents.
 let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
