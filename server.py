@@ -878,11 +878,12 @@ class Watcher:
                                            "reason": "", "log": reports.read(p.board, task_id)}
 
     def poll(self):
-        work, done_cols = [], set()
+        work, done_cols, unread = [], set(), set()
         for p in projects():
             try:
                 state = load_tasks(p)
             except (OSError, ValueError):
+                unread.add(p.id)  # keep its cards as they were rather than blank them for a pass
                 continue
             work += [(p, t) for t in state["tasks"] if t.get("agent")]
             done_cols |= {c["id"] for c in state.get("columns", []) if c.get("done")}
@@ -938,6 +939,7 @@ class Watcher:
                                       "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
                                       "closed": t.get("column") in done_cols, "delivered": delivered}
         with self.lock:
+            fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
             old, self.cache = self.cache, fresh
             primed, self.primed = self.primed, True
         if not primed:
@@ -1229,6 +1231,15 @@ class Handler(SimpleHTTPRequestHandler):
             if not ok:
                 raise ValueError("need columns and tasks lists")
             reports.ensure_board(p.board)
+            # Only the board page that sent a card sets its "agent", and nothing clears it. A tab opened before
+            # the send (or a save racing the send) would drop it, and the card would vanish from the watcher.
+            try:
+                sent = {t["id"]: t["agent"] for t in load_tasks(p)["tasks"] if t.get("agent")}
+            except (OSError, ValueError, KeyError, TypeError):
+                sent = {}
+            for t in data["tasks"]:
+                if isinstance(t, dict) and not t.get("agent") and t.get("id") in sent:
+                    t["agent"] = sent[t["id"]]
             # Write-then-rename so a crash mid-write never leaves a truncated tasks.json.
             fd, tmp = tempfile.mkstemp(dir=p.board, suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8") as f:

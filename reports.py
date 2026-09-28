@@ -19,6 +19,8 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+import time
 from datetime import datetime, timezone
 
 try:
@@ -106,7 +108,7 @@ def read(board, task_id):
     try:
         with open(_path(board, task_id), encoding="utf-8") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
         return []
 
 
@@ -132,6 +134,39 @@ def _unlock(f):
     msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
 
 
+class _Locked:
+    """Holds an exclusive lock on <path>.lock. The data file itself is only ever swapped in whole by
+    _write_json, so a reader without the lock (the board's 4 s poll) never sees it empty or half-written."""
+
+    def __init__(self, path):
+        self.path = path + ".lock"
+
+    def __enter__(self):
+        self.f = open(self.path, "a+")
+        _lock(self.f)
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            _unlock(self.f)
+        finally:
+            self.f.close()
+
+
+def _write_json(path, obj):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    for tries in range(40 if fcntl is None else 1, 0, -1):
+        try:
+            return os.replace(tmp, path)
+        except PermissionError:  # Windows: a reader has `path` open
+            if tries == 1:
+                os.unlink(tmp)
+                raise
+            time.sleep(0.05)
+
+
 def append(board, task_id, status, message, sender, session=None, images=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -141,20 +176,10 @@ def append(board, task_id, status, message, sender, session=None, images=None):
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
-    with open(path, "a+", encoding="utf-8") as f:
-        _lock(f)
-        try:
-            f.seek(0)
-            try:
-                log = json.loads(f.read() or "[]")
-            except json.JSONDecodeError:
-                log = []
-            log.append(entry)
-            f.seek(0)
-            f.truncate()
-            json.dump(log, f, indent=2, ensure_ascii=False)
-        finally:
-            _unlock(f)
+    with _Locked(path):
+        log = read(board, task_id)
+        log.append(entry)
+        _write_json(path, log)
     return entry
 
 
@@ -162,20 +187,12 @@ def _inbox_path(board, task_id):
     return _path(board, task_id)[:-len(".json")] + ".inbox.json"
 
 
-def _read_marker(f):
-    f.seek(0)
-    try:
-        return json.loads(f.read() or "{}").get("delivered") or ""
-    except (json.JSONDecodeError, AttributeError):
-        return ""
-
-
 def delivered(board, task_id):
     """The `at` of the last note handed to Claude ('' if none)."""
     try:
         with open(_inbox_path(board, task_id), encoding="utf-8") as f:
-            return _read_marker(f)
-    except FileNotFoundError:
+            return json.loads(f.read() or "{}").get("delivered") or ""
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, AttributeError):
         return ""
 
 
@@ -189,32 +206,20 @@ def take_notes(board, task_id):
     note go to one taker: the hook and the board's fallback can race at a turn's end."""
     path = _inbox_path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a+", encoding="utf-8") as f:
-        _lock(f)
-        try:
-            since = _read_marker(f)
-            notes = pending_notes(read(board, task_id), since)
-            if notes:
-                f.seek(0)
-                f.truncate()
-                json.dump({"delivered": notes[-1]["at"]}, f)
-        finally:
-            _unlock(f)
+    with _Locked(path):
+        since = delivered(board, task_id)
+        notes = pending_notes(read(board, task_id), since)
+        if notes:
+            _write_json(path, {"delivered": notes[-1]["at"]})
     return notes, since
 
 
 def untake_notes(board, task_id, notes, since):
     """Undo take_notes after a failed hand-over, unless a later take already moved the marker on."""
     path = _inbox_path(board, task_id)
-    with open(path, "a+", encoding="utf-8") as f:
-        _lock(f)
-        try:
-            if notes and _read_marker(f) == notes[-1]["at"]:
-                f.seek(0)
-                f.truncate()
-                json.dump({"delivered": since}, f)
-        finally:
-            _unlock(f)
+    with _Locked(path):
+        if notes and delivered(board, task_id) == notes[-1]["at"]:
+            _write_json(path, {"delivered": since})
 
 
 LANGUAGE_RULE = ("Answer in the language the user wrote their latest message in (the task notes, or their newest "
