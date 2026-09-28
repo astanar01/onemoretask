@@ -55,7 +55,7 @@ card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
 Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks).
-GET /api/changelog is the board app's own changelog: its git log, plus the fetched commits the Update button would pull.
+GET /api/changelog is the board app's own changelog, whats-new.md in plain words, plus the entries the Update button would bring.
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
@@ -1204,23 +1204,31 @@ def update_status():
     return st
 
 
-CHANGELOG_MAX = 300
+WHATS_NEW = "whats-new.md"
+
+
+def _whats_new(text):
+    """[{date, text}] from whats-new.md: `## YYYY-MM-DD` headings over `- ` lines, newest first."""
+    entries, day = [], ""
+    for line in (text or "").splitlines():
+        if line.startswith("## "):
+            day = line[3:].strip()
+        elif line.startswith("- ") and line[2:].strip():
+            entries.append({"date": day, "text": line[2:].strip()})
+    return entries
 
 
 def app_changelog():
-    """The app's commits, newest first; `pending` = already fetched from upstream but not installed yet."""
-    def log(rng, limit):
-        out = _git_out("log", f"-n{limit}", "--date=short", "--format=%h%x1f%ad%x1f%s%x1f%b%x1e", rng)
+    """The app's whats-new.md as installed, plus `pending`: entries in the fetched upstream copy not installed yet."""
+    try:
+        with open(os.path.join(APP, WHATS_NEW), encoding="utf-8") as f:
+            entries = _whats_new(f.read())
+    except FileNotFoundError:
         entries = []
-        for rec in (out or "").split("\x1e"):
-            parts = rec.strip("\n").split("\x1f")
-            if len(parts) == 4:
-                body = "\n".join(x for x in parts[3].strip().splitlines() if not x.lower().startswith("co-authored-by:"))
-                entries.append({"sha": parts[0], "date": parts[1], "subject": parts[2], "body": body.strip()})
-        return entries
     up = _git_out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") or "origin/main"
-    pending = log(f"HEAD..{up}", CHANGELOG_MAX) if _git_out("rev-parse", "-q", "--verify", up) else []
-    return {"installed": _git_out("rev-parse", "--short", "HEAD"), "pending": pending, "entries": log("HEAD", CHANGELOG_MAX)}
+    have = {(e["date"], e["text"]) for e in entries}
+    pending = [e for e in _whats_new(_git_out("show", f"{up}:{WHATS_NEW}")) if (e["date"], e["text"]) not in have]
+    return {"installed": _git_out("rev-parse", "--short", "HEAD"), "pending": pending, "entries": entries}
 
 
 class Updater:

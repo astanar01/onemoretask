@@ -231,8 +231,6 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .md .li.num { padding-left: 1.7em; }
 .md .li.num::before { content: none; }
 .md .li .n { position: absolute; left: 0; color: var(--muted); }
-.cl-sha { font: calc(11px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
-.cl-body { padding-left: 1.3em; color: var(--muted); font-size: calc(12.5px * var(--ts)); margin-bottom: 4px; }
 .md code { font: calc(12.5px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 4px; }
 .md .flbl { color: var(--muted); }
 .md .sec { font-weight: 700; margin-top: 2px; }
@@ -444,7 +442,6 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 <div id="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-title"><div class="box">
   <button class="x-close" id="cl-x" title="Close">✕</button>
   <h3 id="cl-title">Changelog</h3>
-  <div class="obs-src" id="cl-path"></div>
   <div id="cl-body" class="md"></div>
   <div class="actions"><span class="grow"></span><button class="btn" id="cl-close">Close</button></div>
 </div></div>
@@ -1590,13 +1587,13 @@ $("#obs-model").onchange = (e) => { try { localStorage.setItem("taskboard.model"
 $("#obs-modal").addEventListener("mousedown", (e) => { if (e.target.id === "obs-modal") closeObs(); });
 
 // ---------------------------------------------------------------- changelog
-// The board app's own changes: server.py sends its git log (and the fetched commits Update would install).
+// The board app's own changes in plain words (whats-new.md), and the ones Update would bring.
+const dayName = (d) => { const t = new Date(d + "T12:00"); return isNaN(t) ? d : t.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); };
 function fmtChangelog(list) {
   let out = "", day = null;
   for (const c of list) {
-    if (c.date !== day) { out += `${day ? `<div class="gap"></div>` : ""}<div class="h h2">${esc(c.date)}</div>`; day = c.date; }
-    out += `<div class="li"><b>${esc(c.subject.replace(/^Board: (.)/, (_, a) => a.toUpperCase()))}</b> <span class="cl-sha">${esc(c.sha)}</span></div>`;
-    if (c.body) out += `<div class="cl-body">${esc(c.body.replace(/\s*\n\s*/g, " "))}</div>`;
+    if (c.date !== day) { out += `${day !== null ? `<div class="gap"></div>` : ""}<div class="h h2">${esc(dayName(c.date))}</div>`; day = c.date; }
+    out += `<div class="li">${esc(c.text)}</div>`;
   }
   return out;
 }
@@ -1604,7 +1601,6 @@ const clOpen = () => $("#cl-modal").classList.contains("open");
 async function openChangelog() {
   closeObs();
   $("#cl-modal").classList.add("open");
-  $("#cl-path").textContent = "";
   $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? "Loading…" : "The changelog needs server.py."}</div>`;
   if (!useServer) return;
   let html;
@@ -1612,9 +1608,8 @@ async function openChangelog() {
     const r = await fetch("/api/changelog", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-    $("#cl-path").textContent = d.installed ? `Installed version ${d.installed}` : "";
-    html = (d.pending.length ? `<div class="h h1">Not installed yet</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">Installed</div>` : "")
-      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">No changes recorded.</div>`);
+        html = (d.pending.length ? `<div class="h h1">Coming when you press Update</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">Already here</div>` : "")
+      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">Nothing written here yet.</div>`);
   } catch (e) { html = `<div class="obs-empty">Could not load the changelog.</div>`; }
   if (clOpen()) $("#cl-body").innerHTML = html;
 }
