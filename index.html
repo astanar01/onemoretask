@@ -877,11 +877,13 @@ function renderDetail() {
   $("#d-notes").value = t.notes;
   $("#d-delegate").checked = !!t.delegate;
   $("#d-submodel").value = t.subagentModel || "";
+  $("#d-answeronly").checked = !!t.answerOnly;
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
   const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
   $("#d-delegate").disabled = sent;
   $("#d-submodel").disabled = sent || !t.delegate;
+  $("#d-answeronly").disabled = sent;
   $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
@@ -926,13 +928,11 @@ $("#d-newsub").addEventListener("keydown", (e) => {
 });
 $("#d-close").onclick = closeDetail;
 $("#d-x").onclick = closeDetail;
-  $("#d-answeronly").checked = !!t.answerOnly;
 
 // Image thumbs open full size in a lightbox over the board, not a new tab.
 function openLightbox(src) { $("#lightbox img").src = src; $("#lightbox").classList.add("open"); }
 function closeLightbox() { $("#lightbox").classList.remove("open"); $("#lightbox img").removeAttribute("src"); }
 const lightboxOpen = () => $("#lightbox").classList.contains("open");
-  $("#d-answeronly").disabled = sent;
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a.thumb");
   if (!a || e.target.closest(".x") || e.metaKey || e.ctrlKey) return;
