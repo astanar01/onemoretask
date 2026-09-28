@@ -1678,12 +1678,11 @@ async function checkUpdate(force) {
     upd = await r.json().catch(() => ({}));
     if (!r.ok && !upd.error) upd.error = "HTTP " + r.status;
   } catch (e) { upd = { error: e.message }; }
+  // Shown only when GitHub has something newer; up to date or a failed check shows nothing.
   const u = upd;
-  if (u.error) showUpdate("Update check failed", "", again(u.error));
-  else if (u.behind > 0 && u.canUpdate) showUpdate("Update", "new", `${u.behind} new update${u.behind > 1 ? "s" : ""} on GitHub (${short(u.installed)} → ${short(u.latest)}). Click to install and restart.`);
-  else if (u.behind > 0) showUpdate("Update available", "blocked", again(u.reason || "Cannot update automatically"));
-  else if (!u.installed) showUpdate("No updates", "", again(u.reason || "Cannot check for updates"));
-  else showUpdate("Up to date", "", `Installed ${short(u.installed)}. Click to check again`);
+  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate("Update", "new", `${u.behind} new update${u.behind > 1 ? "s" : ""} on GitHub (${short(u.installed)} → ${short(u.latest)}). Click to install and restart.`);
+  else if (!u.error && u.behind > 0) showUpdate("Update available", "blocked", again(u.reason || "Cannot update automatically"));
+  else $("#update").hidden = true;
 }
 // After a restarting update, wait for the old server to go down and the new one to answer, then reload.
 async function runUpdate() {
