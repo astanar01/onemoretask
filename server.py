@@ -313,7 +313,7 @@ def build_prompt(p, state, t):
     if answer_only:
         lines += ["", *answer_only_lines(report)]
     if t.get("delegate"):
-        lines += ["", *delegate_lines(t.get("subagentModel") or "", report)]
+        lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only)]
     lines.append("")
     if observations.installed():
         lines.append("Invoke the task-observer skill at the start and log its observations to "
@@ -322,7 +322,7 @@ def build_prompt(p, state, t):
                      " (the board keeps them out of git), and never commit a change it makes to a skill file.")
     work = "Change no files and make no commits." if answer_only else "Commit your work; never push."
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
-              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report)]
+              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
     return "\n".join(lines)
 
 
@@ -337,7 +337,8 @@ def answer_only_lines(report):
             "what to do next. If they then reply asking you to go ahead, that reply lifts this rule."]
 
 
-def card_lines(report):
+def card_lines(report, answer_only=False):
+    done = "the full answer" if answer_only else "what you did, commit shas, what is left"
     return ["Keep the card current with the report script (it shows on the board and alerts the user):",
               "- Format every message for reading on the card: short paragraphs and `- ` bullet lists separated by "
               "blank lines (real newlines inside the quoted argument), never one run-on block. A progress line may be "
@@ -345,7 +346,7 @@ def card_lines(report):
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
-              f'- `{report} done "<what you did, commit shas, what is left>"` as your last action when the task is finished.',
+              f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
               "that full answer.",
@@ -366,21 +367,25 @@ def notify(title, subtitle, message):
                     f'subtitle "{esc(subtitle)}" sound name "Glass"'], capture_output=True, timeout=10)
 
 
-def delegate_lines(model, report):
+def delegate_lines(model, report, answer_only=False):
     if model and not MODEL.fullmatch(model):
         model = ""
+    brief = ("- Give each subagent a self-contained prompt: the question, the files, the constraints (incl. "
+             "CLAUDE.md rules) and what to return. Subagents only look into it and return findings: no file changes, "
+             "no commits, no posts to the card. You write the answer." if answer_only else
+             "- Give each subagent a self-contained prompt: the goal, the files, the constraints (incl. CLAUDE.md "
+             "rules), how to verify, and what to return. Subagents do not commit or post to the card; you do.")
     use = (f'- Run every subagent on the "{model}" model: pass `model: "{model}"` on each Agent call.' if model
            else "- Subagents use this session's model (leave the Agent `model` unset).")
     return ["Subagents (this task is marked \"divide in subtasks / use subagents\"):",
             "- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work out the split yourself and carry on "
             "without waiting for approval.",
-            "- Before changing anything, analyse the brief carefully and work out how to split it: the parts, what "
-            "each needs to know, and which depend on others.",
+            f"- Before {'starting' if answer_only else 'changing anything'}, analyse the brief carefully and work out "
+            "how to split it: the parts, what each needs to know, and which depend on others.",
             "- Delegate each part that can stand alone to a subagent (the Agent tool). Launch independent parts in one "
             "message so they run in parallel; run dependent parts after what they need. Keep tiny or tightly coupled "
             "parts yourself.",
-            "- Give each subagent a self-contained prompt: the goal, the files, the constraints (incl. CLAUDE.md "
-            "rules), how to verify, and what to return. Subagents do not commit or post to the card; you do.",
+            brief,
             use,
             f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching subagents, '
             "then check and integrate their results yourself before reporting done."]
