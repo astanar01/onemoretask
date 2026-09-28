@@ -54,7 +54,8 @@ the task's commits from `git log --since=<launch>` (other sessions share the bra
 card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
-Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks).
+Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks). GET /api/changelog?p=<pid>
+returns {"path", "text"} (text null when the file is missing).
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
@@ -1346,6 +1347,16 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(lambda: self._json(200, git_info(project(pid))))
         elif path == "/api/observations":
             self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
+        elif path == "/api/changelog":
+            def read_changelog():
+                f = os.path.join(project(pid).path, changelog.NAME)
+                try:
+                    with open(f, encoding="utf-8") as fh:
+                        text = fh.read()
+                except FileNotFoundError:
+                    text = None
+                self._json(200, {"path": f, "text": text})
+            self._errors(read_changelog)
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
