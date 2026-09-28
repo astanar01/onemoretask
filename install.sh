@@ -4,7 +4,9 @@
 #   From a clone:      ./install.sh
 # Downloads (or updates) the repo in $ONEMORETASK_DIR (default ~/.onemoretask) unless run from a clone,
 # then links bin/onemoretask into ~/.local/bin and adds that folder to PATH if needed.
-# Also copies the bundled task-observer Claude skill to ~/.claude/skills (skip: ONEMORETASK_NO_OBSERVER=1).
+# Also copies the bundled task-observer Claude skill to ~/.claude/skills (skip: ONEMORETASK_NO_OBSERVER=1),
+# and makes a double-click shortcut that starts the board (skip: ONEMORETASK_NO_SHORTCUT=1):
+# ~/Desktop/OneMoreTask.command + ~/Applications/OneMoreTask.app on macOS, a .desktop launcher on Linux.
 set -e
 case $(uname -s 2>/dev/null) in
   MINGW*|MSYS*|CYGWIN*)
@@ -66,6 +68,64 @@ if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
       rm -rf "$new"
       echo "Note: could not install the task-observer skill in $obs — skipped, the old copy is kept."
     fi
+  fi
+fi
+
+# Double-click shortcut. Runs bin/onemoretask by absolute path: a GUI launch may not have ~/.local/bin on PATH.
+# Called only inside `if`, where set -e is off, so every step is chained and a failure never stops the install.
+shortcut_mac() {
+  [ -d "$HOME/Desktop" ] || return 1
+  sc=$HOME/Desktop/OneMoreTask.command
+  qdir=$(printf '%s' "$dir/bin/onemoretask" | sed "s/'/'\\\\''/g")
+  printf '%s\n' '#!/bin/sh' '# Starts the OneMoreTask board. Close this window to stop it.' \
+    'PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"' "exec '$qdir'" > "$sc" && chmod +x "$sc" || return 1
+  where=$sc
+  # The .app is for Spotlight/Launchpad. It opens its own copy of the .command in Terminal so the server
+  # window stays visible.
+  app=$HOME/Applications/OneMoreTask.app
+  rm -rf "$app" && mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" \
+    && cp "$sc" "$app/Contents/Resources/OneMoreTask.command" \
+    && printf '%s\n' '#!/bin/sh' 'exec open -a Terminal "$(dirname "$0")/../Resources/OneMoreTask.command"' \
+      > "$app/Contents/MacOS/OneMoreTask" \
+    && chmod +x "$app/Contents/MacOS/OneMoreTask" \
+    && printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+      '<plist version="1.0"><dict>' \
+      '<key>CFBundleExecutable</key><string>OneMoreTask</string>' \
+      '<key>CFBundleIdentifier</key><string>io.github.astanar01.onemoretask</string>' \
+      '<key>CFBundleName</key><string>OneMoreTask</string>' \
+      '<key>CFBundlePackageType</key><string>APPL</string>' \
+      '</dict></plist>' > "$app/Contents/Info.plist" \
+    && where="$where and $app"
+  return 0
+}
+shortcut_linux() {
+  apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+  # Exec= quoting: escape \ " ` $ inside the double quotes, then double every \ again (the .desktop string
+  # escape), and % becomes %%.
+  qdir=$(printf '%s' "$dir/bin/onemoretask" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')
+  mkdir -p "$apps" && printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=OneMoreTask' \
+    'Comment=Start the OneMoreTask board' "Exec=\"$qdir\"" 'Terminal=true' 'Icon=utilities-terminal' \
+    'Categories=Development;' > "$apps/onemoretask.desktop" || return 1
+  where=$apps/onemoretask.desktop
+  desk=$(xdg-user-dir DESKTOP 2>/dev/null) || desk=
+  [ -n "$desk" ] && [ "$desk" != "$HOME" ] && [ -d "$desk" ] || desk=$HOME/Desktop
+  if [ -d "$desk" ] && cp "$apps/onemoretask.desktop" "$desk/" && chmod +x "$desk/onemoretask.desktop"; then
+    # GNOME will not run a desktop launcher until it is marked trusted.
+    gio set "$desk/onemoretask.desktop" metadata::trusted true >/dev/null 2>&1 || true
+    where="$where and $desk/onemoretask.desktop"
+  fi
+  return 0
+}
+if [ "${ONEMORETASK_NO_SHORTCUT:-}" != 1 ]; then
+  case $(uname -s 2>/dev/null) in
+    Darwin) mk=shortcut_mac ;;
+    *) mk=shortcut_linux ;;
+  esac
+  if $mk 2>/dev/null; then
+    echo "Made a double-click shortcut: $where"
+  else
+    echo "Note: could not make a double-click shortcut — skipped."
   fi
 fi
 

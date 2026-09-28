@@ -35,6 +35,8 @@ It:
 - copies the task-observer skill that ships with the app into `~/.claude/skills/task-observer`
   (see [Skill observations](#skill-observations)). Your own copy is never changed.
   Set `ONEMORETASK_NO_OBSERVER=1` to skip this.
+- makes a double-click shortcut that starts the board (see [Shortcut](#shortcut)).
+  Set `ONEMORETASK_NO_SHORTCUT=1` to skip this.
 
 Already cloned the repo? Run `./install.sh` inside it instead. It uses that copy.
 
@@ -54,8 +56,9 @@ irm https://raw.githubusercontent.com/astanar01/onemoretask/main/install.ps1 | i
 ```
 
 It downloads the app to `%USERPROFILE%\.onemoretask`, puts `onemoretask.cmd` in
-`%USERPROFILE%\.local\bin`, adds that folder to your user PATH, and installs the task-observer skill
-the same way. Open a new terminal after.
+`%USERPROFILE%\.local\bin`, adds that folder to your user PATH, installs the task-observer skill
+the same way, and makes a **OneMoreTask** shortcut on the Desktop and in the Start menu. Open a new
+terminal after.
 
 Already cloned the repo? Run `powershell -ExecutionPolicy Bypass -File install.ps1` inside it.
 
@@ -69,6 +72,19 @@ This starts the board and opens http://127.0.0.1:8765 in your browser. If the bo
 already running, it just opens the page. Press **Ctrl-C** in the terminal to stop it.
 It works the same in PowerShell, cmd or a macOS/Linux terminal. Without the command,
 run `python3 launch.py` (Windows: `py launch.py`) in the app folder.
+
+### Shortcut
+
+No terminal needed after the install: double-click the shortcut it made. It opens a terminal window
+that runs the board and opens the page. Close that window to stop the board.
+
+| System | Shortcut |
+|---|---|
+| macOS | `OneMoreTask.command` on the Desktop, and `OneMoreTask` in `~/Applications` (Spotlight, Launchpad) |
+| Linux | `OneMoreTask` in the app menu, and `onemoretask.desktop` on the Desktop |
+| Windows | `OneMoreTask` on the Desktop and in the Start menu. The window stays open if it fails (for example, no Python) |
+
+Deleted it? Run the install command again.
 
 ### Options
 
@@ -242,6 +258,7 @@ names) and `session` are added when they apply.
 | `~/.config/task_board/projects.json` | The projects you opened, for the project menu |
 | `~/.config/task_board/default_model.json` | The name of your default Claude model, cached for 24 hours |
 | `~/.claude/skills/task-observer/` | The task-observer skill, copied there by the install command |
+| Desktop, `~/Applications`, app menu / Start menu | The shortcut the install command makes (see [Shortcut](#shortcut)) |
 | `<project>/skill-observations/`, `~/.claude/skill-observations/` | Observations the skill logs. The board only reads them |
 | `<project>/.git/info/exclude` | Gets `skill-observations/`, `skill-updates/` and `.claude/skills/` added, so skill work stays out of your commits |
 | `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |

@@ -3,7 +3,8 @@
 #   From a clone:   powershell -ExecutionPolicy Bypass -File install.ps1
 # Downloads (or updates) the repo in $env:ONEMORETASK_DIR (default ~\.onemoretask) unless run from a clone,
 # then puts an onemoretask.cmd in ~\.local\bin and adds that folder to your user PATH if needed.
-# Also copies the bundled task-observer Claude skill to ~\.claude\skills (skip: $env:ONEMORETASK_NO_OBSERVER=1).
+# Also copies the bundled task-observer Claude skill to ~\.claude\skills (skip: $env:ONEMORETASK_NO_OBSERVER=1),
+# and makes a OneMoreTask shortcut on the Desktop and in the Start menu (skip: $env:ONEMORETASK_NO_SHORTCUT=1).
 # No `exit` in the body: under `irm | iex` it would close the user's PowerShell window.
 
 # Our fork in skills\task-observer is copied in when missing, and replaces an earlier copy of it (marked by
@@ -52,6 +53,31 @@ function Install-TaskObserver($src) {
         if ($old -and -not (Test-Path -LiteralPath $dir) -and (Test-Path -LiteralPath $old)) { Move-Item -LiteralPath $old $dir -ErrorAction SilentlyContinue }
         if ($new) { Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue }
         Write-Host "Note: task-observer skill step failed ($($_.Exception.Message)) - skipped, the old copy is kept." -ForegroundColor Yellow
+    }
+}
+
+# Desktop and Start menu shortcuts that start the board. Never fails the install.
+function Install-Shortcuts($dir) {
+    try {
+        $cmd = Join-Path (Resolve-Path -LiteralPath $dir).Path 'bin\onemoretask.cmd'
+        $shell = New-Object -ComObject WScript.Shell
+        $made = @()
+        foreach ($folder in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {
+            if (-not $folder) { continue }
+            $lnk = $shell.CreateShortcut((Join-Path $folder 'OneMoreTask.lnk'))
+            # Through cmd so the window stays open to show an error (e.g. no Python); it still closes when the
+            # board was already running. cmd strips the outer quotes of /c "...", leaving the path quoted.
+            $lnk.TargetPath = $env:ComSpec
+            $lnk.Arguments = '/c ""' + $cmd + '" & if errorlevel 1 pause"'
+            $lnk.WorkingDirectory = $HOME
+            $lnk.Description = 'Start the OneMoreTask board'
+            $lnk.IconLocation = "$env:SystemRoot\System32\shell32.dll,14"
+            $lnk.Save()
+            $made += $folder
+        }
+        if ($made.Count) { Write-Host "Made a OneMoreTask shortcut in: $($made -join ', ')" }
+    } catch {
+        Write-Host "Note: could not make the OneMoreTask shortcuts ($($_.Exception.Message)) - skipped." -ForegroundColor Yellow
     }
 }
 
@@ -115,6 +141,7 @@ function Install-OneMoreTask {
     Write-Host "Installed $shim"
 
     if ($env:ONEMORETASK_NO_OBSERVER -ne '1') { Install-TaskObserver (Join-Path $dir 'skills\task-observer') }
+    if ($env:ONEMORETASK_NO_SHORTCUT -ne '1') { Install-Shortcuts $dir }
 
     $inSession = @($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $bin.TrimEnd('\')
     $key = 'HKCU:\Environment'
