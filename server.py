@@ -1264,10 +1264,20 @@ class Updater:
 UPDATER = Updater()
 
 
+RESTART = threading.Event()
+
+
 def restart(server):
-    """Re-run server.py with the same arguments so pulled code takes effect."""
+    """Stop serving; main() then re-runs server.py. Closing the socket from this thread instead would make
+    serve_forever raise in the main thread (select on a closed socket), and on Windows that can end the
+    process before the new one is spawned."""
     time.sleep(0.5)  # let the response reach the page first
-    server.server_close()
+    RESTART.set()
+    server.shutdown()
+
+
+def reexec():
+    """Re-run server.py with the same arguments so pulled code takes effect."""
     cmd = [sys.executable, os.path.join(APP, "server.py"), *SERVER_ARGS]
     for stream in (sys.stdout, sys.stderr):
         stream.flush()
@@ -1511,6 +1521,9 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    if RESTART.is_set():
+        server.server_close()
+        reexec()
 
 
 if __name__ == "__main__":

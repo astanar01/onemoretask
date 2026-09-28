@@ -4,7 +4,7 @@
 
 - There is a new Changelog button at the top. It shows what changed in the board.
 - You can grab a card and move it up or down to change its order.
-- There is a new Update button at the top. It turns green when a newer board is ready, and one click gets it. It stays hidden when you already have the newest one.
+- There is a new Update button at the top. It turns green when a newer board is ready, and one click gets it. It stays hidden when you already have the newest one. On Windows, the board now always comes back after an update.
 - The Review code button only shows up when Claude changed something on the card.
 - There is a new "Answer only" box. Claude looks into your question and answers on the card, without changing anything.
 - Notes you type on a card now reach Claude right away.
