@@ -214,18 +214,20 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 #d-log li { padding: 2px 0 2px 12px; line-height: 1.55; border-left: 3px solid var(--line); word-wrap: break-word; }
 #d-log li .msg { white-space: pre-wrap; }
-#d-log .msg .gap { height: .6em; }
-#d-log .msg .h, #d-log .msg .fnd { font-weight: 700; margin: 2px 0; }
-#d-log .msg .h1, #d-log .msg .fnd { font-size: calc(16px * var(--ts)); }
-#d-log .msg .h2 { font-size: calc(15px * var(--ts)); }
-#d-log .msg .li { position: relative; padding-left: 1.3em; }
-#d-log .msg .li::before { content: "•"; position: absolute; left: .35em; color: var(--muted); }
-#d-log .msg .li.num { padding-left: 1.7em; }
-#d-log .msg .li.num::before { content: none; }
-#d-log .msg .li .n { position: absolute; left: 0; color: var(--muted); }
-#d-log .msg code { font: calc(12.5px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 4px; }
-#d-log .msg .flbl { color: var(--muted); }
-#d-log .msg .sev, #d-log .msg .pf { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: calc(11px * var(--ts)); font-weight: 700; line-height: 1.6; vertical-align: 1px; }
+.md .gap { height: .6em; }
+.md .h, .md .fnd { font-weight: 700; margin: 2px 0; }
+.md .h1, .md .fnd { font-size: calc(16px * var(--ts)); }
+.md .h2 { font-size: calc(15px * var(--ts)); }
+.md .li { position: relative; padding-left: 1.3em; }
+.md .li::before { content: "•"; position: absolute; left: .35em; color: var(--muted); }
+.md .li.num { padding-left: 1.7em; }
+.md .li.num::before { content: none; }
+.md .li .n { position: absolute; left: 0; color: var(--muted); }
+.md code { font: calc(12.5px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 4px; }
+.md .flbl { color: var(--muted); }
+.md .sec { font-weight: 700; margin-top: 2px; }
+#d-log li.k-done .md > div:first-child, #d-log li.k-question .md > div:first-child { font-weight: 600; }
+.md .sev, .md .pf { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: calc(11px * var(--ts)); font-weight: 700; line-height: 1.6; vertical-align: 1px; }
 .sev.crit { background: var(--crit-bg); color: var(--crit); }
 .sev.major { background: var(--major-bg); color: var(--major); }
 .sev.minor, .pf.no { background: var(--minor-bg); color: var(--minor); }
@@ -800,7 +802,7 @@ function cardEl(t, top, nestedCount) {
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
-    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${esc(ag.reason)}</div>` : ""}
+    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
     ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const td = el.querySelector(".to-done");
@@ -1067,13 +1069,13 @@ function renderAgent(t) {
   const top0 = dl.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
-    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${fmtMsg(ag.reason)}</div></li>`);
+    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   const busy = ag && ag.phase === "working";
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
@@ -1450,7 +1452,7 @@ function renderObs() {
         <input type="checkbox" ${obsSel.has(o.key) ? "checked" : ""}>
         <span class="t"><b>#${esc(o.id)}</b>${esc(o.title)}</span>
         <span class="c">${esc([(o.skill || []).join(", "), o.date].filter(Boolean).join(" · "))}</span>
-        ${obsOpenRows.has(o.key) ? `<div class="obs-body">${esc(o.body || "")}</div>` : ""}</li>`).join("")
+        ${obsOpenRows.has(o.key) ? `<div class="obs-body md">${fmtMsg(o.body || "")}</div>` : ""}</li>`).join("")
         : `<li class="obs-empty">None open.</li>`}</ul></section>`;
   }).join("");
   $("#obs-list").innerHTML = html || `<div class="obs-empty">No open observations.</div>`;
@@ -1461,7 +1463,7 @@ function renderObs() {
       el.onclick = () => {
         const body = li.querySelector(".obs-body"), o = obsList().find((x) => x.key === k);
         if (body) { body.remove(); obsOpenRows.delete(k); }
-        else if (o) { li.insertAdjacentHTML("beforeend", `<div class="obs-body">${esc(o.body || "")}</div>`); obsOpenRows.add(k); }
+        else if (o) { li.insertAdjacentHTML("beforeend", `<div class="obs-body md">${fmtMsg(o.body || "")}</div>`); obsOpenRows.add(k); }
       };
   });
   renderObsFoot();
@@ -1589,13 +1591,16 @@ const SEV_RE = /^(critical|major|high|minor|medium|low|nit)\b/i;
 const pill = (w) => `<span class="sev ${SEV[w.toLowerCase()]}">${w}</span>`;
 const PF = (w) => `<span class="pf ${/^not/i.test(w) ? "no" : /^ref/i.test(w) ? "ref" : "ok"}">${w}</span>`;
 const PF_RE = /\b(not reproduced|reproduced|refuted)\b/gi;
+// Commit shas (hex with a digit and a letter) and file.ext:line read as code even without backticks.
+const AUTO_RE = /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|(?<![\w&#])[\w./~-]*\w\.[a-z]{1,5}:\d+(?:-\d+)?\b/g;
 function inl(x) {
-  return x.split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${p.slice(1, -1)}</code>` : p.replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>")).join("");
+  return x.split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${p.slice(1, -1)}</code>` : p.replace(AUTO_RE, "<code>$&</code>").replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>")).join("");
 }
 function fmtItem(x, li) {
   let pre = "", m;
   if (li && (m = x.match(SEV_RE))) { pre = pill(m[1]); x = x.slice(m[1].length); }
-  else if ((m = x.match(/^(?:\*\*)?(Where|Problem|Breaks when|Fix|Proof|Severity|Test|Reviewed|Not checked|Not confirmed|Checked and fine|Checked and OK|Findings|Commits reviewed|Dropped|Left):(?:\*\*)?/))) {
+  else if ((m = x.match(/^(?:\*\*)?([A-Z][\w&#;' /-]{0,34}?):(?:\*\*)?(?=\s|$)/)) && m[1].split(" ").length <= 5 && !m[1].includes("&quot;")) {
+    if (!li && !x.slice(m[0].length).trim()) return `<span class="sec">${m[1]}:</span>`;
     pre = `<b class="flbl">${m[1]}:</b>`; x = x.slice(m[0].length);
     if (m[1] === "Proof") x = x.replace(PF_RE, PF);
     if (m[1] === "Severity" && (m = x.match(/^(\s*)(critical|major|high|minor|medium|low|nit)\b/i))) { pre += m[1] + pill(m[2]); x = x.slice(m[0].length); }
