@@ -110,16 +110,22 @@ plainly — that is a valid result.
 
 ## 5. Report
 
-Most severe first. For each finding:
+Most severe first. Severity: critical (data loss, security, crash on a main path) / major
+(wrong result a user will hit) / minor (rare edge case, misleading text).
 
-- **Severity**: critical (data loss, security, crash on a main path) / major (wrong result a
-  user will hit) / minor (rare edge case, misleading text).
-- **Where**: `file:line`.
-- **Problem**: one sentence.
-- **Breaks when**: the concrete input or state, and what goes wrong.
-- **Fix**: the change you suggest, in a sentence or a tiny snippet.
-- **Proof**: Reproduced (quote the test output) / Not reproduced — confidence high, medium
+Write each finding in exactly this shape — the task board styles it (big heading, colored
+severity badge, bold labels, colored proof tag), and only finds lines that start this way:
+
+```
+Finding 1 (major): short title
+
+- Where: `file:line`
+- Problem: one sentence.
+- Breaks when: the concrete input or state, and what goes wrong.
+- Fix: the change you suggest, in a sentence or a tiny snippet.
+- Proof: Reproduced (quote the test output) / Not reproduced — confidence high, medium
   or low, and why no test could run.
+```
 
 Then: one line listing refuted findings ("checked and fine"), and one line with which
 commits you reviewed, the level, and what you did not check. End by asking which findings
@@ -132,6 +138,8 @@ there — chat output alone is not seen.
 ## Pre-flight before posting
 
 - [ ] No files changed (`git status` shows nothing new from you; scratch tests live outside the repo).
+- [ ] Every finding opens with a `Finding N (severity): title` line and uses the `- Where:` /
+      `- Proof:` labels.
 - [ ] Every finding has file:line, a concrete "breaks when", and a Proof line: Reproduced with
       quoted output, or Not reproduced with a confidence level and the reason no test ran.
 - [ ] Every candidate finding had a test run on it, or a stated reason it could not.

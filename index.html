@@ -12,6 +12,8 @@
   --line: #d6d1c7; --accent: #7a4fd6; --accent-soft: #ece4fb; --danger: #c0392b;
   --drop: #7a4fd6; --shadow: 0 1px 2px rgba(0,0,0,.08), 0 1px 1px rgba(0,0,0,.04);
   --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b;
+  --crit: #b42318; --crit-bg: #fde2df; --major: #b54708; --major-bg: #fdebd7;
+  --minor: #8a6100; --minor-bg: #fbf0c9; --low: #4a6177; --low-bg: #e3eaf1; --ok-bg: #dcf0e5;
 }
 /* Theme: follows the system unless the header's Theme menu sets data-theme on <html>. */
 :root { color-scheme: light; }
@@ -21,6 +23,8 @@
     --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
     --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
     --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
+    --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
   }
 }
 :root[data-theme="dark"] {
@@ -28,6 +32,8 @@
   --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
   --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
   --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
+  --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -208,6 +214,24 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 #d-log li { padding: 2px 0 2px 12px; line-height: 1.55; border-left: 3px solid var(--line); word-wrap: break-word; }
 #d-log li .msg { white-space: pre-wrap; }
+#d-log .msg .gap { height: .6em; }
+#d-log .msg .h, #d-log .msg .fnd { font-weight: 700; margin: 2px 0; }
+#d-log .msg .h1, #d-log .msg .fnd { font-size: calc(16px * var(--ts)); }
+#d-log .msg .h2 { font-size: calc(15px * var(--ts)); }
+#d-log .msg .li { position: relative; padding-left: 1.3em; }
+#d-log .msg .li::before { content: "•"; position: absolute; left: .35em; color: var(--muted); }
+#d-log .msg .li.num { padding-left: 1.7em; }
+#d-log .msg .li.num::before { content: none; }
+#d-log .msg .li .n { position: absolute; left: 0; color: var(--muted); }
+#d-log .msg code { font: calc(12.5px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 4px; }
+#d-log .msg .flbl { color: var(--muted); }
+#d-log .msg .sev, #d-log .msg .pf { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: calc(11px * var(--ts)); font-weight: 700; line-height: 1.6; vertical-align: 1px; }
+.sev.crit { background: var(--crit-bg); color: var(--crit); }
+.sev.major { background: var(--major-bg); color: var(--major); }
+.sev.minor, .pf.no { background: var(--minor-bg); color: var(--minor); }
+.sev.low { background: var(--low-bg); color: var(--low); }
+.pf.ok { background: var(--ok-bg); color: var(--ok); }
+.pf.ref { background: var(--col); color: var(--muted); }
 #d-log li.k-question { border-left-color: var(--wait); }
 #d-log li.k-done, #d-log li.k-answer { border-left-color: var(--ok); }
 #d-log li.k-you { border-left-color: var(--accent); }
@@ -1043,13 +1067,13 @@ function renderAgent(t) {
   const top0 = dl.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${esc(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
-    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${esc(ag.reason)}</div></li>`);
+    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg">${fmtMsg(ag.reason)}</div></li>`);
   $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   const busy = ag && ag.phase === "working";
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
@@ -1559,6 +1583,42 @@ $("#panel").addEventListener("drop", (e) => {
 
 // ---------------------------------------------------------------- misc
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+// Light markdown + review-finding badges for log messages. Everything is escaped first; only the tags built here reach the page.
+const SEV = { critical: "crit", major: "major", high: "major", minor: "minor", medium: "minor", low: "low", nit: "low" };
+const SEV_RE = /^(critical|major|high|minor|medium|low|nit)\b/i;
+const pill = (w) => `<span class="sev ${SEV[w.toLowerCase()]}">${w}</span>`;
+const PF = (w) => `<span class="pf ${/^not/i.test(w) ? "no" : /^ref/i.test(w) ? "ref" : "ok"}">${w}</span>`;
+const PF_RE = /\b(not reproduced|reproduced|refuted)\b/gi;
+function inl(x) {
+  return x.split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${p.slice(1, -1)}</code>` : p.replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>")).join("");
+}
+function fmtItem(x, li) {
+  let pre = "", m;
+  if (li && (m = x.match(SEV_RE))) { pre = pill(m[1]); x = x.slice(m[1].length); }
+  else if ((m = x.match(/^(?:\*\*)?(Where|Problem|Breaks when|Fix|Proof|Severity|Test|Reviewed|Not checked|Not confirmed|Checked and fine|Checked and OK|Findings|Commits reviewed|Dropped|Left):(?:\*\*)?/))) {
+    pre = `<b class="flbl">${m[1]}:</b>`; x = x.slice(m[0].length);
+    if (m[1] === "Proof") x = x.replace(PF_RE, PF);
+    if (m[1] === "Severity" && (m = x.match(/^(\s*)(critical|major|high|minor|medium|low|nit)\b/i))) { pre += m[1] + pill(m[2]); x = x.slice(m[0].length); }
+  } else if (li && (m = x.match(/^(not reproduced|reproduced|refuted)\b/i))) { pre = PF(m[1]); x = x.slice(m[1].length); }
+  return pre + inl(x);
+}
+function fmtMsg(text) {
+  let out = "", gap = false;
+  for (const raw of esc(text).split("\n")) {
+    if (!raw.trim()) { gap = !!out; continue; }
+    if (gap) { out += `<div class="gap"></div>`; gap = false; }
+    let m, l = raw;
+    const h = l.match(/^(#{1,3}) (.*)/);
+    if (h) l = h[2];
+    if ((m = l.match(/^((?:\*\*)?Finding \d+\b\W*?)(critical|major|high|minor|medium|low|nit)\b/i))) out += `<div class="fnd">${inl(m[1])}${pill(m[2])}${inl(l.slice(m[0].length))}</div>`;
+    else if (/^Finding \d+\b/i.test(l)) out += `<div class="fnd">${inl(l)}</div>`;
+    else if (h) out += `<div class="h h${h[1].length}">${inl(l)}</div>`;
+    else if ((m = l.match(/^(\s*)[-*] (.*)/))) out += `<div class="li"${m[1] ? ` style="margin-left:${Math.min(m[1].length, 8) / 2}em"` : ""}>${fmtItem(m[2], 1)}</div>`;
+    else if ((m = l.match(/^(\s*)(\d+\.) (.*)/))) out += `<div class="li num"${m[1] ? ` style="margin-left:${Math.min(m[1].length, 8) / 2}em"` : ""}><span class="n">${m[2]}</span>${fmtItem(m[3], 1)}</div>`;
+    else out += `<div>${fmtItem(l)}</div>`;
+  }
+  return out;
+}
 function fmt(iso) { return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
 // Text size is a per-browser view preference, like collapsed groups.
