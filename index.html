@@ -437,7 +437,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <p id="obs-note"></p>
   <label class="toggle"><input type="checkbox" id="obs-all"> Select all</label>
   <div id="obs-list"></div>
-  <div class="actions"><select id="obs-model" title="Model for the Claude session"></select><span class="grow"></span><button class="btn" id="obs-close">Close</button><button class="btn primary" id="obs-apply">Apply</button></div>
+  <div class="actions"><select id="obs-model" title="Model for the Claude session"></select><span class="grow"></span><button class="btn" id="obs-close">Close</button><button class="btn" id="obs-review" title="Claude checks every open observation against every skill and asks you on the card which changes to make">Run full review</button><button class="btn primary" id="obs-apply">Apply</button></div>
 </div></div>
 <div id="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-title"><div class="box">
   <button class="x-close" id="cl-x" title="Close">✕</button>
@@ -1555,6 +1555,7 @@ function renderObsFoot() {
   $("#obs-all").disabled = !all;
   $("#obs-apply").textContent = `Apply (${n})`;
   $("#obs-apply").disabled = !n;
+  $("#obs-review").disabled = !(obs.data && obs.data.installed);
 }
 
 // The card's notes are the prompt: they name each observation and its file so the session edits the right ones.
@@ -1578,10 +1579,30 @@ async function applyObservations() {
   loadObservations(true);
 }
 
+// The skill skips its full review in a session started for a card; this card makes the review the job itself.
+function reviewNotes() {
+  const dirs = ((obs.data && obs.data.sources) || []).map((s) => `- ${s.dir}`);
+  return ["Run the task-observer skill's full (comprehensive) review now. The user clicked Run full review on the board: the review IS this card's task, so the rule that skips the review in a session started for a card does not apply here.",
+    "Load the task-observer skill first and follow its Comprehensive Review steps as an interactive run.",
+    ...(dirs.length ? ["Observation logs:", ...dirs] : []),
+    "The user reads only this card: present the observations grouped by skill as one question on the card (mark the ones that need a choice), then end your turn and wait for the answer. That answer approves both applying and installing: stage each change the way the skill says, copy the staged file over the live skill (the folder the skill loads from), check the live file has the change, then mark each observation actioned (edit its status line in place).",
+    "Finish by writing today's date to skill-observations/last-review-date.txt in each log folder you reviewed (real date, then read it back), and report what changed on the card."].join("\n");
+}
+
+async function runFullReview() {
+  const t = addTask("Run the full skill review", firstOpenCol());
+  t.notes = reviewNotes(); t.tags = ["observations"]; touch(t);
+  closeObs(); render();
+  openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
+  await sendToClaude(t);
+  loadObservations(true);
+}
+
 $("#obs-btn").onclick = openObs;
 $("#obs-x").onclick = closeObs;
 $("#obs-close").onclick = closeObs;
 $("#obs-apply").onclick = applyObservations;
+$("#obs-review").onclick = runFullReview;
 $("#obs-all").onchange = (e) => { obsSel = new Set(e.target.checked ? obsList().map((o) => o.key) : []); renderObs(); };
 $("#obs-model").onchange = (e) => { try { localStorage.setItem("taskboard.model", e.target.value); } catch (_) {} };
 $("#obs-modal").addEventListener("mousedown", (e) => { if (e.target.id === "obs-modal") closeObs(); });

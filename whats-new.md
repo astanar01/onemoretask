@@ -2,6 +2,7 @@
 
 ## 2026-09-28
 
+- The Observations window has a new Run full review button. It makes a card where Claude looks at all the notes and asks you which ones to use.
 - There is a new Changelog button at the top. It shows what changed in the board.
 - You can grab a card and move it up or down to change its order.
 - There is a new Update button at the top. It turns green when a newer board is ready, and one click gets it. It stays hidden when you already have the newest one. On Windows, the board now always comes back after an update.
