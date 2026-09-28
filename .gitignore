@@ -10,3 +10,5 @@ skills/*
 !skills/task-observer/
 # This repo's own dev board (cards, pasted images) is private; other projects commit theirs.
 .task_board/
+# Rules only for whoever builds the board (Claude Code reads this file; it is never shipped).
+CLAUDE.local.md
