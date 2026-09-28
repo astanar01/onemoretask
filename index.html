@@ -231,6 +231,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .md .li.num { padding-left: 1.7em; }
 .md .li.num::before { content: none; }
 .md .li .n { position: absolute; left: 0; color: var(--muted); }
+.cl-sha { font: calc(11px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.cl-body { padding-left: 1.3em; color: var(--muted); font-size: calc(12.5px * var(--ts)); margin-bottom: 4px; }
 .md code { font: calc(12.5px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 4px; }
 .md .flbl { color: var(--muted); }
 .md .sec { font-weight: 700; margin-top: 2px; }
@@ -354,7 +356,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <button class="btn" id="theme"></button>
   <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
   <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
-  <button class="btn" id="cl-btn" title="Open this project's CHANGELOG.md">Changelog</button>
+  <button class="btn" id="cl-btn" title="What changed in the task board app">Changelog</button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <span id="status"></span>
 </header>
@@ -534,7 +536,7 @@ function renderProjects() {
 async function switchProject(id) {
   if (saveTimer) await flush();
   openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
-  P = id; agents = {}; polledOnce = false; closeObs(); closeChangelog(); obsSel.clear(); renderObsButton();
+  P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
   try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
   render(); pollAgents();
 }
@@ -1588,27 +1590,18 @@ $("#obs-model").onchange = (e) => { try { localStorage.setItem("taskboard.model"
 $("#obs-modal").addEventListener("mousedown", (e) => { if (e.target.id === "obs-modal") closeObs(); });
 
 // ---------------------------------------------------------------- changelog
-// changelog.py writes CHANGELOG.md; this renders just its markdown: headings, paragraphs, nested bullets, **bold**, `code`.
-function fmtChangelog(text) {
-  const inline = (x) => {
-    const code = [];
-    return x.replace(/`([^`]+)`/g, (_, c) => `\0${code.push(c) - 1}\0`).replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>")
-      .replace(/\0(\d+)\0/g, (_, i) => `<code>${code[i]}</code>`);
-  };
-  let out = "", gap = false, m;
-  for (const l of esc(text.replace(/<!--[\s\S]*?-->/g, "")).split("\n")) {
-    if (!l.trim()) { gap = !!out; continue; }
-    if (gap) { out += `<div class="gap"></div>`; gap = false; }
-    const ind = Math.min(l.match(/^ */)[0].length, 8) / 2;
-    if ((m = l.match(/^(#{1,3}) (.*)/))) out += `<div class="h h${m[1].length}">${inline(m[2].trim())}</div>`;
-    else if ((m = l.match(/^ *[-*] (.*)/))) out += `<div class="li"${ind ? ` style="margin-left:${ind}em"` : ""}>${inline(m[1].trim())}</div>`;
-    else out += `<div${ind ? ` style="padding-left:${ind + .3}em"` : ""}>${inline(l.trim())}</div>`;
+// The board app's own changes: server.py sends its git log (and the fetched commits Update would install).
+function fmtChangelog(list) {
+  let out = "", day = null;
+  for (const c of list) {
+    if (c.date !== day) { out += `${day ? `<div class="gap"></div>` : ""}<div class="h h2">${esc(c.date)}</div>`; day = c.date; }
+    out += `<div class="li"><b>${esc(c.subject.replace(/^Board: (.)/, (_, a) => a.toUpperCase()))}</b> <span class="cl-sha">${esc(c.sha)}</span></div>`;
+    if (c.body) out += `<div class="cl-body">${esc(c.body.replace(/\s*\n\s*/g, " "))}</div>`;
   }
   return out;
 }
 const clOpen = () => $("#cl-modal").classList.contains("open");
 async function openChangelog() {
-  const pid = P;
   closeObs();
   $("#cl-modal").classList.add("open");
   $("#cl-path").textContent = "";
@@ -1616,13 +1609,14 @@ async function openChangelog() {
   if (!useServer) return;
   let html;
   try {
-    const r = await fetch(api("/api/changelog"), { cache: "no-store" });
+    const r = await fetch("/api/changelog", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-    $("#cl-path").textContent = d.path || "";
-    html = d.text ? fmtChangelog(d.text.replace(/^# Changelog\s*\n/, "")) : `<div class="obs-empty">No changelog yet.</div>`;
+    $("#cl-path").textContent = d.installed ? `Installed version ${d.installed}` : "";
+    html = (d.pending.length ? `<div class="h h1">Not installed yet</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">Installed</div>` : "")
+      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">No changes recorded.</div>`);
   } catch (e) { html = `<div class="obs-empty">Could not load the changelog.</div>`; }
-  if (pid === P && clOpen()) $("#cl-body").innerHTML = html;
+  if (clOpen()) $("#cl-body").innerHTML = html;
 }
 function closeChangelog() { $("#cl-modal").classList.remove("open"); }
 $("#cl-btn").onclick = openChangelog;
