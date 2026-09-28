@@ -1265,6 +1265,14 @@ class Handler(SimpleHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj).encode())
 
+    def _host_ok(self):
+        # DNS rebinding: a page on evil.example rebound to 127.0.0.1 sends Host: evil.example, with a matching Origin.
+        port = self.server.server_address[1]
+        if self.headers.get("Host", "").lower() in (f"127.0.0.1:{port}", f"localhost:{port}"):
+            return True
+        self._json(403, {"error": "unknown Host refused"})
+        return False
+
     def _same_origin(self):
         # Any web page can POST to localhost; only the board itself may launch agents or write files.
         origin = self.headers.get("Origin")
@@ -1290,7 +1298,12 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)})
 
+    def do_HEAD(self):
+        self._send(404)
+
     def do_GET(self):
+        if not self._host_ok():
+            return
         path, pid = self._route()
         m = FILE_ROUTE.fullmatch(path)
         if m:
@@ -1327,13 +1340,19 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/update":
             force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
             self._errors(lambda: self._json(200, UPDATER.status(force)))
+        elif path in ("/", "/index.html"):
+            # Only the page itself: the app folder also holds .git/ and the board data.
+            with open(os.path.join(HERE, "index.html"), "rb") as f:
+                self._send(200, f.read(), TYPES[".html"])
         else:
-            super().do_GET()
+            self._send(404)
 
     def do_POST(self):
         path, _ = self._route()
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/image", "/api/projects", "/api/projects/pick",
                   "/api/projects/forget", "/api/projects/trust", "/api/update")
+        if not self._host_ok():
+            return
         if path not in routes:
             self._send(404)
             return
@@ -1379,6 +1398,8 @@ class Handler(SimpleHTTPRequestHandler):
         self._errors(handle)
 
     def do_PUT(self):
+        if not self._host_ok():
+            return
         path, pid = self._route()
         if path != "/api/tasks":
             self._send(404)
