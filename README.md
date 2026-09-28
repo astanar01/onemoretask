@@ -126,7 +126,9 @@ the git repo you run it from.
    once it is in. If a permission prompt is on screen, or on Windows, a hook the board
    installs on each session (`inbox.py`) hands it over after the current step instead. Claude answers in the
    language you wrote in, even if the project is in another one.
-6. **Review the code.** A finished card in the Review column has a **Review code** button.
+6. **Review the code.** A finished card in the Review column has a **Review code** button
+   once the task made a commit (a Claude message on the card names its sha). An **Answer only**
+   card gets it only after a reply had Claude go ahead and commit.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
    skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it
    from there if it is not installed in `~/.claude/skills/`), and

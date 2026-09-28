@@ -162,6 +162,7 @@ def replace_file(tmp, dst):
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
+SHA_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
 TYPE_RETRY = 15  # seconds before typing a note into a session is tried again (a prompt was on screen)
@@ -344,7 +345,7 @@ def card_lines(report):
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
-              f'- `{report} done "<what you did, commits, what is left>"` as your last action when the task is finished.',
+              f'- `{report} done "<what you did, commit shas, what is left>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
               "that full answer.",
@@ -553,6 +554,24 @@ def task_commits(p, since):
     return [tuple(x.split(" ", 1)) if " " in x else (x, "") for x in r.stdout.splitlines() if x]
 
 
+def launched_at(log, t):
+    """When the task was sent: its last launch message, else the agent's start time."""
+    return next((e["at"] for e in reversed(log) if e.get("status") == "launch"), t["agent"].get("started"))
+
+
+def own_commits(p, log, since):
+    """Commits on HEAD since `since` that a Claude message on the card names by sha: the task's own work, as
+    opposed to other sessions' commits on the shared branch. None when git fails."""
+    words = {w for e in log if e.get("from") == "claude" for w in SHA_WORD.findall(e.get("message") or "")}
+    if not words:
+        return []
+    try:
+        commits = task_commits(p, since)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return None
+    return [c for c in commits if any(w.startswith(c[0]) or c[0].startswith(w) for w in words)]
+
+
 def review(p, task_id, level):
     """Start a fresh session that code-reviews the task's commits and posts the findings on its card. The card
     then follows the reviewer, so a reply ("fix 1 and 3") goes to the session that holds the findings."""
@@ -566,10 +585,10 @@ def review(p, task_id, level):
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
     log = reports.read(p.board, task_id)
-    since = next((e["at"] for e in reversed(log) if e.get("status") == "launch"), t["agent"].get("started"))
+    since = launched_at(log, t)
     commits = task_commits(p, since)
-    if not commits:
-        raise PermissionError("No commits since the task was sent — nothing to review")
+    if not own_commits(p, log, since):
+        raise PermissionError("This task made no commits — nothing to review")
     # The task's own report, not an earlier reviewer's findings: stop at the first review.
     first_review = next((i for i, e in enumerate(log) if e.get("status") == "review"), len(log))
     report = next((e["message"] for e in reversed(log[:first_review]) if e.get("from") == "claude"
@@ -879,6 +898,7 @@ class Watcher:
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
+        self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
 
     def _deliver(self, p, task_id, info, waiting=False):
         try:
@@ -957,8 +977,15 @@ class Watcher:
                 subs = subagents(s and s.get("sessionId"))
             except OSError:
                 subs = []
+            # A sha lands on the card only after its commit, so the answer can change only when the log grows.
+            done = self.committed.get((p.id, t["id"]))
+            if phase != "working" and (not done or done[0] != len(log)):
+                found = own_commits(p, log, launched_at(log, t))
+                done = (len(log), bool(found)) if found is not None else None
+                if done:
+                    self.committed[(p.id, t["id"])] = done
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
-                                      "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
+                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
                                       "closed": t.get("column") in done_cols, "delivered": delivered}
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})

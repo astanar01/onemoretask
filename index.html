@@ -1036,8 +1036,9 @@ function canFinish(t) {
   if ((pending[t.id] || []).length) return false;
   return !ag || ag.phase === "gone" || (ag.phase !== "working" && !(last && last.from === "you"));
 }
-// A finished task in Review can be handed to a fresh reviewer session (server: review()).
-const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone";
+// A finished task in Review that made a commit (its card names the sha) can be handed to a fresh reviewer
+// session (server: review()). An "Answer only" task gets the button once a later reply had it commit.
+const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
 function reviewLevel() { try { return localStorage.getItem("taskboard.reviewLevel") || "medium"; } catch (e) { return "medium"; } }
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
