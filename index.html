@@ -590,6 +590,19 @@ function addTask(title, colId, parent = null) {
   save();
   return t;
 }
+
+// A new card starts with the delegate choice and subagent model picked last time.
+function withDelegateChoice(t) {
+  try {
+    const c = JSON.parse(localStorage.getItem(LS_KEY + ":delegate") || "{}");
+    if (c.delegate) t.delegate = true;
+    if (c.model) t.subagentModel = c.model;
+  } catch (_) {}
+  return t;
+}
+function rememberDelegateChoice(t) {
+  try { localStorage.setItem(LS_KEY + ":delegate", JSON.stringify({ delegate: !!t.delegate, model: t.subagentModel || "" })); } catch (_) {}
+}
 function touch(t) { t.updated = now(); save(); }
 
 // The subtasks drawn nested under `t` in column `colId` (same-column chain only).
@@ -780,7 +793,7 @@ function addCardEl(col) {
   wrap.className = "add-card";
   const btn = document.createElement("button");
   btn.textContent = "+ Add task";
-  btn.onclick = () => { const t = addTask("", col.id); draftId = t.id; render(); openDetail(t.id); };
+  btn.onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
   wrap.appendChild(btn);
   return wrap;
 }
@@ -812,7 +825,7 @@ function settleDraft() {
   const t = draftId && task(draftId);
   draftId = null;
   if (!t || t.title.trim()) return;
-  if (!t.notes.trim() && !t.tags.length && !t.priority && !t.delegate && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
+  if (!t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
   else { t.title = "Untitled"; touch(t); }
 }
 
@@ -871,15 +884,15 @@ $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
 $("#d-delegate").addEventListener("change", (e) => {
-  const t = task(openId); t.delegate = e.target.checked; touch(t);
+  const t = task(openId); t.delegate = e.target.checked; touch(t); rememberDelegateChoice(t);
   $("#d-submodel").disabled = !t.delegate;
 });
-$("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); });
+$("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); rememberDelegateChoice(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
 $("#d-newsub").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;
   const parent = task(openId);
-  addTask(e.target.value, isDone(parent) ? firstOpenCol() : parent.column, parent.id);
+  withDelegateChoice(addTask(e.target.value, isDone(parent) ? firstOpenCol() : parent.column, parent.id)); save();
   renderDetail(); $("#d-newsub").focus();
 });
 $("#d-close").onclick = closeDetail;
