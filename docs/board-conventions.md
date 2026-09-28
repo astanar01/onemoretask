@@ -17,6 +17,16 @@ task lists), not in an agent prompt. The agent is usually gone when the user cli
   fakes a failure in the next.
 - Use a throwaway project on a spare port for anything that writes. Never test
   writes on the user's real board.
+- A spare port isolates the network, not the disk: `server.py --project <dir>` adds
+  `<dir>` to `~/.config/task_board/projects.json`, the registry the real board reads.
+  Start the test server with `HOME=<tmp>/home` so the throwaway project never lands
+  there.
+- When the real board is already running, serve `server.Handler` under a
+  `ThreadingHTTPServer` from a small script instead of `server.py main()`: `main()`
+  also starts the session watcher, and a second watcher would act on live sessions.
+- HTML5 drag-and-drop (card reorder, column moves) needs synthetic `DragEvent`s
+  (`dragstart` → `dragover` → `drop` → `dragend`) sharing ONE `DataTransfer`,
+  dispatched to `document.elementFromPoint(x, y)` at the target point.
 
 ## Screenshots of the running board
 
