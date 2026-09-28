@@ -115,6 +115,11 @@ the git repo you run it from.
    posts the findings on the card. Pick the budget in the task panel: Low, Medium (default)
    or High. Every level runs a small test on each finding. The card shows **Code review** while
    it runs. Reply to have it fix the findings.
+7. **The changelog updates itself.** When a card moves into a done column (Move to done or the
+   Status menu), the board adds it to `CHANGELOG.md` at the project
+   root, under today's date, newest first. The entry is the task's title, the first paragraph
+   of Claude's final report, and its subtasks. A task moved out of done and back is not added
+   twice. The board writes the file but does not commit it; the next commit that takes it does.
 
 ### Skill observations
 

@@ -52,6 +52,8 @@ the task's commits from `git log --since=<launch>` (other sessions share the bra
 card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
+Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks).
+
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
 
@@ -88,6 +90,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 import attach
+import changelog
 import observations
 import reports
 
@@ -1234,9 +1237,10 @@ class Handler(SimpleHTTPRequestHandler):
             # Only the board page that sent a card sets its "agent", and nothing clears it. A tab opened before
             # the send (or a save racing the send) would drop it, and the card would vanish from the watcher.
             try:
-                sent = {t["id"]: t["agent"] for t in load_tasks(p)["tasks"] if t.get("agent")}
+                before = load_tasks(p)
+                sent = {t["id"]: t["agent"] for t in before["tasks"] if t.get("agent")}
             except (OSError, ValueError, KeyError, TypeError):
-                sent = {}
+                before, sent = None, {}
             for t in data["tasks"]:
                 if isinstance(t, dict) and not t.get("agent") and t.get("id") in sent:
                     t["agent"] = sent[t["id"]]
@@ -1246,6 +1250,8 @@ class Handler(SimpleHTTPRequestHandler):
                 json.dump(data, f, indent=2, ensure_ascii=False)
                 f.write("\n")
             replace_file(tmp, p.data)
+            if isinstance(before, dict):
+                changelog.record(p.path, p.board, before, data)
             self._send(204)
         self._errors(write)
 
