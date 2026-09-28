@@ -287,11 +287,18 @@ What does leave your computer, and why:
 - **The default model name.** To show the name of your default model, the board runs
   `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
   skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
-- **Install and update.** The install command downloads the app from GitHub.
+- **Install and update.** The install command downloads the app from GitHub. The board's
+  **Update** button runs `git fetch` on the app folder when the page opens and every 30 minutes,
+  to compare your copy with GitHub. It sends no task data.
 
 ## Update
 
-Run the install command again. It pulls the latest version into `~/.onemoretask`.
+The **Update** button in the top bar turns green when GitHub has a newer version. Click it:
+the board pulls the new version (`git pull --ff-only`), restarts its server and reloads the page.
+It stays grey when your copy is current, and says why when it can't update by itself (local
+changes, or commits that are not on GitHub).
+
+Or by hand: run the install command again. It pulls the latest version into `~/.onemoretask`.
 Installed from your own clone? Run `git pull` in it instead.
 Then restart the board (Ctrl-C in its terminal, then `onemoretask`): a running board keeps its old
 server code until restarted.

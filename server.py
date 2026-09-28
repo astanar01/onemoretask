@@ -58,6 +58,8 @@ Moving a card into a done column adds it to the project's CHANGELOG.md (changelo
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
+GET /api/update compares the app's own git clone with GitHub (fetch, cached 10 min, ?force=1 re-checks); POST
+/api/update runs `git pull --ff-only` there and restarts the server with the same arguments.
 
 GET /api/observations?p=<pid> lists the open entries of the task-observer skill's observation logs
 (<project>/skill-observations/ and <claude config dir>/skill-observations/, read-only; see observations.py).
@@ -1099,6 +1101,115 @@ def deliver_notes(p, task_id, info, waiting=False):
     WATCH.expect(p, task_id, aid)
 
 
+# ---------------------------------------------------------------- self-update
+APP = os.path.dirname(os.path.realpath(__file__))
+SERVER_ARGS = sys.argv[1:]  # main() sets it again before parsing; the restart reuses them
+UPDATE_TTL = 600
+
+
+def app_git(*args, timeout=10):
+    # No prompts: a fetch that wants a password or passphrase fails instead of hanging the check.
+    return subprocess.run(["git", "-C", APP, *args], capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                          env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, **TEXT)
+
+
+def _git_out(*args):
+    r = app_git(*args)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _git_err(r):
+    lines = [x.strip() for x in (r.stderr or r.stdout or "").splitlines() if x.strip()]
+    line = next((x for x in lines if x.startswith(("fatal:", "error:"))), lines[0] if lines else "")
+    return line.split(":", 1)[1].strip()[:300] if line.startswith(("fatal:", "error:")) else (
+        line[:300] or f"git exited with {r.returncode}")
+
+
+def update_status():
+    st = {"installed": None, "latest": None, "behind": 0, "ahead": 0, "dirty": False, "canUpdate": False,
+          "reason": None, "error": None, "checked": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    try:
+        top = _git_out("rev-parse", "--show-toplevel")
+        # A copy sitting inside some other repo must not pull that repo.
+        if not top or not os.path.samefile(top, APP):
+            st["reason"] = "Not installed from git — reinstall to get updates."
+            return st
+        st["installed"] = _git_out("rev-parse", "--short", "HEAD")
+        up = _git_out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") or "origin/main"
+        remote, _, branch = up.partition("/")
+        st["upstream"] = up
+        try:
+            r = app_git("fetch", "-q", remote, branch, timeout=20)
+            if r.returncode:
+                st["error"] = _git_err(r)
+        except subprocess.TimeoutExpired:
+            st["error"] = "Could not reach GitHub (timed out)."
+        st["latest"] = _git_out("rev-parse", "--short", up)
+        if st["latest"]:
+            counts = (_git_out("rev-list", "--left-right", "--count", f"HEAD...{up}") or "0 0").split()
+            st["ahead"], st["behind"] = int(counts[0]), int(counts[1])
+        elif not st["error"]:
+            st["error"] = f"No {up} branch to compare with."
+        st["dirty"] = bool(_git_out("status", "--porcelain", "--untracked-files=no"))
+    except OSError:
+        st["reason"] = "Git is not installed — install git to get updates."
+        return st
+    except subprocess.SubprocessError as e:
+        st["error"] = str(e)[:300]
+    st["canUpdate"] = st["behind"] > 0 and st["ahead"] == 0 and not st["dirty"] and not st["error"]
+    if st["behind"] > 0 and not st["canUpdate"]:
+        st["reason"] = ("Local changes in the app folder — update by hand with git pull." if st["dirty"] else
+                        "This copy has commits that are not on GitHub." if st["ahead"] else
+                        "Could not check GitHub — try again later.")
+    return st
+
+
+class Updater:
+    """Caches the update check; one lock so parallel GETs don't run parallel fetches (or a pull)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.last, self.at = None, 0
+
+    def status(self, force=False):
+        with self.lock:
+            if force or not self.last or time.time() - self.at > UPDATE_TTL:
+                self.last, self.at = update_status(), time.time()
+            return {k: v for k, v in self.last.items() if k != "upstream"}
+
+    def pull(self):
+        """git pull --ff-only; returns (from, to) short shas. PermissionError = not updatable (409)."""
+        with self.lock:
+            st = self.last = update_status()
+            self.at = time.time()
+            if st["installed"] and st["behind"] == 0 and not st["error"] and not st["reason"]:
+                return st["installed"], st["installed"]
+            if not st["canUpdate"]:
+                raise PermissionError(st["reason"] or st["error"] or "Nothing to update.")
+            remote, _, branch = st["upstream"].partition("/")
+            r = app_git("pull", "--ff-only", "-q", remote, branch, timeout=120)
+            self.last = None
+            if r.returncode:
+                raise RuntimeError((r.stderr or r.stdout).strip()[:1000] or f"git pull exited with {r.returncode}")
+            return st["installed"], _git_out("rev-parse", "--short", "HEAD")
+
+
+UPDATER = Updater()
+
+
+def restart(server):
+    """Re-run server.py with the same arguments so pulled code takes effect."""
+    time.sleep(0.5)  # let the response reach the page first
+    server.server_close()
+    cmd = [sys.executable, os.path.join(APP, "server.py"), *SERVER_ARGS]
+    for stream in (sys.stdout, sys.stderr):
+        stream.flush()
+    if WINDOWS:  # execv there starts a new process and returns the console to the shell
+        subprocess.Popen(cmd)
+        os._exit(0)
+    os.execv(sys.executable, cmd)
+
+
 # ---------------------------------------------------------------- http
 FILE_ROUTE = re.compile(r"/files/([0-9a-f]{10})/(images|agent_reports/images)/([^/]+)")
 
@@ -1186,13 +1297,16 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
+        elif path == "/api/update":
+            force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
+            self._errors(lambda: self._json(200, UPDATER.status(force)))
         else:
             super().do_GET()
 
     def do_POST(self):
         path, _ = self._route()
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/image", "/api/projects", "/api/projects/pick",
-                  "/api/projects/forget", "/api/projects/trust")
+                  "/api/projects/forget", "/api/projects/trust", "/api/update")
         if path not in routes:
             self._send(404)
             return
@@ -1218,6 +1332,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"id": aid})
             elif path == "/api/agent/review":
                 self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium")})
+            elif path == "/api/update":
+                old, new = UPDATER.pull()
+                self._json(200, {"ok": True, "from": old, "to": new, "restarting": old != new})
+                if old != new:
+                    self.wfile.flush()
+                    threading.Thread(target=restart, args=(self.server,), daemon=True).start()
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
@@ -1278,7 +1398,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    global PERMISSION_MODE
+    global PERMISSION_MODE, SERVER_ARGS
+    SERVER_ARGS = sys.argv[1:]
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--project", help="open this folder's board (default with none remembered: the current git repo)")

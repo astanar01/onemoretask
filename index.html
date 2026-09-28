@@ -61,6 +61,10 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
 #theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
+#update { color: var(--muted); }
+#update.new { background: var(--ok); border-color: var(--ok); color: #fff; }
+#update.blocked { border-color: var(--wait); color: var(--wait); }
+#update:disabled { cursor: progress; opacity: .85; }
 #text-size { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: calc(13px * var(--ts)); }
 
@@ -343,6 +347,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <input id="search" type="search" placeholder="Filter tasks…">
   <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <span class="grow"></span>
+  <button class="btn" id="update" hidden></button>
   <button class="btn" id="theme"></button>
   <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
   <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
@@ -1655,6 +1660,54 @@ $("#theme").addEventListener("click", () => {
   showTheme();
 });
 showTheme();
+// Update: server.py compares the installed commit with GitHub; the button is green when an update can be installed.
+let upd = null, updBusy = false;
+const short = (s) => (s ? s.slice(0, 7) : "?");
+const again = (s) => s.replace(/\.?$/, ". Click to check again");
+function showUpdate(label, cls, title) {
+  const b = $("#update");
+  Object.assign(b, { hidden: false, textContent: label, className: "btn " + cls, title, disabled: updBusy });
+}
+async function checkUpdate(force) {
+  if (!useServer || updBusy) return;
+  if (force) showUpdate("Checking…", "", "Checking GitHub for updates");
+  try {
+    const r = await fetch("/api/update" + (force ? "?force=1" : ""), { cache: "no-store" });
+    if (r.status === 404) { $("#update").hidden = true; return; }
+    upd = await r.json().catch(() => ({}));
+    if (!r.ok && !upd.error) upd.error = "HTTP " + r.status;
+  } catch (e) { upd = { error: e.message }; }
+  const u = upd;
+  if (u.error) showUpdate("Update check failed", "", again(u.error));
+  else if (u.behind > 0 && u.canUpdate) showUpdate("Update", "new", `${u.behind} new update${u.behind > 1 ? "s" : ""} on GitHub (${short(u.installed)} → ${short(u.latest)}). Click to install and restart.`);
+  else if (u.behind > 0) showUpdate("Update available", "blocked", again(u.reason || "Cannot update automatically"));
+  else if (!u.installed) showUpdate("No updates", "", again(u.reason || "Cannot check for updates"));
+  else showUpdate("Up to date", "", `Installed ${short(u.installed)}. Click to check again`);
+}
+// After a restarting update, wait for the old server to go down and the new one to answer, then reload.
+async function runUpdate() {
+  updBusy = true;
+  showUpdate("Updating…", "new", "Installing the update");
+  try {
+    const r = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    for (let t0 = Date.now(), down = false; d.restarting; ) {
+      await new Promise((ok) => setTimeout(ok, 500));
+      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      let up = false;
+      try { up = (await fetch("/api/update", { cache: "no-store" })).ok; } catch (_) {}
+      if (!up) down = true;
+      else if (down || Date.now() - t0 > 5000) break;
+    }
+    location.reload();
+  } catch (e) {
+    updBusy = false; upd = null;
+    showUpdate("Update failed", "", again(e.message));
+  }
+}
+$("#update").addEventListener("click", () => (upd && !upd.error && upd.behind > 0 && upd.canUpdate ? runUpdate() : checkUpdate(true)));
+setInterval(() => checkUpdate(), 30 * 60000);
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
@@ -1662,7 +1715,7 @@ $("#show-subs").addEventListener("change", () => {
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
 
-load().then(() => { render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); })
+load().then(() => { render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); })
   .catch((e) => setStatus("Could not load the board: " + e.message, true));
 </script>
 </body>
