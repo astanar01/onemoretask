@@ -41,8 +41,8 @@ watcher copies its chat answer from the transcript onto the card (status "answer
 
 A message typed on the card while Claude works is logged as a "note" instead. The watcher types it into the live
 session through `claude attach` (attach.py; POSIX only), where Claude Code queues it like anything typed at its
-terminal: read at the next step, or at once if the turn ended to wait on a background shell. It never types over a
-permission prompt. As a backup every session the board starts gets inbox.py as a PostToolUse + Stop hook
+terminal, then presses its "send now" key so the note goes in at once (a running command moves to the background,
+a reply being written stops there) instead of after a long command. It never types over a permission prompt. As a backup every session the board starts gets inbox.py as a PostToolUse + Stop hook
 (--settings; a flagless --resume keeps it), which hands the note over after the current tool call, or blocks the
 stop if the turn is ending. Notes left over (the turn ended first, or the session predates the hook) are delivered
 by the watcher resuming the idle session.

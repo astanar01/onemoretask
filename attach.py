@@ -4,7 +4,8 @@
 
 `claude attach <id>` opens the session's own input box in a terminal. Text entered there is queued like anything
 typed in Claude Code: a busy session reads it at its next step, an idle one (even one waiting on a background shell)
-starts a turn with it. There is no other supported way to hand text to a live session from outside.
+starts a turn with it. There is no other supported way to hand text to a live session from outside. A queued
+message is then pushed in at once with Claude Code's "send now" key, so it does not wait out a long command.
 
 The board drives that terminal through a pseudo-terminal, so it needs a POSIX system (not Windows).
 """
@@ -25,6 +26,9 @@ except ImportError:  # Windows
 SCREEN = re.compile(r"\x1b\[[0-9;?<>=]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]")
 # A permission prompt or question menu on screen: Enter would answer it, so don't type.
 DIALOG = re.compile(r"Esc to cancel|Do you want to|❯\s*1\.")
+# Shown while a typed message waits in the queue. Ctrl+X Ctrl+S sends it now: a running shell command moves to the
+# background (not killed; Claude is told when it ends) and a reply being written stops where it is.
+SEND_NOW = re.compile(r"to send now")
 PASTE_START, PASTE_END = b"\x1b[200~", b"\x1b[201~"
 
 
@@ -76,7 +80,10 @@ def type_into(session_id, text, cmd=("claude",)):
         if DIALOG.search(shown):
             return False, "a prompt opened while pasting (left unsent in the input box)"
         os.write(fd, b"\r")
-        _read(fd, 2)
+        shown = screen_text(_read(fd, 3))
+        if SEND_NOW.search(shown) and not DIALOG.search(shown):
+            os.write(fd, b"\x18\x13")
+            _read(fd, 2)
         return True, ""
     finally:
         # Leaving the terminal only closes this view; the session keeps running.
