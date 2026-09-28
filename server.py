@@ -1167,7 +1167,14 @@ def update_status():
             st["reason"] = "Not installed from git — reinstall to get updates."
             return st
         st["installed"] = _git_out("rev-parse", "--short", "HEAD")
-        up = _git_out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") or "origin/main"
+        up = _git_out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        if not up:
+            # No upstream: only main (or a detached HEAD) may follow origin/main; a local branch must not be moved.
+            head = _git_out("rev-parse", "--abbrev-ref", "HEAD")
+            if head not in ("main", "HEAD"):
+                st["reason"] = f"Branch {head} has no upstream — switch to main to get updates."
+                return st
+            up = "origin/main"
         remote, _, branch = up.partition("/")
         st["upstream"] = up
         try:
