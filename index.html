@@ -59,8 +59,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .btn.danger { color: var(--danger); }
 .btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 #project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
-#others-waiting { border: 0; background: none; color: var(--accent); font-weight: 700; cursor: pointer; padding: 2px 4px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
-#others-waiting:hover { text-decoration: underline; }
+#project-wrap { position: relative; display: inline-flex; }
+#project-wrap.others #project { padding-right: 38px; }
+#others-waiting { position: absolute; right: 24px; top: 50%; transform: translateY(-45%); color: var(--major); font-weight: 800; font-size: 18px; line-height: 1; pointer-events: none; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
 #theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
 #update { color: var(--muted); }
@@ -347,8 +348,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 <body>
 <header>
   <h1>Task Board</h1>
-  <select id="project" title="Project"></select>
-  <button id="others-waiting" hidden></button>
+  <span id="project-wrap"><select id="project" title="Project"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
   <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
@@ -532,14 +532,10 @@ function renderProjects() {
   const others = projects.filter((p) => p.id !== P && attentionCount(p));
   const waiting = others.map((p) => p.name);
   sel.title = (project() ? project().path : "Project") + (waiting.length ? "\nNeeds you: " + waiting.join(", ") : "");
-  // The closed picker shows only this project, so other projects that need you get their own marker beside it.
-  const btn = $("#others-waiting");
-  btn.hidden = !others.length || !useServer;
-  btn.textContent = "* " + others.map((p) => label(p).replace(" * (", " (")).join(", ");
-  btn.title = others.length ? "Needs you: " + others.map(label).join(", ") + "\nClick to open " + label(others[0]) : "";
-  btn.dataset.id = others.length ? others[0].id : "";
+  // The closed picker shows only this project, so a star inside it says another project needs you.
+  $("#others-waiting").hidden = !others.length || !useServer;
+  $("#project-wrap").classList.toggle("others", others.length > 0);
 }
-$("#others-waiting").addEventListener("click", (e) => { if (e.currentTarget.dataset.id) switchProject(e.currentTarget.dataset.id); });
 
 async function switchProject(id) {
   if (saveTimer) await flush();

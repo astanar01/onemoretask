@@ -2,7 +2,7 @@
 
 ## 2026-09-29
 
-- When another project needs you, a purple star with its name shows next to the project list. Click it to go there.
+- When another project needs you, an orange star shows inside the project list, even while you look at a different project. Open the list to see which one.
 
 ## 2026-09-28
 
