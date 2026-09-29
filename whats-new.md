@@ -2,7 +2,7 @@
 
 ## 2026-09-29
 
-- When you move a card to Done, Claude writes a short recap of what was decided, why, how and what came out, and shows it on the card. Then it closes that card's Claude work so it stops piling up and taking space. If you write on the card again later, a fresh Claude starts from that recap.
+- When you move a card to Done, Claude writes a short recap of what was decided, why, how and what came out, and shows it on the card. Then it closes that card's Claude work so it stops piling up and taking space. If you write on the card again later, a fresh Claude starts from that recap. A message you send while the recap is being made is kept and given to that fresh Claude.
 - When another project needs you, an orange star shows inside the project list, even while you look at a different project. Open the list to see which one.
 - The small check mark at the top of each column is gone. Only the Done column counts as done now, so Move to done always lands in Done.
 

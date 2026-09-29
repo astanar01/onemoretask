@@ -912,25 +912,50 @@ class Watcher:
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
-        self.to_close = set()  # (project id, task id) moved to done: recap + close its sessions once they stop
+        # A card moved to done is marked by reports.close_path (a file, so a server restart keeps it) until it is closed.
         self.closing = set()   # (project id, task id) whose recap is being written
         self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
 
-    def close_when_idle(self, pid, task_id):
+    def close_when_idle(self, p, task_id):
+        path = reports.close_path(p.board, task_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
         with self.lock:
-            self.to_close.add((pid, task_id))
-            self.close_failed.discard((pid, task_id))
+            self.close_failed.discard((p.id, task_id))
+
+    def note_if_closing(self, p, task_id, text, images):
+        """A reply while the recap is written would resume a session about to be removed: keep it as a note, which
+        _close hands to the new session."""
+        with self.lock:
+            if (p.id, task_id) not in self.closing:
+                return False
+            reports.append(p.board, task_id, "note", text, "you", images=list(images))
+            return True
 
     def _close(self, p, task_id):
+        key, notes = (p.id, task_id), []
         try:
             archive(p, task_id)
+            try:
+                os.remove(reports.close_path(p.board, task_id))
+            except FileNotFoundError:
+                pass
+            with self.lock:
+                notes, since = reports.take_notes(p.board, task_id)
+                self.closing.discard(key)
         except Exception as e:  # noqa: BLE001 — sessions stay; moving the card to done again retries
             print("close sessions:", e)
-            self.close_failed.add((p.id, task_id))
+            self.close_failed.add(key)
             reports.append(p.board, task_id, "progress", f"Could not write the recap, so the sessions were kept: {e}",
                            "claude")
         finally:
-            self.closing.discard((p.id, task_id))
+            self.closing.discard(key)
+        if notes:
+            try:
+                reopen(p, task_id, reports.notes_message(p.board, notes), handed=len(notes))
+            except Exception as e:  # noqa: BLE001 — put the notes back; a card reply reopens it
+                reports.untake_notes(p.board, task_id, notes, since)
+                print("reopen after close:", e)
 
     def _deliver(self, p, task_id, info, waiting=False):
         try:
@@ -986,7 +1011,9 @@ class Watcher:
             if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
                                                     for e in reports.pending_notes(log, "")):
                 phase, reason = "working", ""  # the Stop hook handed it a note after its done report
-            pending = s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
+            # While the recap is written, notes wait for the new session (_close): a resume would be removed.
+            pending = (s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
+                       and (p.id, t["id"]) not in self.closing)
             if (pending and busy and phase == "working" and attach.available() and s.get("state") != "blocked"
                     and time.time() - self.typed_fail.get((p.id, t["id"]), 0) > TYPE_RETRY):
                 # Type it into the live session like a message at its terminal: read at its next step, or at once
@@ -1018,14 +1045,19 @@ class Watcher:
                     self.committed[(p.id, t["id"])] = done
             key, closed = (p.id, t["id"]), t.get("column") in done_cols
             recapped = any(e.get("status") == "recap" for e in log)
+            marker = reports.close_path(p.board, t["id"])
+            if not closed:
+                try:
+                    os.remove(marker)
+                except FileNotFoundError:
+                    pass
             with self.lock:
-                if not closed:
-                    self.to_close.discard(key)
-                # Closed again after a reopen: that new session goes too once it stops.
+                # Closed again after a reopen: that new session goes too once it stops, unless it waits on a question.
                 close = closed and s and not busy and phase != "working" and key not in self.closing and (
-                    key in self.to_close or recapped and key not in self.close_failed and said[-1].get("status") != "recap")
+                    os.path.exists(marker) and key not in self.close_failed
+                    or recapped and key not in self.close_failed and phase != "needs_you"
+                    and said[-1].get("status") != "recap")
                 if close:
-                    self.to_close.discard(key)
                     self.closing.add(key)
             if close:
                 threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
@@ -1096,6 +1128,8 @@ def reply(p, task_id, text, images=()):
         raise LookupError("no Claude session for this task")
     if info["phase"] == "working":
         reports.append(p.board, task_id, "note", text, "you", images=list(images))
+        return True
+    if WATCH.note_if_closing(p, task_id, text, images):
         return True
     if info.get("archived"):
         reopen(p, task_id, text, images)
@@ -1288,7 +1322,7 @@ def archive(p, task_id):
     reports.append(p.board, task_id, "recap", recap + note, "claude")
 
 
-def reopen(p, task_id, text, images=()):
+def reopen(p, task_id, text, images=(), handed=0):
     """Reply to a card whose sessions were closed: a new session gets the task, the recap and the reply."""
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
@@ -1304,7 +1338,11 @@ def reopen(p, task_id, text, images=()):
         prompt += "\n\nImages attached to this message (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
     aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, t["agent"].get("model") or "")
-    reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
+    if handed:  # notes sent while the recap was written: already on the card
+        reports.append(p.board, task_id, "resume", f"Handed Claude {handed} message{'s' if handed > 1 else ''} it "
+                       "had not read yet", "you", session=aid)
+    else:
+        reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
     WATCH.expect(p, task_id, aid)
     return aid
 
@@ -1669,7 +1707,7 @@ class Handler(SimpleHTTPRequestHandler):
                 was = {t.get("id"): t.get("column") for t in before.get("tasks", []) if isinstance(t, dict)}
                 for t in data["tasks"]:
                     if isinstance(t, dict) and t.get("agent") and t.get("column") in done and was.get(t.get("id")) not in done:
-                        WATCH.close_when_idle(p.id, t["id"])
+                        WATCH.close_when_idle(p, t["id"])
             self._send(204)
         self._errors(write)
 
