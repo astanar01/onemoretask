@@ -1586,7 +1586,7 @@ function reviewNotes() {
     "Load the task-observer skill first and follow its Comprehensive Review steps as an interactive run.",
     ...(dirs.length ? ["Observation logs:", ...dirs] : []),
     "The user reads only this card: present the observations grouped by skill as one question on the card (mark the ones that need a choice), then end your turn and wait for the answer. That answer approves both applying and installing: stage each change the way the skill says, copy the staged file over the live skill (the folder the skill loads from), check the live file has the change, then mark each observation actioned (edit its status line in place).",
-    "Finish by writing today's date to skill-observations/last-review-date.txt in each log folder you reviewed (real date, then read it back), and report what changed on the card."].join("\n");
+    "Finish by writing today's date to last-review-date.txt inside each observation log folder listed above that you reviewed (real date, then read it back), and report what changed on the card."].join("\n");
 }
 
 async function runFullReview() {
