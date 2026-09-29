@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-09-29
+
+- When another project needs you, a purple star with its name shows next to the project list. Click it to go there.
+
 ## 2026-09-28
 
 - The Observations window has a new Run full review button. It makes a card where Claude looks at all the notes and asks you which ones to use.
