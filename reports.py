@@ -6,6 +6,7 @@ already keeps one there, <root>/tools/task_board/). It holds
 - images/               images pasted into a card's notes (commit them)
 - agent_reports/        <task_id>.json message logs + images/ from replies and
                         report.py --image; run chatter, kept out of git
+                        (<task_id>.recap.md: the recap written when a card moves to done)
 
 A log is a list of {at, status, message, from, images?, session?}. Images are
 stored by content hash.
@@ -102,6 +103,19 @@ def _path(board, task_id):
 
 def prompt_path(board, task_id):
     return _path(board, task_id)[:-len(".json")] + ".prompt.txt"
+
+
+def recap_path(board, task_id):
+    """What the task's closed sessions did, written when its card moved to done; a reply starts a new session from it."""
+    return _path(board, task_id)[:-len(".json")] + ".recap.md"
+
+
+def read_recap(board, task_id):
+    try:
+        with open(recap_path(board, task_id), encoding="utf-8") as f:
+            return f.read()
+    except (FileNotFoundError, UnicodeDecodeError):
+        return ""
 
 
 def read(board, task_id):

@@ -55,6 +55,11 @@ card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
 Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks).
+Once its session is idle, the watcher also closes it (archive): a one-shot `claude -p` (RECAP_MODEL) writes a recap
+(goal, decisions and why, how, results) from the card log and the sessions' transcripts to
+agent_reports/<task>.recap.md and posts it on the card, then `claude rm` removes every session of the task (that
+frees its job folder and scratch files; the transcript stays). A reply on such a card starts a fresh session with
+the task prompt, the recap and the reply (reopen); when it stops in the done column it is closed the same way.
 GET /api/changelog is the board app's own changelog, whats-new.md in plain words, plus the entries the Update button would bring.
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
@@ -671,6 +676,8 @@ def phase_of(session, log, launched_at):
     # Just after a launch or reply the session is still starting (absent, or stopped from the reply's stop).
     if busy or (last.get("from") == "you" and time.time() - launched_at < 45):
         return "working", ""
+    if last.get("status") == "recap":
+        return "finished", "Moved to done: sessions closed, recap saved. A reply starts a new session from the recap."
     if session is None:
         return "gone", "Session was removed"
     # An explicit report beats the CLI's own guess (it marks some finished sessions "blocked").
@@ -905,6 +912,25 @@ class Watcher:
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
+        self.to_close = set()  # (project id, task id) moved to done: recap + close its sessions once they stop
+        self.closing = set()   # (project id, task id) whose recap is being written
+        self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
+
+    def close_when_idle(self, pid, task_id):
+        with self.lock:
+            self.to_close.add((pid, task_id))
+            self.close_failed.discard((pid, task_id))
+
+    def _close(self, p, task_id):
+        try:
+            archive(p, task_id)
+        except Exception as e:  # noqa: BLE001 — sessions stay; moving the card to done again retries
+            print("close sessions:", e)
+            self.close_failed.add((p.id, task_id))
+            reports.append(p.board, task_id, "progress", f"Could not write the recap, so the sessions were kept: {e}",
+                           "claude")
+        finally:
+            self.closing.discard((p.id, task_id))
 
     def _deliver(self, p, task_id, info, waiting=False):
         try:
@@ -990,7 +1016,21 @@ class Watcher:
                 done = (len(log), bool(found)) if found is not None else None
                 if done:
                     self.committed[(p.id, t["id"])] = done
+            key, closed = (p.id, t["id"]), t.get("column") in done_cols
+            recapped = any(e.get("status") == "recap" for e in log)
+            with self.lock:
+                if not closed:
+                    self.to_close.discard(key)
+                # Closed again after a reopen: that new session goes too once it stops.
+                close = closed and s and not busy and phase != "working" and key not in self.closing and (
+                    key in self.to_close or recapped and key not in self.close_failed and said[-1].get("status") != "recap")
+                if close:
+                    self.to_close.discard(key)
+                    self.closing.add(key)
+            if close:
+                threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
+                                      "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
                                       "closed": t.get("column") in done_cols, "delivered": delivered}
         with self.lock:
@@ -1057,6 +1097,9 @@ def reply(p, task_id, text, images=()):
     if info["phase"] == "working":
         reports.append(p.board, task_id, "note", text, "you", images=list(images))
         return True
+    if info.get("archived"):
+        reopen(p, task_id, text, images)
+        return False
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
@@ -1132,6 +1175,138 @@ def deliver_notes(p, task_id, info, waiting=False):
     reports.append(p.board, task_id, "resume", f"Handed Claude {n} message{'s' if n > 1 else ''} it had not read yet",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
+
+
+# ---------------------------------------------------------------- done: recap, then close the sessions
+RECAP_MODEL = "sonnet"
+TRANSCRIPTS = "## Transcripts"  # the recap's last section, added by the board, not the model
+DIGEST_HEAD, DIGEST_TAIL, DIGEST_BLOCK = 30_000, 150_000, 4_000  # characters
+
+
+def session_digest(session_id):
+    """The conversation of a session without tool output: the prompt and user messages, Claude's text, and one
+    line per tool call. Long runs keep their start and end."""
+    path = transcript_path(session_id)
+    if not path:
+        return ""
+    out = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(e, dict) or e.get("isSidechain") or e.get("isMeta"):
+                continue
+            content = (e.get("message") or {}).get("content")
+            blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content or []
+            for b in blocks:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "text" and b.get("text", "").strip():
+                    text = b["text"].strip()
+                    if len(text) > DIGEST_BLOCK:
+                        text = text[:DIGEST_BLOCK] + " […]"
+                    who = "USER" if e.get("type") == "user" else "CLAUDE"
+                    out.append(f"{who}: {text}")
+                elif b.get("type") == "tool_use" and e.get("type") == "assistant":
+                    out.append("  · " + _action(b))
+    text = "\n\n".join(out)
+    if len(text) > DIGEST_HEAD + DIGEST_TAIL:
+        text = text[:DIGEST_HEAD] + "\n\n[… middle of the session left out …]\n\n" + text[-DIGEST_TAIL:]
+    return text
+
+
+RECAP_ASK = """Above is the record of a task done by Claude Code sessions: the task, earlier recap (if any), the \
+messages posted on its task-board card, and the sessions' conversations (tool output left out). The sessions are \
+being closed. Write the recap a NEW session will get if the task is reopened, so it can carry on without them.
+
+Markdown, at most about 700 words, these sections:
+## Goal — what was asked, in a sentence or two.
+## Decisions — each decision made and why (options turned down too, and the user's own choices).
+## How — what was changed and where: files, functions, commit shas, how it was tested.
+## Results — what works and how that was checked, what was not verified, what is left open or was deferred.
+
+Use only what the record shows; say "not recorded" rather than guess. Write it in the language of the task notes. \
+Output only the recap."""
+
+
+def write_recap(p, t, log, prior, sessions):
+    """Ask Claude for the recap of the task's work; returns the markdown."""
+    card = "\n\n".join(f"[{e.get('at', '')[:16]}] {'USER' if e.get('from') == 'you' else 'CLAUDE'} "
+                       f"({e.get('status')}): {e.get('message', '')}" for e in log)
+    parts = [f"# Task: {t['title']}", t.get("notes") or "(no notes)"]
+    if prior:
+        parts += ["# Earlier recap (the work before these sessions)", prior]
+    parts += ["# Card messages", card]
+    for i, s in enumerate(sessions, 1):
+        parts += [f"# Session {i} ({s.get('name') or s['id']})", session_digest(s.get("sessionId")) or "(no transcript)"]
+    r = run_claude(["-p", "--model", RECAP_MODEL, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                    "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
+                    RECAP_ASK], input="\n\n".join(parts), cwd=tempfile.gettempdir(), timeout=600)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        out = {}
+    text = (out.get("result") or "").strip()
+    if r.returncode != 0 or out.get("is_error") or not text:
+        raise RuntimeError((text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}")
+    return text
+
+
+def archive(p, task_id):
+    """A card moved to done: save a recap of its sessions' work, then remove those sessions (`claude rm` ends the
+    process and deletes the job folder with its scratch files; the transcript stays). A reply to the card starts a
+    new session from the recap (reopen)."""
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t or not t.get("agent"):
+        return
+    log = reports.read(p.board, task_id)
+    since = max((i + 1 for i, e in enumerate(log) if e.get("status") == "recap"), default=0)
+    ids = ([t["agent"]["id"]] if since == 0 else []) + [e["session"] for e in log[since:] if e.get("session")]
+    listed = {s["id"]: s for s in list_sessions(p.path)}
+    sessions = [listed[i] for i in dict.fromkeys(ids) if i in listed]
+    if not sessions:
+        return
+    prior, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
+    recap = write_recap(p, t, [e for e in log if e.get("status") != "recap"], prior.strip(), sessions)
+    paths = [x for x in (transcript_path(s.get("sessionId")) for s in sessions) if x]
+    old = re.findall(r"^- (.+\.jsonl)$", listing, re.M)
+    recap += "\n\n" + TRANSCRIPTS + "\n\nFull conversations, to search for a detail the recap lacks:\n\n" + "\n".join(
+        f"- {shell_path(x)}" for x in dict.fromkeys(old + paths))
+    path = reports.recap_path(p.board, task_id)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(recap + "\n")
+    replace_file(tmp, path)
+    kept = []
+    for s in sessions:
+        r = run_claude(["rm", s["id"]], cwd=p.path, timeout=60)
+        if r.returncode != 0:
+            kept.append(s["id"])
+    note = f"\n\n(Could not remove session{'s' if len(kept) > 1 else ''} {', '.join(kept)}.)" if kept else ""
+    reports.append(p.board, task_id, "recap", recap + note, "claude")
+
+
+def reopen(p, task_id, text, images=()):
+    """Reply to a card whose sessions were closed: a new session gets the task, the recap and the reply."""
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    recap = reports.read_recap(p.board, task_id)
+    if not t or not recap:
+        raise LookupError("no Claude session for this task")
+    prompt = "\n".join([build_prompt(p, state, t), "",
+                        "This task was worked on before. Its sessions were closed when the card moved to done, and "
+                        "this recap was written from them:", "", recap, "",
+                        "The user reopened the card with this message. It is what to do now; where it differs from the "
+                        "notes above, it wins:", "", text])
+    if images:
+        prompt += "\n\nImages attached to this message (open each with the Read tool):\n" + "\n".join(
+            image_lines(images, reports.log_images(p.board)))
+    aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, t["agent"].get("model") or "")
+    reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
+    WATCH.expect(p, task_id, aid)
+    return aid
 
 
 # ---------------------------------------------------------------- self-update
@@ -1489,6 +1664,12 @@ class Handler(SimpleHTTPRequestHandler):
             replace_file(tmp, p.data)
             if isinstance(before, dict):
                 changelog.record(p.path, p.board, before, data)
+                # A card with a session that lands in a done column gets a recap, then its sessions are removed.
+                done = {c.get("id") for c in data["columns"] if isinstance(c, dict) and c.get("done")}
+                was = {t.get("id"): t.get("column") for t in before.get("tasks", []) if isinstance(t, dict)}
+                for t in data["tasks"]:
+                    if isinstance(t, dict) and t.get("agent") and t.get("column") in done and was.get(t.get("id")) not in done:
+                        WATCH.close_when_idle(p.id, t["id"])
             self._send(204)
         self._errors(write)
 

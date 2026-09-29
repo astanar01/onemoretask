@@ -1318,7 +1318,7 @@ async function loadDefaultModel() {
 }
 // Closed while a reply is in flight too: the box goes the moment you send, and comes back only if the send fails.
 // Open while Claude works: the message is then a note, typed into its session (server: type_notes()).
-const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && (ag.sessionId || ag.phase === "working") && ag.phase !== "gone" && !(pending[t.id] || []).length); };
+const replyOpen = (t) => { const ag = t.agent && agents[t.id]; return !!(ag && (ag.sessionId || ag.archived || ag.phase === "working") && ag.phase !== "gone" && !(pending[t.id] || []).length); };
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
