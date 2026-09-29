@@ -3,6 +3,7 @@
 ## 2026-09-29
 
 - When another project needs you, an orange star shows inside the project list, even while you look at a different project. Open the list to see which one.
+- The small check mark at the top of each column is gone. Only the Done column counts as done now, so Move to done always lands in Done.
 
 ## 2026-09-28
 

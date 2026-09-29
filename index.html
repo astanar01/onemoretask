@@ -495,6 +495,10 @@ async function loadTasks() {
     const r = await fetch(api("/api/tasks"), { cache: "no-store" });
     if (!r.ok) throw new Error("server said " + r.status);
     state = (await r.json()) || defaultState();
+    // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
+    const extra = state.columns.filter((c) => c.done).slice(0, -1);
+    extra.forEach((c) => { c.done = false; });
+    if (extra.length) save();
   }
   const p = project();
   try { if (P) localStorage.setItem(LS_KEY + ":project", P); } catch (_) {}
@@ -744,13 +748,11 @@ function render() {
     head.innerHTML = `<input class="name" value="${esc(col.name)}" title="Rename column">
       ${col.done ? '<span class="done-flag" title="Tasks here count as done">done</span>' : ""}
       <span class="count">${cards.length}</span>
-      <button class="icon" data-act="done" title="Toggle: tasks in this column count as done">✓</button>
       <button class="icon" data-act="del" title="Delete column (only when empty)">✕</button>`;
     const name = head.querySelector(".name");
     name.addEventListener("change", () => { col.name = name.value.trim() || col.name; save(); render(); });
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); });
     name.addEventListener("mousedown", (e) => e.stopPropagation());
-    head.querySelector('[data-act="done"]').onclick = () => { col.done = !col.done; save(); render(); };
     head.querySelector('[data-act="del"]').onclick = () => {
       if (state.tasks.some((t) => t.column === col.id)) { setStatus(`"${col.name}" still has tasks — move them first`, true); return; }
       if (state.columns.length <= 1) return;
