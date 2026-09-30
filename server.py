@@ -40,6 +40,9 @@ repo or no commit answers 409 `norepo`; POST /api/git/init makes one with an "In
 exists, the task's commits are looked up on its branch, and a card in Review offers "Run app from worktree" and "Merge
 worktree to main" (POST /api/agent/worktree): canned replies that have the session run the app from the worktree, or
 merge the branch into the base branch, then remove the worktree and branch (anything going wrong: abort, ask on the card).
+"Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
+server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
+`force` once the user confirms.
 
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
@@ -1462,6 +1465,37 @@ def worktree_action(p, task_id, action):
     reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
 
 
+class UnsavedWorkError(Exception):
+    """Deleting the worktree would lose work: args[0] = {"changes": [status lines], "commits": n}."""
+
+
+def delete_worktree(p, task_id, force=False):
+    """The card's "Delete worktree" button: remove the task's worktree folder and its branch, without Claude.
+    Refuses (UnsavedWorkError) when that would lose uncommitted changes or commits found on no other branch,
+    unless `force` (the user saw the list and confirmed)."""
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t or not (t.get("agent") or {}).get("worktree"):
+        raise LookupError("this task was not sent to Claude with a worktree")
+    wt = live_worktree(t)
+    if not wt:
+        raise PermissionError("The worktree is gone — it was merged or removed")
+    info = WATCH.snapshot(p.id).get(task_id)
+    if info and info["phase"] == "working":
+        raise PermissionError("Claude is still working — wait until it stops")
+    branch = wt["branch"]
+    ref = f"refs/heads/{branch}"
+    has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
+    changes = [x for x in git_run(wt["path"], "status", "--porcelain").splitlines() if x.strip()]
+    # --exclude takes the name without refs/heads/ when it filters --branches.
+    commits = int(git_run(p.path, "rev-list", "--count", ref, "--not", f"--exclude={branch}", "--branches")) \
+        if has_branch else 0
+    if (changes or commits) and not force:
+        raise UnsavedWorkError({"changes": changes, "commits": commits})
+    git_run(p.path, "worktree", "remove", *(["--force"] if changes else []), wt["path"])
+    if has_branch:
+        git_run(p.path, "branch", "-D", branch)  # its commits are on another branch, or the user confirmed losing them
+
+
 def type_notes(p, task_id, aid):
     """Type the notes not handed over yet into the live session (`claude attach`). False if it could not, e.g. a
     permission prompt was on screen; the notes then stay for the inbox hook or a later try."""
@@ -1854,6 +1888,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(409, {"error": f"Claude does not trust {e} yet", "untrusted": True})
         except NoRepoError as e:
             self._json(409, {"error": str(e), "norepo": True})
+        except UnsavedWorkError as e:
+            self._json(409, {"error": "the worktree holds work that would be lost", "unsaved": e.args[0]})
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)})
 
@@ -1910,7 +1946,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = self._route()
-        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree", "/api/git/init",
+        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree",
+                  "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update")
         if not self._host_ok():
@@ -1940,6 +1977,9 @@ class Handler(SimpleHTTPRequestHandler):
                                        bool(body.get("worktree"))))
             elif path == "/api/agent/worktree":
                 worktree_action(project(body["p"]), body["taskId"], body.get("action"))
+                self._json(200, {"ok": True})
+            elif path == "/api/agent/worktree/delete":
+                delete_worktree(project(body["p"]), body["taskId"], bool(body.get("force")))
                 self._json(200, {"ok": True})
             elif path == "/api/git/init":
                 self._json(200, init_repo(project(body["p"])))

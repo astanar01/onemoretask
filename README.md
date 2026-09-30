@@ -160,6 +160,10 @@ A project with no git repo (or one with no commit yet) shows a window offering t
 A send that fails takes its new worktree and branch away again. A card moved to done before its merge says so
 under **Next action**; move it back to Review to get the buttons.
 
+**Delete worktree** (on the card in any column, while the worktree exists and Claude is not working) removes
+the worktree and its branch right away, without Claude and without merging. If that would lose work (changed
+files not committed, or commits that are on no other branch) a window lists it and asks first.
+
 ### Skill observations
 
 The install command also adds the task-observer skill. The app ships its own copy in `skills/task-observer/`,
