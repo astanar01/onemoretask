@@ -7,8 +7,8 @@ Rules for changing the board, learned the hard way.
 If a rule fires on a user action on the board (a card moves to done, a column
 changes), put it in `server.py`'s save path (`PUT /api/tasks`: diff the old and new
 task lists), not in an agent prompt. The agent is usually gone when the user clicks
-"Move to done", so a prompt rule can't keep the promise. Example: the changelog
-(`changelog.py`, called from `PUT /api/tasks`).
+"Move to done", so a prompt rule can't keep the promise. Example: the recap of a
+card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
 
 ## Testing against a live server
 

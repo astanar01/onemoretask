@@ -64,8 +64,7 @@ the task's commits from `git log --since=<launch>` (other sessions share the bra
 card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
 
-Moving a card into a done column adds it to the project's CHANGELOG.md (changelog.py, called from PUT /api/tasks).
-Once its session is idle, the watcher also closes it (archive): a one-shot `claude -p` (RECAP_MODEL) writes a recap
+A card moved into a done column is closed by the watcher once its session is idle (archive): a one-shot `claude -p` (RECAP_MODEL) writes a recap
 (goal, decisions and why, how, results) from the card log and the sessions' transcripts to
 agent_reports/<task>.recap.md and posts it on the card, then `claude rm` removes every session of the task (that
 frees its job folder and scratch files; the transcript stays). A reply on such a card starts a fresh session with
@@ -110,7 +109,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 import attach
-import changelog
 import observations
 import reports
 
@@ -1942,7 +1940,6 @@ class Handler(SimpleHTTPRequestHandler):
                 f.write("\n")
             replace_file(tmp, p.data)
             if isinstance(before, dict):
-                changelog.record(p.path, p.board, before, data)
                 # A card with a session that lands in a done column gets a recap, then its sessions are removed.
                 done = {c.get("id") for c in data["columns"] if isinstance(c, dict) and c.get("done")}
                 was = {t.get("id"): t.get("column") for t in before.get("tasks", []) if isinstance(t, dict)}
