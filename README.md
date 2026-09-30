@@ -159,7 +159,11 @@ A finished card in Review then has two more buttons:
   your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
 
 A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
-`git init` and commits everything as "Initial commit".
+`git init` and commits everything as "Initial commit", except `.env` files (`.env`, `.env.*`; `.env.example`,
+`.env.sample` and `.env.template` are kept), which it lists in `.git/info/exclude`.
+
+A send that fails takes its new worktree and branch away again. A card moved to done before its merge says so
+under **Next action**; move it back to Review to get the buttons.
 
 ### Skill observations
 

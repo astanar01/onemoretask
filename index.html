@@ -445,7 +445,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit?</p>
+  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out.</p>
   <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
@@ -1228,7 +1228,8 @@ function showTab() {
 document.querySelectorAll("#d-ov .tab").forEach((b) => (b.onclick = () => { ovTab = b.dataset.tab; showTab(); }));
 
 function nextAction(t, ag) {
-  if (isDone(t)) return "Nothing — this task is done.";
+  // The worktree buttons only show in Review (canWorktree), so a card finished before its merge has to say so.
+  if (isDone(t)) return t.agent && t.agent.worktree && ag && ag.worktree ? "Done, but its worktree is not merged yet. Move the card back to Review to merge it." : "Nothing — this task is done.";
   if (!ag || ag.phase === "working") return "Claude is working — nothing to do yet.";
   if (ag.phase === "gone") return "Session removed — nothing to do.";
   const last = (ag.log || []).filter((e) => e.from !== "you").pop();

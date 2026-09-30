@@ -533,13 +533,22 @@ def launch(p, task_id, model="", worktree=False):
     name = "task: " + t["title"][:60]
     if observations.installed():
         exclude_observer_dirs(p)
-    wt = make_worktree(p, t) if worktree and not t.get("answerOnly") else None  # an answer changes no files
-    prompt = build_prompt(p, state, t, wt)
-    path = reports.prompt_path(p.board, task_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(prompt)
-    aid = start_session(p, task_id, name, prompt, model)
+    made = []
+    wt = make_worktree(p, t, made) if worktree and not t.get("answerOnly") else None  # an answer changes no files
+    try:
+        prompt = build_prompt(p, state, t, wt)
+        path = reports.prompt_path(p.board, task_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        aid = start_session(p, task_id, name, prompt, model)
+    except Exception:
+        # No session: take back what this send made. No --force and -d, so anything holding work stays.
+        if "worktree" in made:
+            git_try(p.path, "worktree", "remove", wt["path"])
+        if "branch" in made and not os.path.isdir(wt["path"]):
+            git_try(p.path, "branch", "-d", wt["branch"])
+        raise
     where = f", worktree {wt['branch']}" if wt else ""
     reports.append(p.board, task_id, "launch", f"Sent to Claude (session {aid}, model {model or 'default'}{where})",
                    "you", session=aid)
@@ -551,9 +560,16 @@ OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")   # lo
 WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent with "Use worktrees"
 
 
+SECRET_FILES = (".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template")  # kept out of init_repo's commit
+
+
 def exclude_dirs(p, dirs):
     """List folders in the repo's info/exclude (local only, unlike .gitignore), so they stay out of commits and
     `git status`. Files git already tracks are not affected. Best effort; a folder that is not a git repo is skipped."""
+    exclude_patterns(p, [f"/{d}/" for d in dirs])
+
+
+def exclude_patterns(p, patterns):
     try:
         r = subprocess.run(["git", "-C", p.path, "rev-parse", "--git-path", "info/exclude"],
                            capture_output=True, timeout=10, **TEXT)
@@ -561,7 +577,7 @@ def exclude_dirs(p, dirs):
             return
         path = os.path.join(p.path, r.stdout.strip())
         text = open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else ""
-        missing = [f"/{d}/" for d in dirs if f"/{d}/" not in text.splitlines()]
+        missing = [x for x in patterns if x not in text.splitlines()]
         if missing:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
@@ -609,12 +625,14 @@ def git_run(cwd, *args, timeout=60):
 
 
 def init_repo(p):
-    """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info."""
+    """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info.
+    The commit takes every file but the board's local folders and .env files (secrets)."""
     info = git_info(p)
     if not info["repo"]:
         git_run(p.path, "init", "-q")
     if not info["commits"]:
         exclude_local(p)
+        exclude_patterns(p, SECRET_FILES)
         git_run(p.path, "add", "-A")
         who = [] if git_try(p.path, "config", "user.email") and git_try(p.path, "config", "user.name") else [
             "-c", "user.name=Task board", "-c", "user.email=taskboard@localhost"]
@@ -628,9 +646,11 @@ def worktree_name(t):
     return f"{slug}-{tid}" if slug else f"task-{tid}"
 
 
-def make_worktree(p, t):
+def make_worktree(p, t, made=None):
     """Create the task's worktree, or reuse it (a retry after a failed launch): <repo>/.claude/worktrees/<name> on
-    branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}."""
+    branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}. `made` (a list)
+    gets "worktree" and "branch" for what this call created."""
+    made = [] if made is None else made
     if git_try(p.path, "rev-parse", "--is-inside-work-tree") != "true":
         raise NoRepoError(f"{p.name} has no git repo yet, so its tasks cannot use worktrees")
     if git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}") is None:
@@ -649,6 +669,8 @@ def make_worktree(p, t):
             git_run(p.path, "worktree", "add", "-q", path, name)
         else:
             git_run(p.path, "worktree", "add", "-q", "-b", name, path, "HEAD")
+            made.append("branch")
+        made.append("worktree")
     return {"path": path, "dir": os.path.normpath(os.path.join(path, prefix)) if prefix else path, "branch": name,
             "base": base}
 
@@ -1337,6 +1359,17 @@ def worktree_steps(p, task_id, wt, action):
                 f'- Then post on the card with `{rep} done "..."`: how to reach it (URL, window, command) and how to '
                 "stop it.",
                 "- If it cannot be run, say exactly why on the card (the error, what is missing)."]
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{base}") is None:
+        # Sent from a detached HEAD (base is a sha), or the base branch is gone: there is no branch to merge into.
+        return [f"The user wants this task's branch `{branch}` (worktree {path}) merged, but it was made from "
+                f"`{base}`, which is not a branch of this repo.",
+                "- Merge nothing yet. In the worktree, commit anything still uncommitted.",
+                f'- Then ask with `{rep} question "..."` which branch to merge `{branch}` into: list the local '
+                f"branches and say which one the main checkout {main} is on now.",
+                "- After the answer: merge there. If anything goes wrong, abort the merge so that checkout is exactly "
+                "as it was and ask again. Never push. On success remove the worktree (`git worktree remove`, no "
+                f"--force) and the branch (`git branch -d {branch}`, never -D), then report the merge commit sha "
+                f'with `{rep} done "..."`.']
     return [f"Merge this task's branch `{branch}` into `{base}`:",
             f"1. In the worktree {path}, commit anything still uncommitted.",
             f"2. In the main checkout {main}: it must be on `{base}`. If it is on another branch, stop and ask with "
