@@ -131,12 +131,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
 .panel-right > .block { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .actions { display: flex; gap: 10px; align-items: center; }
-#trust-modal, #repo-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
-#trust-modal.open, #repo-modal.open { display: flex; }
-#trust-modal .box, #repo-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-#trust-modal h3, #repo-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
-#trust-modal p, #repo-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
-#trust-modal .actions, #repo-modal .actions { justify-content: flex-end; }
+#trust-modal, #repo-modal, #wtdel-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open, #repo-modal.open, #wtdel-modal.open { display: flex; }
+#trust-modal .box, #repo-modal .box, #wtdel-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3, #repo-modal h3, #wtdel-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p, #repo-modal p, #wtdel-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions { justify-content: flex-end; }
 #obs-btn { display: none; align-items: center; gap: 6px; }
 #obs-modal, #cl-modal { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #obs-modal.open, #cl-modal.open { display: flex; }
@@ -219,7 +219,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .panel-foot > span:last-child { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
 #d-review-wrap, #d-wt-wrap { display: flex; align-items: center; gap: 8px; }
-#d-wt-wrap .btn { white-space: nowrap; }
+#d-wt-wrap .btn, #d-wt-del { white-space: nowrap; }
+#wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -434,6 +435,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
       <span id="d-dates"></span>
       <span><span id="d-wt-wrap"><button class="btn review" id="d-wt-run" title="Claude starts the app from this task's worktree so you can try the changes">Run app from worktree</button>
       <button class="btn review" id="d-wt-merge" title="Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way">Merge worktree to main</button></span>
+      <button class="btn danger" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first">Delete worktree</button>
       <span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
       <select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></span>
       <button class="btn to-done" id="d-to-done" title="The work is finished — move this task to the done column">✓ Move to done</button>
@@ -451,6 +453,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <h3 id="repo-title">Create a local repo?</h3>
   <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out.</p>
   <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn primary" id="repo-yes">Create repo</button></div>
+</div></div>
+<div id="wtdel-modal" role="dialog" aria-modal="true" aria-labelledby="wtdel-title"><div class="box">
+  <h3 id="wtdel-title">Delete this worktree anyway?</h3>
+  <p id="wtdel-text"></p>
+  <ul id="wtdel-list"></ul>
+  <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
 </div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
   <button class="x-close" id="obs-x" title="Close">✕</button>
@@ -1064,6 +1072,7 @@ $("#d-delete").onclick = () => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && trustOpen()) closeTrust(true);
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
+  else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
@@ -1139,6 +1148,8 @@ function canFinish(t) {
 const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
 // Needs t.agent.worktree (the launch made one) and agents[].worktree (its folder still exists, i.e. not merged yet).
 const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].worktree;
+// "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.
+const canDeleteWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && !!agents[t.id] && !!agents[t.id].worktree && agents[t.id].phase !== "working" && !(pending[t.id] || []).length;
 function reviewLevel() { try { return localStorage.getItem("taskboard.reviewLevel") || "medium"; } catch (e) { return "medium"; } }
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
@@ -1185,6 +1196,7 @@ function renderAgent(t) {
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
   $("#d-wt-wrap").style.display = canWorktree(t) ? "" : "none";
+  $("#d-wt-del").style.display = canDeleteWorktree(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
@@ -1233,7 +1245,7 @@ document.querySelectorAll("#d-ov .tab").forEach((b) => (b.onclick = () => { ovTa
 
 function nextAction(t, ag) {
   // The worktree buttons only show in Review (canWorktree), so a card finished before its merge has to say so.
-  if (isDone(t)) return t.agent && t.agent.worktree && ag && ag.worktree ? "Done, but its worktree is not merged yet. Move the card back to Review to merge it." : "Nothing — this task is done.";
+  if (isDone(t)) return t.agent && t.agent.worktree && ag && ag.worktree ? "Done, but its worktree is not merged yet. Move the card back to Review to merge it, or Delete worktree if you do not need it." : "Nothing — this task is done.";
   if (!ag || ag.phase === "working") return "Claude is working — nothing to do yet.";
   if (ag.phase === "gone") return "Session removed — nothing to do.";
   const last = (ag.log || []).filter((e) => e.from !== "you").pop();
@@ -1375,7 +1387,7 @@ async function post(url, body) {
     throw new Error(r.status === 404 ? `the board server does not know ${url} — it runs older code; restart it (Ctrl-C, then onemoretask)`
       : `the server answered ${r.status} with no details`);
   }
-  if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted, norepo: !!res.norepo });
+  if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted, norepo: !!res.norepo, unsaved: res.unsaved || null });
   return res;
 }
 
@@ -1509,6 +1521,38 @@ async function worktreeAction(t, action) {
 }
 $("#d-wt-run").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "run"); };
 $("#d-wt-merge").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "merge"); };
+// No Claude involved: the server removes the folder and branch. Work that would be lost is listed in a modal first.
+const wtdelOpen = () => $("#wtdel-modal").classList.contains("open");
+function closeWtdel() { $("#wtdel-modal").classList.remove("open"); }
+async function deleteWorktree(t, force) {
+  $("#d-wt-del").disabled = $("#wtdel-yes").disabled = true;
+  setStatus("Deleting the worktree…");
+  try {
+    await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
+    closeWtdel();
+    if (agents[t.id]) agents[t.id].worktree = false;
+    gitInfo.at = 0;
+    setStatus("Worktree deleted");
+  } catch (e) {
+    if (e.unsaved && !force) {
+      const u = e.unsaved, n = u.changes.length, parts = [];
+      if (u.commits) parts.push(`${u.commits} saved change${u.commits > 1 ? "s" : ""} (commit${u.commits > 1 ? "s" : ""}) that are on no other branch`);
+      if (n) parts.push(`${n} file${n > 1 ? "s" : ""} changed but not saved`);
+      $("#wtdel-text").textContent = `This worktree holds ${parts.join(" and ")}. Deleting it loses ${u.commits + n > 1 ? "them" : "it"} for good.`;
+      $("#wtdel-list").innerHTML = u.changes.slice(0, 50).map((x) => `<li>${esc(x)}</li>`).join("") + (n > 50 ? `<li>… ${n - 50} more</li>` : "");
+      $("#wtdel-list").hidden = !n;
+      $("#wtdel-no").onclick = closeWtdel;
+      $("#wtdel-yes").onclick = () => deleteWorktree(t, true);
+      $("#wtdel-modal").classList.add("open");
+      $("#wtdel-no").focus();
+      setStatus("");
+    } else setStatus("Delete worktree failed: " + e.message, true);
+  } finally { $("#d-wt-del").disabled = $("#wtdel-yes").disabled = false; }
+  refreshAgent(t); render();
+  await pollAgents();
+}
+$("#d-wt-del").onclick = () => { const t = task(openId); if (t) deleteWorktree(t, false); };
+$("#wtdel-modal").addEventListener("mousedown", (e) => { if (e.target.id === "wtdel-modal") closeWtdel(); });
 $("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.reviewLevel", e.target.value); } catch (_) {} render(); };
 
 async function sendReply() {

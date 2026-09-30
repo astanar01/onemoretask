@@ -2,6 +2,7 @@
 
 ## 2026-09-30
 
+- A card with its own separate copy of your project now has a "Delete worktree" button, in any column. It throws that copy away without bringing its changes in. If the copy holds work you would lose, a small window shows it and asks first.
 - An open card now shows a "Skills used" box on the left: the special helpers Claude picked up while working on it, and how many times it used each one.
 - Moving a card to Done no longer adds it to a list of changes in your project. Nothing on the board used that list.
 - There is a new "Use worktrees" box at the top, under "Show subtasks on board". When it is ticked, Claude does each task in its own separate copy of your project, so your own copy stays as it is. When Claude is finished, the card has two new buttons: "Run app from worktree" to try the changes, and "Merge worktree to main" to bring them into your project. If something goes wrong when bringing them in, Claude tells you on the card. If your project does not keep its history yet, a small window asks if the board should set that up; your tasks and your secret ".env" settings are kept out of it. A card you move to Done before bringing its changes in now tells you so.
