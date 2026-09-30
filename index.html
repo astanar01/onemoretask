@@ -1016,6 +1016,7 @@ $("#d-delegate").addEventListener("change", (e) => {
   $("#d-submodel").disabled = !t.delegate;
 });
 $("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); rememberDelegateChoice(t); });
+$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
 $("#d-newsub").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;
@@ -1067,7 +1068,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------------------------------------------------------------- Send to Claude
-$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); });
 // server.py starts `claude --bg` for a task and watches it. tasks.json keeps only { id, started } on the
 // task; the live phase (working / needs_you / finished / gone), reason and message log come from /api/agents.
 let agents = {};                 // task id -> { id, sessionId, state, phase, reason, log }
