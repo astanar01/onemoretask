@@ -157,7 +157,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #obs-modal .actions .grow, #cl-modal .actions .grow { flex: 1; }
 #obs-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 100%; }
 #obs-apply:disabled { opacity: .5; cursor: default; }
-#d-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+#d-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 0; max-width: 11em; text-overflow: ellipsis; field-sizing: content; }
+#d-send, #d-delete { white-space: nowrap; flex: none; }
 .panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
 .panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
 .panel-right #d-log li { padding: 2px 0 2px 16px; }
