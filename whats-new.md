@@ -2,7 +2,7 @@
 
 ## 2026-09-30
 
-- There is a new "Use worktrees" box at the top, under "Show subtasks on board". When it is ticked, Claude does each task in its own separate copy of your project, so your own copy stays as it is. When Claude is finished, the card has two new buttons: "Run app from worktree" to try the changes, and "Merge worktree to main" to bring them into your project. If something goes wrong when bringing them in, Claude tells you on the card. If your project does not keep its history yet, a small window asks if the board should set that up; your secret ".env" settings are kept out of it. A card you move to Done before bringing its changes in now tells you so.
+- There is a new "Use worktrees" box at the top, under "Show subtasks on board". When it is ticked, Claude does each task in its own separate copy of your project, so your own copy stays as it is. When Claude is finished, the card has two new buttons: "Run app from worktree" to try the changes, and "Merge worktree to main" to bring them into your project. If something goes wrong when bringing them in, Claude tells you on the card. If your project does not keep its history yet, a small window asks if the board should set that up; your tasks and your secret ".env" settings are kept out of it. A card you move to Done before bringing its changes in now tells you so.
 - In a new card, the model picker is only as wide as the model's name, and "Send to Claude" stays on one line.
 - In an open card, the left side is now narrower (a quarter of the width), so Claude's messages on the right get more room.
 - A card you move to Done now shows at the top of the Done column, not at the bottom, so the newest finished work is first.

@@ -8,7 +8,8 @@ The header's project menu switches boards: "Open folder…" picks any folder
 (a native dialog, or a pasted path) and remembers it in
 ~/.config/task_board/projects.json. Each project keeps its own board in
 <project>/.task_board/ (see reports.py; a repo that already has
-tools/task_board/tasks.json keeps using that). Commit tasks.json and images/.
+tools/task_board/tasks.json keeps using that). The board is not committed: a new one ignores
+itself (.gitignore `*`), and a send lists the folder in the repo's info/exclude.
 With no projects remembered yet, the git repo containing the current directory
 (or --project) is opened. Opening index.html directly (file://) also works, but
 then tasks live only in that browser's localStorage.
@@ -531,8 +532,7 @@ def launch(p, task_id, model="", worktree=False):
     if t.get("agent"):
         raise PermissionError("already sent to Claude — the task is locked; reply on the card instead")
     name = "task: " + t["title"][:60]
-    if observations.installed():
-        exclude_observer_dirs(p)
+    exclude_local(p)
     made = []
     wt = make_worktree(p, t, made) if worktree and not t.get("answerOnly") else None  # an answer changes no files
     try:
@@ -586,14 +586,13 @@ def exclude_patterns(p, patterns):
         pass
 
 
-def exclude_observer_dirs(p):
-    """Keep the task-observer log and the skills it stages or creates out of the project's commits."""
-    exclude_dirs(p, OBSERVER_DIRS)
-
-
 def exclude_local(p):
-    """Every local-only exclude the board wants: the worktrees folder, plus the observer's when it is installed."""
-    exclude_dirs(p, (WORKTREES, *(OBSERVER_DIRS if observations.installed() else ())))
+    """Every local-only exclude the board wants: the worktrees folder, the board folder (tasks are not committed; a
+    repo that already tracks its board keeps it), plus the observer's when it is installed."""
+    top = git_try(p.path, "rev-parse", "--show-toplevel")
+    board = os.path.relpath(os.path.realpath(p.board), os.path.realpath(top)).replace(os.sep, "/") if top else ".."
+    exclude_dirs(p, (WORKTREES, *(() if board.startswith("..") else (board,)),
+                     *(OBSERVER_DIRS if observations.installed() else ())))
 
 
 class NoRepoError(Exception):
@@ -626,7 +625,7 @@ def git_run(cwd, *args, timeout=60):
 
 def init_repo(p):
     """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info.
-    The commit takes every file but the board's local folders and .env files (secrets)."""
+    The commit takes every file but the board (tasks), its local folders and .env files (secrets)."""
     info = git_info(p)
     if not info["repo"]:
         git_run(p.path, "init", "-q")

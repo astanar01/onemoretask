@@ -2,12 +2,14 @@
 
 A project's board lives in `board_dir(root)`: <root>/.task_board/ (or, for a repo that
 already keeps one there, <root>/tools/task_board/). It holds
-- tasks.json            the board itself (commit it)
-- images/               images pasted into a card's notes (commit them)
+- tasks.json            the board itself
+- images/               images pasted into a card's notes
 - agent_reports/        <task_id>.json message logs + images/ from replies and
-                        report.py --image; run chatter, kept out of git
+                        report.py --image; run chatter
                         (<task_id>.recap.md: the recap written when a card moves to done;
                         <task_id>.close: moved to done, sessions not closed yet)
+
+None of it is committed: a new board folder ignores itself (ensure_board).
 
 A log is a list of {at, status, message, from, images?, session?}. Images are
 stored by content hash.
@@ -45,12 +47,12 @@ def board_dir(root):
 
 
 def ensure_board(board):
-    """Create the board folder; a new one gets a .gitignore for the run chatter."""
+    """Create the board folder; a new one gets a .gitignore that keeps all of it (itself too) out of git."""
     os.makedirs(board, exist_ok=True)
     ignore = os.path.join(board, ".gitignore")
     if not os.path.exists(ignore) and os.path.basename(board) == ".task_board":
         with open(ignore, "w", encoding="utf-8") as f:
-            f.write("agent_reports/\n")
+            f.write("*\n")
 
 
 def project_root(path="."):

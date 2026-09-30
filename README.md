@@ -100,8 +100,8 @@ the git repo you run it from.
 ## Use
 
 1. **Pick a project.** The project menu at the top switches boards. **Open folder…** adds any
-   folder. Each project keeps its board in `<project>/.task_board/`. Commit `tasks.json` and
-   `images/`; `agent_reports/` is run chatter and stays out of git. A project with work
+   folder. Each project keeps its board in `<project>/.task_board/`. The board
+   stays out of git: tasks are not committed. A project with work
    waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions, plus
    finished cards you have not opened yet.
 2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes.
@@ -159,7 +159,7 @@ A finished card in Review then has two more buttons:
   your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
 
 A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
-`git init` and commits everything as "Initial commit", except `.env` files (`.env`, `.env.*`; `.env.example`,
+`git init` and commits everything as "Initial commit", except the board folder and `.env` files (`.env`, `.env.*`; `.env.example`,
 `.env.sample` and `.env.template` are kept), which it lists in `.git/info/exclude`.
 
 A send that fails takes its new worktree and branch away again. A card moved to done before its merge says so
@@ -217,15 +217,16 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 <project>/.task_board/
 ├── tasks.json            the board: columns and tasks
 ├── images/               images pasted into a task's notes
-├── .gitignore            keeps agent_reports/ out of git
+├── .gitignore            keeps the whole folder out of git
 └── agent_reports/
     ├── <task_id>.json    the messages on that card (you and Claude)
     ├── <task_id>.prompt.txt  the exact prompt Claude got when the task was sent
     └── images/           images from replies and report.py --image
 ```
 
-- **Commit** `tasks.json` and `images/` if you want the board in git. `agent_reports/` is
-  left out by the `.gitignore` the board creates.
+- **Not in git.** The board is not committed: a new board folder ignores itself, and sending a task
+  lists the folder in the repo's `.git/info/exclude`. A repo that already tracks its board keeps doing so
+  (`git rm -r --cached .task_board` stops that).
 - **Images** are named by a hash of their content, e.g. `3f9a1c0b7d2e4a61.png`.
   PNG, JPEG, GIF and WebP, up to 25 MB each.
 - A project that already has `tools/task_board/tasks.json` keeps using that folder.
