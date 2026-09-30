@@ -345,6 +345,9 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .sa-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
 .sa-list .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-list .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: calc(12px * var(--ts)); }
+.sk-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.sk-list li { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: calc(12px * var(--ts)); overflow-wrap: anywhere; }
+.sk-list li b { color: var(--muted); font-weight: 400; margin-left: 4px; }
 .sa-list .act { grid-column: 1 / -1; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent.stopped { background: var(--line); color: var(--muted); }
 @media (max-width: 480px) { .ov-cards { grid-template-columns: minmax(0, 1fr); } }
@@ -403,6 +406,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
         <div class="ov-box" id="d-crit"><div class="crit-head">Completion criteria<span id="d-crit-n"></span></div><div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></div>
         <div class="ov-box next"><span class="ov-ico st" data-ico="bolt" data-s="18"></span><div><span class="lbl">Next action</span><div id="d-next"></div></div></div>
         <div class="ov-box" id="d-subagents"><div class="crit-head">Subagents<span id="d-sa-n"></span></div><ul class="sa-list" id="d-sa-list"></ul></div>
+        <div class="ov-box" id="d-skills"><div class="crit-head">Skills used<span id="d-sk-n"></span></div><ul class="sk-list" id="d-sk-list"></ul></div>
         <div class="ov-box" id="d-prompt"><button class="pr-head"><span class="ov-ico" data-ico="doc" data-s="18"></span><b>Original prompt</b><span class="chev" data-ico="chev"></span></button>
           <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></div>
       </div>
@@ -1256,6 +1260,15 @@ function renderSubagents(ag) {
   }).join("");
 }
 
+// Skills Claude loaded with the Skill tool, in this card's sessions and their subagents (server: skills()).
+function renderSkills(ag) {
+  const used = (ag && ag.skills) || [];
+  $("#d-skills").style.display = used.length ? "" : "none";
+  $("#d-sk-n").textContent = used.length || "";
+  const html = used.map((s) => `<li title="First used ${esc(fmt(s.first))}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
+  if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
+}
+
 function renderOverview(t) {
   const sent = !!t.agent;
   $("#panel").classList.toggle("sent", sent);
@@ -1283,6 +1296,7 @@ function renderOverview(t) {
   $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
   $("#d-next").textContent = nextAction(t, ag);
   renderSubagents(ag);
+  renderSkills(ag);
   if ($("#d-prompt").classList.contains("open")) loadPrompt(t);
   paintGit(t);
   loadGit().then(() => { const o = openId && task(openId); if (o && o.agent) paintGit(o); });

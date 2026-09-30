@@ -1059,6 +1059,62 @@ def subagents(session_id):
     return sorted(rows, key=lambda r: r["started"])
 
 
+_skill_memo = {}  # transcript path -> [bytes read, {tool_use id: (skill, at)}, {failed tool_use ids}]
+
+
+def _skill_calls(path):
+    """Skill-tool calls in one transcript as {tool_use id: (skill, at)} and the ids whose call failed. Reads only
+    the bytes added since the last call: transcripts only grow, and skills are often loaded at the very start."""
+    size = os.path.getsize(path)
+    memo = _skill_memo.get(path)
+    if not memo or size < memo[0]:
+        memo = _skill_memo[path] = [0, {}, set()]
+    if size > memo[0]:
+        with open(path, "rb") as f:
+            f.seek(memo[0])
+            chunk = f.read(size - memo[0])
+        end = chunk.rfind(b"\n") + 1  # a half-written last line is read next time
+        for line in chunk[:end].splitlines():
+            if b'"Skill"' not in line and b'"is_error":true' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            content = isinstance(e, dict) and (e.get("message") or {}).get("content")
+            for b in content if isinstance(content, list) else []:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use" and b.get("name") == "Skill" and (b.get("input") or {}).get("skill"):
+                    memo[1][b.get("id")] = (str(b["input"]["skill"]), e.get("timestamp") or "")
+                elif b.get("type") == "tool_result" and b.get("is_error"):
+                    memo[2].add(b.get("tool_use_id"))
+        memo[0] += end
+    return memo[1], memo[2]
+
+
+def skills(session_ids):
+    """Skills Claude loaded with the Skill tool across the given sessions and their subagents:
+    [{name, count, first}], in the order first used. A call that errored (e.g. an unknown skill) does not count."""
+    found = {}
+    for sid in session_ids:
+        path = transcript_path(sid)
+        if not path:
+            continue
+        folder = os.path.join(path[:-len(".jsonl")], "subagents")
+        subs = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")] if os.path.isdir(folder) else []
+        for f in [path] + subs:
+            calls, failed = _skill_calls(f)
+            for tid, (name, at) in calls.items():
+                if tid in failed:
+                    continue
+                row = found.setdefault(name, {"name": name, "count": 0, "first": at})
+                row["count"] += 1
+                if at and (not row["first"] or at < row["first"]):
+                    row["first"] = at
+    return sorted(found.values(), key=lambda r: r["first"])
+
+
 class Watcher:
     """Polls session state for every task with an agent, in every remembered project; the board reads the cache."""
 
@@ -1195,6 +1251,11 @@ class Watcher:
                 subs = subagents(s and s.get("sessionId"))
             except OSError:
                 subs = []
+            ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
+            try:
+                used = skills(sessions[i].get("sessionId") for i in ids if i in sessions)
+            except OSError:
+                used = []
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.
             done = self.committed.get((p.id, t["id"]))
             if phase != "working" and (not done or done[0] != len(log)):
@@ -1224,7 +1285,7 @@ class Watcher:
                 threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
-                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
+                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs, "skills": used,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t))}
         with self.lock:
