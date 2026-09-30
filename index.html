@@ -662,10 +662,12 @@ function touch(t) { t.updated = now(); save(); }
 // The subtasks drawn nested under `t` in column `colId` (same-column chain only).
 function nestedIn(t, colId) { return children(t.id).filter((c) => c.column === colId).flatMap((c) => [c, ...nestedIn(c, colId)]); }
 
-// Put task `id` into column `colId`, just before sibling `beforeId` (null = at the end).
+// Put task `id` into column `colId`, just before sibling `beforeId` (null = at the end;
+// a card arriving in a done column goes on top instead, newest first).
 // `carry` brings along the subtasks nested under it in its old column.
 function moveTask(id, colId, beforeId, carry = true) {
   const t = task(id);
+  if (!beforeId && t.column !== colId && (column(colId) || {}).done) beforeId = topCard(colId, t.id);
   const carried = carry && t.column !== colId ? nestedIn(t, t.column) : [];
   const moving = new Set([t.id, ...carried.map((x) => x.id)]);
   const list = state.tasks.filter((x) => x.column === colId && !moving.has(x.id)).sort((a, b) => a.order - b.order);

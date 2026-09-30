@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-09-30
+
+- A card you move to Done now shows at the top of the Done column, not at the bottom, so the newest finished work is first.
+
 ## 2026-09-29
 
 - When you move a card to Done, Claude writes a short recap of what was decided, why, how and what came out, and shows it on the card. Then it closes that card's Claude work so it stops piling up and taking space. If you write on the card again later, a fresh Claude starts from that recap. A message you send while the recap is being made is kept and given to that fresh Claude.
