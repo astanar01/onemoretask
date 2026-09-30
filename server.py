@@ -935,7 +935,8 @@ class Watcher:
     def _close(self, p, task_id):
         key, notes = (p.id, task_id), []
         try:
-            archive(p, task_id)
+            with CLOSE_SLOTS:
+                archive(p, task_id)
             try:
                 os.remove(reports.close_path(p.board, task_id))
             except FileNotFoundError:
@@ -1219,6 +1220,7 @@ def deliver_notes(p, task_id, info, waiting=False):
 
 # ---------------------------------------------------------------- done: recap, then close the sessions
 RECAP_MODEL = "sonnet"
+CLOSE_SLOTS = threading.Semaphore(3)  # recaps written at once: many cards moved to done together queue up
 TRANSCRIPTS = "## Transcripts"  # the recap's last section, added by the board, not the model
 DIGEST_HEAD, DIGEST_TAIL, DIGEST_BLOCK = 30_000, 150_000, 4_000  # characters
 
