@@ -24,6 +24,10 @@ task lists), not in an agent prompt. The agent is usually gone when the user cli
 - When the real board is already running, serve `server.Handler` under a
   `ThreadingHTTPServer` from a small script instead of `server.py main()`: `main()`
   also starts the session watcher, and a second watcher would act on live sessions.
+- To screenshot a card's overview with made-up agent data (skills, subagents), replace
+  `server.WATCH.snapshot` in that script with a function returning the entry, and make the
+  handler subclass answer 403 to `PUT`/`POST`/`DELETE` so the page cannot write to the real
+  board. Never call `WATCH.poll()` there: it delivers notes and closes sessions.
 - HTML5 drag-and-drop (card reorder, column moves) needs synthetic `DragEvent`s
   (`dragstart` → `dragover` → `drop` → `dragend`) sharing ONE `DataTransfer`,
   dispatched to `document.elementFromPoint(x, y)` at the target point.
