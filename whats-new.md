@@ -2,6 +2,7 @@
 
 ## 2026-09-30
 
+- In an open card, the left side is now narrower (a quarter of the width), so Claude's messages on the right get more room.
 - A card you move to Done now shows at the top of the Done column, not at the bottom, so the newest finished work is first.
 
 ## 2026-09-29
