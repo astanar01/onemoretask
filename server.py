@@ -709,7 +709,8 @@ def job_detail(job_id):
 
 def list_sessions(cwd):
     r = run_claude(["agents", "--json", "--all"], cwd=cwd, timeout=30)
-    return json.loads(r.stdout or "[]")
+    # Interactive terminal sessions are listed too, without an id: the board only drives --bg ones.
+    return [s for s in json.loads(r.stdout or "[]") if isinstance(s, dict) and s.get("id")]
 
 
 PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
