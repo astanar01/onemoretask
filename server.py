@@ -1095,8 +1095,9 @@ def _skill_calls(path):
 
 def skills(session_ids):
     """Skills Claude loaded with the Skill tool across the given sessions and their subagents:
-    [{name, count, first}], in the order first used. A call that errored (e.g. an unknown skill) does not count."""
-    found = {}
+    [{name, count, first}], in the order first used. A call that errored (e.g. an unknown skill) does not count.
+    A call copied into a second transcript (a forked resume carries the history over) counts once, by tool_use id."""
+    found, seen = {}, set()
     for sid in session_ids:
         path = transcript_path(sid)
         if not path:
@@ -1106,8 +1107,9 @@ def skills(session_ids):
         for f in [path] + subs:
             calls, failed = _skill_calls(f)
             for tid, (name, at) in calls.items():
-                if tid in failed:
+                if tid in failed or tid in seen:
                     continue
+                seen.add(tid)
                 row = found.setdefault(name, {"name": name, "count": 0, "first": at})
                 row["count"] += 1
                 if at and (not row["first"] or at < row["first"]):
