@@ -326,7 +326,7 @@ def build_prompt(p, state, t):
                      f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Skills it creates or "
                      "updates stay local: never commit " + ", ".join(d + "/" for d in OBSERVER_DIRS) +
                      " (the board keeps them out of git), and never commit a change it makes to a skill file.")
-    work = "Change no files and make no commits." if answer_only else "Commit your work; never push."
+    work = "Change no files and make no commits." if answer_only else "Commit your work; never push unless the task or the user tells you to."
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
     return "\n".join(lines)
@@ -620,7 +620,7 @@ def review(p, task_id, level):
         "/code-review, subagents or workflows. Review only in this turn: no file changes, no commits.",
         f'2. Post its report with `{rep} done "..."`, naming the commits you reviewed. If nothing survived, say so. '
         "End by asking which findings to fix.",
-        "If a later reply asks for fixes: make them, verify them, commit (never push), and report done.", "",
+        "If a later reply asks for fixes: make them, verify them, commit (never push unless the user tells you to), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep)])
     aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, t["agent"].get("model") or "")
