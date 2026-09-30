@@ -142,6 +142,25 @@ the git repo you run it from.
    of Claude's final report, and its subtasks. A task moved out of done and back is not added
    twice. The board writes the file but does not commit it; the next commit that takes it does.
 
+### Use worktrees
+
+Tick **Use worktrees** in the header and every task you send gets its own git worktree, so tasks
+running side by side never touch each other's files. The board makes it in
+`.claude/worktrees/<task title>-<task id>` at the repo root, on a branch of the same name, and tells
+Claude to do all its edits and commits there. Your own checkout stays as it was (the folder is in
+`.git/info/exclude`, so `git status` stays clean). **Answer only** tasks change nothing, so they get none.
+
+A finished card in Review then has two more buttons:
+
+- **Run app from worktree**: Claude starts the app from the worktree (a dev server on a spare port,
+  the game, a demo) and says on the card how to reach it and how to stop it.
+- **Merge worktree to main**: Claude commits what is left, merges the branch into the branch your
+  checkout is on, then removes the worktree and the branch. If anything goes wrong (a conflict,
+  your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
+
+A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
+`git init` and commits everything as "Initial commit".
+
 ### Skill observations
 
 The install command also adds the task-observer skill. The app ships its own copy in `skills/task-observer/`,

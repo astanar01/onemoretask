@@ -31,6 +31,15 @@ it, and hand the independent parts to subagents on the chosen model. A task tick
 (task field `answerOnly`) gets a brief to investigate and report back on the card without changing
 files or committing.
 
+"Use worktrees" (header checkbox; POST /api/agent `worktree`) gives each sent task its own git worktree: launch makes
+<repo>/.claude/worktrees/<title-slug>-<task id> on a branch of the same name (make_worktree; the folder is kept out of
+`git status` through info/exclude), stores {path, dir, branch, base} as task.agent.worktree, and the prompt tells the
+session, which still starts in the project folder, to switch into it and do all work and commits there. A folder with no
+repo or no commit answers 409 `norepo`; POST /api/git/init makes one with an "Initial commit". While the worktree
+exists, the task's commits are looked up on its branch, and a card in Review offers "Run app from worktree" and "Merge
+worktree to main" (POST /api/agent/worktree): canned replies that have the session run the app from the worktree, or
+merge the branch into the base branch, then remove the worktree and branch (anything going wrong: abort, ask on the card).
+
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
 every remembered project, turns session state + the latest report into a phase:
@@ -272,7 +281,7 @@ def image_lines(names, folder, indent=""):
     return [f"{indent}- {shell_path(reports.image_path(folder, n))}" for n in names]
 
 
-def build_prompt(p, state, t):
+def build_prompt(p, state, t, wt=None):
     by_id = {x["id"]: x for x in state["tasks"]}
     cols = {c["id"]: c for c in state["columns"]}
     chain = []
@@ -320,13 +329,18 @@ def build_prompt(p, state, t):
         lines += ["", *answer_only_lines(report)]
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only)]
+    wt = None if answer_only else wt
+    if wt:
+        lines += ["", *worktree_lines(wt, p.path)]
     lines.append("")
     if observations.installed():
         lines.append("Invoke the task-observer skill at the start and log its observations to "
                      f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Skills it creates or "
                      "updates stay local: never commit " + ", ".join(d + "/" for d in OBSERVER_DIRS) +
                      " (the board keeps them out of git), and never commit a change it makes to a skill file.")
-    work = "Change no files and make no commits." if answer_only else "Commit your work; never push unless the task or the user tells you to."
+    work = ("Change no files and make no commits." if answer_only else
+            f"Commit your work in the worktree, on branch {wt['branch']}; never push unless the task or the user tells "
+            "you to." if wt else "Commit your work; never push unless the task or the user tells you to.")
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
     return "\n".join(lines)
@@ -341,6 +355,23 @@ def answer_only_lines(report):
             "the options and your recommendation.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
             "what to do next. If they then reply asking you to go ahead, that reply lifts this rule."]
+
+
+def worktree_lines(wt, main):
+    where = shell_path(wt["path"]) + (f" (the project's files are in {shell_path(wt['dir'])})"
+                                      if wt["dir"] != wt["path"] else "")
+    return ["Worktree (this task is marked \"use worktrees\": the user ticked it on the board):",
+            f"- A git worktree is already made for this task: {where}, on branch `{wt['branch']}`, made from "
+            f"`{wt['base']}`.",
+            "- Switch into it first (the EnterWorktree tool with `path`, or `cd`) and do ALL edits, builds, tests and "
+            f"commits there, never in the main checkout {shell_path(main)}.",
+            "- The board files stay in the main checkout: keep using the report command and the absolute paths given in "
+            "this prompt (board, images, skill-observations). Never use or edit the worktree's copy of the board folder.",
+            "- Files git does not track (local config, .env, installed dependencies, build output) are not in the "
+            "worktree: copy or reinstall what the work needs.",
+            f"- Do not merge into `{wt['base']}` and do not remove the worktree yourself. The user tries it with \"Run "
+            "app from worktree\" and merges it with \"Merge worktree to main\" on the card; those arrive as messages.",
+            f"- In the done report, name the branch `{wt['branch']}` along with the commit shas."]
 
 
 def card_lines(report, answer_only=False):
@@ -491,7 +522,8 @@ def trust_folder(p):
             raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
 
 
-def launch(p, task_id, model=""):
+def launch(p, task_id, model="", worktree=False):
+    """Start the task's session; {"id", "worktree"} (the worktree record, or None)."""
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -501,24 +533,27 @@ def launch(p, task_id, model=""):
     name = "task: " + t["title"][:60]
     if observations.installed():
         exclude_observer_dirs(p)
-    prompt = build_prompt(p, state, t)
+    wt = make_worktree(p, t) if worktree and not t.get("answerOnly") else None  # an answer changes no files
+    prompt = build_prompt(p, state, t, wt)
     path = reports.prompt_path(p.board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(prompt)
     aid = start_session(p, task_id, name, prompt, model)
-    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {aid}, model {model or 'default'})",
+    where = f", worktree {wt['branch']}" if wt else ""
+    reports.append(p.board, task_id, "launch", f"Sent to Claude (session {aid}, model {model or 'default'}{where})",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
-    return aid
+    return {"id": aid, "worktree": wt}
 
 
 OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")   # log, staged skills, project skills
+WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent with "Use worktrees"
 
 
-def exclude_observer_dirs(p):
-    """Keep the task-observer log and the skills it stages or creates out of the project's commits: list them in
-    the repo's info/exclude (local only, unlike .gitignore). Files git already tracks are not affected. Best effort; a folder that is not a git repo is skipped."""
+def exclude_dirs(p, dirs):
+    """List folders in the repo's info/exclude (local only, unlike .gitignore), so they stay out of commits and
+    `git status`. Files git already tracks are not affected. Best effort; a folder that is not a git repo is skipped."""
     try:
         r = subprocess.run(["git", "-C", p.path, "rev-parse", "--git-path", "info/exclude"],
                            capture_output=True, timeout=10, **TEXT)
@@ -526,13 +561,111 @@ def exclude_observer_dirs(p):
             return
         path = os.path.join(p.path, r.stdout.strip())
         text = open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else ""
-        missing = [f"/{d}/" for d in OBSERVER_DIRS if f"/{d}/" not in text.splitlines()]
+        missing = [f"/{d}/" for d in dirs if f"/{d}/" not in text.splitlines()]
         if missing:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(("" if not text or text.endswith("\n") else "\n") + "\n".join(missing) + "\n")
     except (OSError, subprocess.SubprocessError):
         pass
+
+
+def exclude_observer_dirs(p):
+    """Keep the task-observer log and the skills it stages or creates out of the project's commits."""
+    exclude_dirs(p, OBSERVER_DIRS)
+
+
+def exclude_local(p):
+    """Every local-only exclude the board wants: the worktrees folder, plus the observer's when it is installed."""
+    exclude_dirs(p, (WORKTREES, *(OBSERVER_DIRS if observations.installed() else ())))
+
+
+class NoRepoError(Exception):
+    """"Use worktrees" in a folder with no git repo, or a repo with no commit yet."""
+
+
+def git_try(cwd, *args, timeout=10):
+    """stdout of `git -C cwd args`, or None when it fails."""
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           **TEXT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def git_run(cwd, *args, timeout=60):
+    """stdout of `git -C cwd args`; RuntimeError with git's message when it fails."""
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, **TEXT)
+    except OSError:
+        raise RuntimeError("git is not installed") from None
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"git {args[0]} timed out") from None
+    if r.returncode:
+        raise RuntimeError(f"git {args[0]}: {_git_err(r)}")
+    return r.stdout.strip()
+
+
+def init_repo(p):
+    """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info."""
+    info = git_info(p)
+    if not info["repo"]:
+        git_run(p.path, "init", "-q")
+    if not info["commits"]:
+        exclude_local(p)
+        git_run(p.path, "add", "-A")
+        who = [] if git_try(p.path, "config", "user.email") and git_try(p.path, "config", "user.name") else [
+            "-c", "user.name=Task board", "-c", "user.email=taskboard@localhost"]
+        git_run(p.path, *who, "commit", "-q", "--allow-empty", "-m", "Initial commit")
+    return git_info(p)
+
+
+def worktree_name(t):
+    slug = "-".join(re.findall(r"[a-z0-9]+", t["title"].lower()))[:30].strip("-")
+    tid = re.sub(r"[^A-Za-z0-9_-]", "", str(t["id"]))
+    return f"{slug}-{tid}" if slug else f"task-{tid}"
+
+
+def make_worktree(p, t):
+    """Create the task's worktree, or reuse it (a retry after a failed launch): <repo>/.claude/worktrees/<name> on
+    branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}."""
+    if git_try(p.path, "rev-parse", "--is-inside-work-tree") != "true":
+        raise NoRepoError(f"{p.name} has no git repo yet, so its tasks cannot use worktrees")
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}") is None:
+        raise NoRepoError(f"The git repo of {p.name} has no commit yet, so its tasks cannot use worktrees")
+    top = os.path.normpath(git_run(p.path, "rev-parse", "--show-toplevel"))
+    prefix = git_run(p.path, "rev-parse", "--show-prefix")
+    name = worktree_name(t)
+    path = os.path.join(top, *WORKTREES.split("/"), name)
+    exclude_local(p)
+    base = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD") or git_run(p.path, "rev-parse", "--short", "HEAD")
+    git_run(p.path, "worktree", "prune")  # a registered worktree whose folder was deleted blocks `worktree add`
+    listed = {os.path.realpath(x[len("worktree "):]) for x in
+              git_run(p.path, "worktree", "list", "--porcelain").splitlines() if x.startswith("worktree ")}
+    if not (os.path.isdir(path) and os.path.realpath(path) in listed):
+        if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}") is not None:
+            git_run(p.path, "worktree", "add", "-q", path, name)
+        else:
+            git_run(p.path, "worktree", "add", "-q", "-b", name, path, "HEAD")
+    return {"path": path, "dir": os.path.normpath(os.path.join(path, prefix)) if prefix else path, "branch": name,
+            "base": base}
+
+
+def live_worktree(t):
+    """The task's worktree record while its folder exists, else None."""
+    wt = (t.get("agent") or {}).get("worktree")
+    return wt if isinstance(wt, dict) and wt.get("path") and os.path.isdir(wt["path"]) else None
+
+
+def commit_ref(p, t):
+    """Where the task's commits are: its worktree branch until that is merged and deleted, else HEAD."""
+    wt = (t.get("agent") or {}).get("worktree")
+    branch = isinstance(wt, dict) and wt.get("branch")
+    if branch and git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None:
+        return f"refs/heads/{branch}"
+    return "HEAD"
 
 
 def inbox_settings(p, task_id):
@@ -556,9 +689,9 @@ def start_session(p, task_id, name, prompt, model):
 REVIEW_LEVELS = ("low", "medium", "high")
 
 
-def task_commits(p, since):
-    """[(short sha, subject)] on HEAD committed since `since` (ISO time), newest first."""
-    r = subprocess.run(["git", "-C", p.path, "log", f"--since={since}", "--format=%h %s", "HEAD"],
+def task_commits(p, since, ref="HEAD"):
+    """[(short sha, subject)] on `ref` committed since `since` (ISO time), newest first."""
+    r = subprocess.run(["git", "-C", p.path, "log", f"--since={since}", "--format=%h %s", ref, "--"],
                        capture_output=True, timeout=10, **TEXT)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "git log failed")
@@ -570,14 +703,14 @@ def launched_at(log, t):
     return next((e["at"] for e in reversed(log) if e.get("status") == "launch"), t["agent"].get("started"))
 
 
-def own_commits(p, log, since):
-    """Commits on HEAD since `since` that a Claude message on the card names by sha: the task's own work, as
+def own_commits(p, log, since, ref="HEAD"):
+    """Commits on `ref` since `since` that a Claude message on the card names by sha: the task's own work, as
     opposed to other sessions' commits on the shared branch. None when git fails."""
     words = {w for e in log if e.get("from") == "claude" for w in SHA_WORD.findall(e.get("message") or "")}
     if not words:
         return []
     try:
-        commits = task_commits(p, since)
+        commits = task_commits(p, since, ref)
     except (OSError, RuntimeError, subprocess.SubprocessError):
         return None
     return [c for c in commits if any(w.startswith(c[0]) or c[0].startswith(w) for w in words)]
@@ -597,9 +730,12 @@ def review(p, task_id, level):
         raise PermissionError("Claude is still working — wait until it stops")
     log = reports.read(p.board, task_id)
     since = launched_at(log, t)
-    commits = task_commits(p, since)
-    if not own_commits(p, log, since):
+    ref = commit_ref(p, t)
+    commits = task_commits(p, since, ref)
+    if not own_commits(p, log, since, ref):
         raise PermissionError("This task made no commits — nothing to review")
+    branch = ref[len("refs/heads/"):] if ref != "HEAD" else None
+    wt = branch and live_worktree(t)
     # The task's own report, not an earlier reviewer's findings: stop at the first review.
     first_review = next((i for i, e in enumerate(log) if e.get("status") == "review"), len(log))
     report = next((e["message"] for e in reversed(log[:first_review]) if e.get("from") == "claude"
@@ -610,8 +746,11 @@ def review(p, task_id, level):
         f"Code review for a task on the project task board ({board_rel}).", "",
         f"Task: {t['title']}", f"Task id: {task_id}", *(["", "Task notes:", t["notes"]] if t.get("notes") else []),
         "", f"Another Claude session did this task. It was sent at {since}. Its last report on the card:", report, "",
-        "Commits on HEAD since then, newest first. Other sessions commit to the same branch, so some may belong "
-        "to other tasks:", *[f"- {sha} {subj}" for sha, subj in commits], "",
+        (f"Commits on the task's branch `{branch}` since then, newest first:" if branch else
+         "Commits on HEAD since then, newest first. Other sessions commit to the same branch, so some may belong "
+         "to other tasks:"), *[f"- {sha} {subj}" for sha, subj in commits], "",
+        *([f"The work is on branch `{branch}` in the git worktree {shell_path(wt['path'])}: review it there (cd into "
+           "it first). Later fixes go there too, committed on that branch.", ""] if wt else []),
         "Steps:",
         f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "{level}" plus the candidate '
         f"shas above). If that skill is not installed, Read {shell_path(os.path.join(HERE, 'skills', 'commit-review'))}"
@@ -644,20 +783,17 @@ def task_prompt(p, task_id):
 
 
 def git_info(p):
-    def git(*args):
-        try:
-            r = subprocess.run(["git", "-C", p.path, *args], capture_output=True, timeout=5, **TEXT)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        return r.stdout.strip() if r.returncode == 0 else None
-
-    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    """{branch, tag, dirty, repo (inside a git work tree), commits (HEAD resolves to a commit)}."""
+    git = lambda *args: git_try(p.path, *args, timeout=5)
+    repo = git("rev-parse", "--is-inside-work-tree") == "true"
+    commits = repo and git("rev-parse", "--verify", "--quiet", "HEAD^{commit}") is not None
+    branch = git("rev-parse", "--abbrev-ref", "HEAD") if commits else None
     if branch is None:
-        return {"branch": None, "tag": None, "dirty": False}
+        return {"branch": None, "tag": None, "dirty": False, "repo": repo, "commits": commits}
     if branch == "HEAD":
         branch = git("rev-parse", "--short", "HEAD")
     return {"branch": branch, "tag": git("describe", "--tags", "--abbrev=0") or None,
-            "dirty": bool(git("status", "--porcelain"))}
+            "dirty": bool(git("status", "--porcelain")), "repo": repo, "commits": commits}
 
 
 def phase_of(session, log, launched_at):
@@ -1041,7 +1177,7 @@ class Watcher:
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.
             done = self.committed.get((p.id, t["id"]))
             if phase != "working" and (not done or done[0] != len(log)):
-                found = own_commits(p, log, launched_at(log, t))
+                found = own_commits(p, log, launched_at(log, t), commit_ref(p, t))
                 done = (len(log), bool(found)) if found is not None else None
                 if done:
                     self.committed[(p.id, t["id"])] = done
@@ -1068,7 +1204,8 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
-                                      "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered}
+                                      "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
+                                      "worktree": bool(live_worktree(t))}
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
             old, self.cache = self.cache, fresh
@@ -1124,16 +1261,17 @@ def report_cmd(p, task_id):
     return script_cmd(p, task_id, "report.py")
 
 
-def reply(p, task_id, text, images=()):
+def reply(p, task_id, text, images=(), extra=""):
     """Send a card message. While Claude works it is logged as a note for the session's inbox hook; else it
-    resumes the session. Returns True when it was queued as a note."""
+    resumes the session. Returns True when it was queued as a note. `extra` goes to the session after `text`
+    but not onto the card's log (the note and reopen paths keep it with the text)."""
     info = WATCH.snapshot(p.id).get(task_id)
     if not info:
         raise LookupError("no Claude session for this task")
     if info["phase"] == "working":
-        reports.append(p.board, task_id, "note", text, "you", images=list(images))
+        reports.append(p.board, task_id, "note", text + extra, "you", images=list(images))
         return True
-    if WATCH.note_if_closing(p, task_id, text, images):
+    if WATCH.note_if_closing(p, task_id, text + extra, images):
         return True
     if not info.get("archived"):
         # The snapshot can predate a close that just finished: resuming its removed session would fail.
@@ -1142,12 +1280,12 @@ def reply(p, task_id, text, images=()):
                 s["id"] == info["id"] for s in list_sessions(p.path)):
             info = dict(info, archived=True)
     if info.get("archived"):
-        reopen(p, task_id, text, images)
+        reopen(p, task_id, text + extra, images)
         return False
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
-    message = text + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
+    message = text + extra + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
     message += reports.LANGUAGE_RULE + ")"
     if images:
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
@@ -1177,6 +1315,58 @@ def resume(p, info, message):
     if r.returncode != 0 or not m:
         raise RuntimeError(out.strip() or f"claude exited {r.returncode}")
     return m.group(1)
+
+
+WORKTREE_ACTIONS = {"run": "Run app from worktree", "merge": "Merge worktree to main"}  # the page matches these labels
+
+
+def worktree_steps(p, task_id, wt, action):
+    """What the session is told to do for a worktree button; the card shows only the button's label."""
+    rep, main, path, branch, base = report_cmd(p, task_id), shell_path(p.path), shell_path(wt["path"]), wt["branch"], wt["base"]
+    if action == "run":
+        return [f"Run the app from the worktree {shell_path(wt['dir'])}, not from the main checkout {main}, so the "
+                "user can try this task's changes.",
+                "- Work out how from the project: its run skill if it has one, the README, package scripts, a Makefile.",
+                "- A web app: start (or restart) its dev server from the worktree. If the main copy already holds the "
+                "usual port, use a spare one. Give the URL.",
+                "- A game or desktop app: start it from the worktree.",
+                "- A command-line tool or a library: run its most useful demo from the worktree and show what it prints.",
+                "- Files git does not track (.env, local config, installed dependencies) may be missing in the "
+                "worktree: copy or install what it needs to run.",
+                "- Leave it running for the user: start it in the background so your turn can end.",
+                f'- Then post on the card with `{rep} done "..."`: how to reach it (URL, window, command) and how to '
+                "stop it.",
+                "- If it cannot be run, say exactly why on the card (the error, what is missing)."]
+    return [f"Merge this task's branch `{branch}` into `{base}`:",
+            f"1. In the worktree {path}, commit anything still uncommitted.",
+            f"2. In the main checkout {main}: it must be on `{base}`. If it is on another branch, stop and ask with "
+            f'`{rep} question "..."`.',
+            f"3. There, merge `{branch}` into `{base}`.",
+            "4. If ANYTHING goes wrong (conflicts, local changes in the main checkout in the way, a failing hook, a "
+            f"`{base}` that moved in a way you are unsure about), do not force it. Abort the merge so the main checkout "
+            f'is exactly as it was before, then tell the user with `{rep} question "..."`: what went wrong, which '
+            "files, and the options.",
+            "5. Never push.",
+            f"6. On success: stop anything still running from the worktree, then `git worktree remove {path}` and "
+            f"`git branch -d {branch}` (never -D, and never --force without asking). Report the merge commit sha "
+            f'with `{rep} done "..."`.']
+
+
+def worktree_action(p, task_id, action):
+    """The Review card's worktree buttons: a canned reply to the task's session to run the app from its worktree
+    ("run") or merge its branch and remove the worktree ("merge")."""
+    if action not in WORKTREE_ACTIONS:
+        raise ValueError(f"bad worktree action: {action!r}")
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t or not (t.get("agent") or {}).get("worktree"):
+        raise LookupError("this task was not sent to Claude with a worktree")
+    wt = live_worktree(t)
+    if not wt:
+        raise PermissionError("The worktree is gone — it was merged or removed")
+    info = WATCH.snapshot(p.id).get(task_id)
+    if info and info["phase"] == "working":
+        raise PermissionError("Claude is still working — wait until it stops")
+    reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
 
 
 def type_notes(p, task_id, aid):
@@ -1340,7 +1530,7 @@ def reopen(p, task_id, text, images=(), handed=0):
     recap = reports.read_recap(p.board, task_id)
     if not t or not recap:
         raise LookupError("no Claude session for this task")
-    prompt = "\n".join([build_prompt(p, state, t), "",
+    prompt = "\n".join([build_prompt(p, state, t, live_worktree(t)), "",
                         "This task was worked on before. Its sessions were closed when the card moved to done, and "
                         "this recap was written from them:", "", recap, "",
                         "The user reopened the card with this message. It is what to do now; where it differs from the "
@@ -1569,6 +1759,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(409, {"error": str(e)})
         except UntrustedError as e:
             self._json(409, {"error": f"Claude does not trust {e} yet", "untrusted": True})
+        except NoRepoError as e:
+            self._json(409, {"error": str(e), "norepo": True})
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)})
 
@@ -1625,8 +1817,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = self._route()
-        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/image", "/api/projects", "/api/projects/pick",
-                  "/api/projects/forget", "/api/projects/trust", "/api/update")
+        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree", "/api/git/init",
+                  "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
+                  "/api/update")
         if not self._host_ok():
             return
         if path not in routes:
@@ -1650,8 +1843,13 @@ class Handler(SimpleHTTPRequestHandler):
                 trust_folder(project(body["p"]))
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                aid = launch(project(body["p"]), body["taskId"], body.get("model") or "")
-                self._json(200, {"id": aid})
+                self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or "",
+                                       bool(body.get("worktree"))))
+            elif path == "/api/agent/worktree":
+                worktree_action(project(body["p"]), body["taskId"], body.get("action"))
+                self._json(200, {"ok": True})
+            elif path == "/api/git/init":
+                self._json(200, init_repo(project(body["p"])))
             elif path == "/api/agent/review":
                 self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium")})
             elif path == "/api/update":

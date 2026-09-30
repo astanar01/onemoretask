@@ -47,6 +47,8 @@ header h1 { font-size: calc(17px * var(--ts)); margin: 0 8px 0 0; }
 header .grow { flex: 1; }
 #search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 200px; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
+.toggles { display: flex; flex-direction: column; gap: 2px; }
+label.toggle:has(input:disabled) { opacity: .6; }
 #status { color: var(--muted); font-size: calc(12px * var(--ts)); }
 #status.err { color: var(--danger); }
 #d-error { display: none; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); font-size: calc(13px * var(--ts)); align-items: flex-start; gap: 10px; white-space: pre-wrap; }
@@ -129,12 +131,12 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
 .panel-right > .block { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .actions { display: flex; gap: 10px; align-items: center; }
-#trust-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
-#trust-modal.open { display: flex; }
-#trust-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-#trust-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
-#trust-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
-#trust-modal .actions { justify-content: flex-end; }
+#trust-modal, #repo-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open, #repo-modal.open { display: flex; }
+#trust-modal .box, #repo-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3, #repo-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p, #repo-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions, #repo-modal .actions { justify-content: flex-end; }
 #obs-btn { display: none; align-items: center; gap: 6px; }
 #obs-modal, #cl-modal { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #obs-modal.open, #cl-modal.open { display: flex; }
@@ -215,8 +217,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 .btn.review { border-color: var(--accent); color: var(--accent); }
 .btn.review:hover { background: var(--accent); color: #fff; }
 #d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
-.panel-foot > span:last-child { display: flex; align-items: center; gap: 16px; }
-#d-review-wrap { display: flex; align-items: center; gap: 8px; }
+.panel-foot > span:last-child { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+#d-review-wrap, #d-wt-wrap { display: flex; align-items: center; gap: 8px; }
+#d-wt-wrap .btn { white-space: nowrap; }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -353,7 +356,8 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <span id="project-wrap"><select id="project" title="Project"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
-  <label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
+  <span class="toggles"><label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
+  <label class="toggle" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"> Use worktrees</label></span>
   <span class="grow"></span>
   <button class="btn" id="update" hidden></button>
   <button class="btn" id="theme"></button>
@@ -394,6 +398,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
         <div class="chips" id="d-chips">
           <span class="chip" id="d-git"><span class="k"><span data-ico="branch"></span>Git</span><span class="v"></span></span>
           <span class="chip" id="d-rel"><span class="k"><span data-ico="tag"></span>Release</span><span class="v"></span></span>
+          <span class="chip" id="d-wt" hidden><span class="k"><span data-ico="branch"></span>Worktree</span><span class="v"></span></span>
         </div>
         <div class="ov-box" id="d-crit"><div class="crit-head">Completion criteria<span id="d-crit-n"></span></div><div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></div>
         <div class="ov-box next"><span class="ov-ico st" data-ico="bolt" data-s="18"></span><div><span class="lbl">Next action</span><div id="d-next"></div></div></div>
@@ -423,7 +428,9 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
     <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
     <div class="panel-foot">
       <span id="d-dates"></span>
-      <span><span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
+      <span><span id="d-wt-wrap"><button class="btn review" id="d-wt-run" title="Claude starts the app from this task's worktree so you can try the changes">Run app from worktree</button>
+      <button class="btn review" id="d-wt-merge" title="Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way">Merge worktree to main</button></span>
+      <span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
       <select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></span>
       <button class="btn to-done" id="d-to-done" title="The work is finished — move this task to the done column">✓ Move to done</button>
       <button class="btn primary" id="d-close">Close</button></span>
@@ -435,6 +442,11 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
   <h3 id="trust-title">Trust this folder?</h3>
   <p>Claude doesn't trust <b id="trust-path"></b> yet. Trusting it lets Claude read, edit and run files in this folder, the same as accepting the prompt in <code>claude</code>.</p>
   <div class="actions"><button class="btn" id="trust-no">Cancel</button><button class="btn primary" id="trust-yes">Trust folder and send</button></div>
+</div></div>
+<div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
+  <h3 id="repo-title">Create a local repo?</h3>
+  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit?</p>
+  <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
   <button class="x-close" id="obs-x" title="Close">✕</button>
@@ -458,7 +470,7 @@ const $ = (s) => document.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
-let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?}] }
+let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
 let useServer = true;
 let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
 let P = null;              // current project id; every /api call carries it
@@ -1046,6 +1058,7 @@ $("#d-delete").onclick = () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && trustOpen()) closeTrust(true);
+  else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
@@ -1120,6 +1133,8 @@ function canFinish(t) {
 // A finished task in Review that made a commit (its card names the sha) can be handed to a fresh reviewer
 // session (server: review()). An "Answer only" task gets the button once a later reply had it commit.
 const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
+// Needs t.agent.worktree (the launch made one) and agents[].worktree (its folder still exists, i.e. not merged yet).
+const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].worktree;
 function reviewLevel() { try { return localStorage.getItem("taskboard.reviewLevel") || "medium"; } catch (e) { return "medium"; } }
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
@@ -1165,6 +1180,7 @@ function renderAgent(t) {
   $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-to-done").style.display = canFinish(t) ? "" : "none";
   $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
+  $("#d-wt-wrap").style.display = canWorktree(t) ? "" : "none";
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
@@ -1217,6 +1233,7 @@ function nextAction(t, ag) {
   if (ag.phase === "gone") return "Session removed — nothing to do.";
   const last = (ag.log || []).filter((e) => e.from !== "you").pop();
   if (ag.phase === "needs_you") return last && last.status === "question" ? "Answer Claude's question." : ag.reason || "Claude is waiting on you.";
+  if ((ag.phase === "finished" || (last && last.status === "done")) && canWorktree(t)) return "Try it with Run app from worktree, then Merge worktree to main, then move it to done.";
   if (ag.phase === "finished" || (last && last.status === "done")) return inReview(t) ? "Review the work (Review code runs a code review), then move it to done." : "Review the work.";
   return "Claude is working — nothing to do yet.";
 }
@@ -1287,7 +1304,10 @@ function paintGit(t) {
   $("#d-git .v").innerHTML = g.branch ? esc(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes">•</span>` : "") : "";
   $("#d-rel").hidden = !g.tag;
   $("#d-rel .v").textContent = g.tag || "";
-  $("#d-chips").hidden = !g.branch && !g.tag;
+  const wt = t.agent && t.agent.worktree, ag = agents[t.id];
+  $("#d-wt").hidden = !wt;
+  $("#d-wt .v").textContent = wt ? wt.branch + (ag && ag.worktree === false ? " (merged or removed)" : "") : "";
+  $("#d-chips").hidden = !g.branch && !g.tag && !wt;
 }
 
 // GET /api/prompt&t=<id> -> { prompt, saved }. Fixed once sent, so kept per task; failures retry on the next open.
@@ -1340,7 +1360,7 @@ async function post(url, body) {
     throw new Error(r.status === 404 ? `the board server does not know ${url} — it runs older code; restart it (Ctrl-C, then onemoretask)`
       : `the server answered ${r.status} with no details`);
   }
-  if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted });
+  if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted, norepo: !!res.norepo });
   return res;
 }
 
@@ -1369,6 +1389,45 @@ function askTrust(t) {
 }
 $("#trust-modal").addEventListener("mousedown", (e) => { if (e.target.id === "trust-modal") closeTrust(true); });
 
+// Worktrees need a repo with a commit. t = the task whose send hit 409 norepo; null = asked on ticking the box.
+let repoFor = null;
+const repoOpen = () => $("#repo-modal").classList.contains("open");
+function saveWorktrees() { try { localStorage.setItem(LS_KEY + ":worktrees", $("#use-worktrees").checked ? "1" : "0"); } catch (_) {} }
+function closeRepo(cancelled) {
+  $("#repo-modal").classList.remove("open");
+  if (!cancelled) return;
+  if (repoFor) setStatus("Not sent: no local repo");
+  else { $("#use-worktrees").checked = false; saveWorktrees(); }
+}
+function askRepo(t) {
+  repoFor = t;
+  $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || "This folder";
+  $("#repo-no").onclick = () => closeRepo(true);
+  $("#repo-yes").onclick = async () => {
+    $("#repo-yes").disabled = true;
+    try {
+      await post("/api/git/init", { p: P });
+      gitInfo.at = 0;   // the chips reload with the new branch
+      closeRepo(false);
+      setStatus("Local repo created");
+      if (t) await sendToClaude(t);
+    } catch (e) {
+      setStatus("Could not create the repo: " + e.message, true);
+    } finally { $("#repo-yes").disabled = false; }
+  };
+  $("#repo-modal").classList.add("open");
+  $("#repo-yes").focus();
+}
+$("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
+$("#use-worktrees").addEventListener("change", async (e) => {
+  saveWorktrees();
+  if (!e.target.checked || !useServer || !P) return;
+  let g = null;
+  try { const r = await fetch(api("/api/git"), { cache: "no-store" }); if (r.ok) g = await r.json(); } catch (_) {}
+  // An older server has no repo/commits keys (undefined): nothing to ask.
+  if (g && (g.repo === false || g.commits === false) && $("#use-worktrees").checked) askRepo(null);
+});
+
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
@@ -1382,8 +1441,8 @@ async function sendToClaude(t) {
   if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
   try {
     const model = $("#d-model").value;
-    const res = await post("/api/agent", { p: P, taskId: t.id, model });
-    t.agent = { id: res.id, started: now(), ...(model && { model }) };
+    const res = await post("/api/agent", { p: P, taskId: t.id, model, worktree: $("#use-worktrees").checked && !t.answerOnly });
+    t.agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }) };
     touch(t);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
     pm.state = "sent";
@@ -1393,6 +1452,7 @@ async function sendToClaude(t) {
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // else its "Saved" would replace the error
     if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
+    else if (e.norepo) { askRepo(t); setStatus("Worktrees need a local repo first", true); }
     else setStatus("Send to Claude failed: " + e.message, true);
   }
   render();
@@ -1416,6 +1476,24 @@ async function startReview(t) {
   await pollAgents();
 }
 $("#d-review").onclick = () => { const t = task(openId); if (t) startReview(t); };
+// The server types a canned message into the card's session; its logged reply clears the pending bubble.
+async function worktreeAction(t, action) {
+  const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
+  setStatus(action === "run" ? "Asking Claude to run the app…" : "Asking Claude to merge…");
+  refreshAgent(t); render();
+  try {
+    await post("/api/agent/worktree", { p: P, taskId: t.id, action });
+    pm.state = "sent";
+    setStatus(action === "run" ? "Asked Claude to run the app from the worktree" : "Asked Claude to merge the worktree");
+  } catch (e) {
+    dropPending(t, pm);
+    setStatus(label + " failed: " + e.message, true);
+  }
+  refreshAgent(t); render();
+  await pollAgents();
+}
+$("#d-wt-run").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "run"); };
+$("#d-wt-merge").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "merge"); };
 $("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.reviewLevel", e.target.value); } catch (_) {} render(); };
 
 async function sendReply() {
@@ -1856,8 +1934,12 @@ $("#show-subs").addEventListener("change", () => {
   render();
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
+try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
 
-load().then(() => { render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); })
+load().then(() => {
+  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate();
+  if (!useServer) { $("#use-worktrees").disabled = true; $("#use-worktrees-lbl").title = "Needs server.py"; }
+})
   .catch((e) => setStatus("Could not load the board: " + e.message, true));
 </script>
 </body>
