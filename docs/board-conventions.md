@@ -34,7 +34,12 @@ Use the `run-extras` skill (`scripts/cdp-shot.mjs`) when the Chrome extension is
 offline. Two board-specific traps:
 
 - A fresh browser profile opens whatever project is the default, not yours. Put
-  `#p=<project id>` in the URL: `http://127.0.0.1:8765/#p=<id>`.
+  `#p=<project id>` in the URL: `http://127.0.0.1:8765/#p=<id>`. Ids are hashes: get
+  yours from `GET /api/projects` by matching its `path` field.
+- Open a card and measure in one expression, e.g.
+  `node ~/.claude/skills/run-extras/scripts/cdp-shot.mjs 'http://127.0.0.1:8765/#p=<id>' out.png 1440 900 'openDetail("<task id>"); await new Promise(r=>setTimeout(r,500)); [...document.querySelectorAll(".panel-cols > *")].map(e=>e.getBoundingClientRect().width)'`.
+- The board re-renders on a poll and undoes page-only tweaks (e.g. forcing a hidden
+  Send row visible). Make the tweak in the same expression that measures.
 - Opening a card (`openDetail(id)`) can clear its unread mark on the user's real
   board. Pick cards that are not in `/api/projects` → `attention`, or use a separate
   server.
