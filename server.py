@@ -1485,10 +1485,12 @@ def delete_worktree(p, task_id, force=False):
     branch = wt["branch"]
     ref = f"refs/heads/{branch}"
     has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
-    changes = [x for x in git_run(wt["path"], "status", "--porcelain").splitlines() if x.strip()]
+    # --ignored: `worktree remove` deletes ignored files too (a .env, local data), so they count as work to lose.
+    changes = [x for x in git_run(wt["path"], "status", "--porcelain", "--ignored").splitlines() if x.strip()]
+    # The worktree's own HEAD too: it may be detached or mid-rebase, holding commits the branch does not have.
     # --exclude takes the name without refs/heads/ when it filters --branches.
-    commits = int(git_run(p.path, "rev-list", "--count", ref, "--not", f"--exclude={branch}", "--branches")) \
-        if has_branch else 0
+    commits = int(git_run(wt["path"], "rev-list", "--count", *([ref] if has_branch else []), "HEAD",
+                          "--not", f"--exclude={branch}", "--branches"))
     if (changes or commits) and not force:
         raise UnsavedWorkError({"changes": changes, "commits": commits})
     git_run(p.path, "worktree", "remove", *(["--force"] if changes else []), wt["path"])
