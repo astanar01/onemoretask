@@ -259,6 +259,7 @@ label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted)
 #d-reply-wrap { display: none; margin-top: 8px; gap: 8px; flex-direction: column; }
 .reply-row { display: flex; gap: 10px; align-items: center; }
 #d-reply { flex: 1; min-height: 84px; resize: vertical; padding: 6px 8px; border: 1px solid var(--wait); border-radius: 6px; background: var(--card); }
+#d-reply:disabled, #d-reply-send:disabled { opacity: .5; cursor: default; }
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .thumbs:empty { display: none; }
 .thumb { position: relative; display: block; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
@@ -1173,6 +1174,13 @@ function renderAgent(t) {
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
     : "Answer Claude — Cmd+Enter to send, paste images to attach";
   $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
+  // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
+  const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
+  $("#d-reply").disabled = $("#d-reply-send").disabled = recapping;
+  if (recapping) {
+    $("#d-reply").placeholder = "Writing the recap — you can send once it is posted.";
+    $("#d-reply-send").textContent = "Writing recap…";
+  }
   renderReplyImages();
   renderOverview(t);
   // Last: the reply box and images above change the log's height.
@@ -1412,7 +1420,7 @@ $("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.r
 
 async function sendReply() {
   const t = task(openId), text = $("#d-reply").value.trim();
-  if (!t || (!text && !replyImages.length)) return;
+  if (!t || (!text && !replyImages.length) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? "Sending note…" : "Sending reply…");
@@ -1429,7 +1437,6 @@ async function sendReply() {
     setStatus("Reply failed: " + e.message, true);
   }
   refreshAgent(t);
-  $("#d-reply-send").disabled = false;
   await pollAgents();
 }
 $("#d-reply-send").onclick = sendReply;

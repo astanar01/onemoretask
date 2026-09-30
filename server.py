@@ -1061,12 +1061,14 @@ class Watcher:
                     and said[-1].get("status") != "recap")
                 if close:
                     self.closing.add(key)
+                # Moved to done, recap not posted yet: the board holds replies until it is (they would only queue).
+                recapping = closed and key not in self.close_failed and (key in self.closing or os.path.exists(marker))
             if close:
                 threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs,
-                                      "closed": t.get("column") in done_cols, "delivered": delivered}
+                                      "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered}
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
             old, self.cache = self.cache, fresh

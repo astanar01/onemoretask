@@ -5,6 +5,7 @@
 - In a new card, the model picker is only as wide as the model's name, and "Send to Claude" stays on one line.
 - In an open card, the left side is now narrower (a quarter of the width), so Claude's messages on the right get more room.
 - A card you move to Done now shows at the top of the Done column, not at the bottom, so the newest finished work is first.
+- When you move a card to Done, its message box is greyed out until Claude's summary of the work shows on the card.
 
 ## 2026-09-29
 
