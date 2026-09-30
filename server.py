@@ -1131,6 +1131,12 @@ def reply(p, task_id, text, images=()):
         return True
     if WATCH.note_if_closing(p, task_id, text, images):
         return True
+    if not info.get("archived"):
+        # The snapshot can predate a close that just finished: resuming its removed session would fail.
+        said = [e for e in reports.read(p.board, task_id) if e.get("status") != "note"]
+        if said and said[-1].get("status") == "recap" and not any(
+                s["id"] == info["id"] for s in list_sessions(p.path)):
+            info = dict(info, archived=True)
     if info.get("archived"):
         reopen(p, task_id, text, images)
         return False
