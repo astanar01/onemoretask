@@ -2111,12 +2111,20 @@ async function sendReply() {
   $("#d-reply").value = ""; replyImages = []; renderReplyImages();
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
+  // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
+  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  if (isDone(t) && prog) {
+    moveTask(t.id, prog.id, null);
+    render(); $("#d-col").value = t.column;
+    if (saveTimer) { clearTimeout(saveTimer); await flush(); }
+  }
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
     setStatus(res.queued ? "Note sent — Claude reads it as soon as it can" : "Reply sent — Claude is back at work");
   } catch (e) {
     dropPending(t, pm);
+    if (t.column !== fromCol) { moveTask(t.id, fromCol, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
     // Hand the unsent message back so nothing typed is lost.
     if (openId === t.id && !$("#d-reply").value) { $("#d-reply").value = text; replyImages = images; renderReplyImages(); }
     setStatus("Reply failed: " + e.message, true);
@@ -2163,7 +2171,7 @@ async function pollAgents() {
       if (!polledOnce || was === a.phase) continue;
       // Newest finished work goes on top of Review, even if the card was already there.
       if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
-      if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
+      if (a.phase === "working" && prog && (review && t.column === review.id || isDone(t))) moveTask(t.id, prog.id, null);
     }
     const changed = moved || JSON.stringify(next) !== JSON.stringify(agents);
     // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
