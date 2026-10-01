@@ -247,7 +247,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* turning arrow while Claude works; turning() sets a negative delay so a re-render keeps the turn going instead of restarting it */
-.turning { display: inline-flex; flex: none; vertical-align: -0.15em; animation: spin 1.4s linear infinite; }
+.turning { display: inline-flex; flex: none; animation: spin 1.4s linear infinite; }
+.turning svg { width: 1em; height: 1em; }
+.agent:has(> .turning), #d-next-title:has(> .turning) { display: flex; align-items: center; }
+.agent:has(> .turning) { display: inline-flex; }
 .agent .turning { margin-right: 4px; }
 #d-next-title .turning { margin-right: 8px; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .turning { animation: none; } }
