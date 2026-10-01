@@ -1577,7 +1577,10 @@ function nextAction(t, ag, g) {
     : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
-    return { title: "Done", text: wt ? "Its worktree is not merged yet. Move the card back to Review to merge it, or delete the worktree from the ⋯ menu if you do not need it." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: wt && canWorktree(t) ? [merge("sec")] : [] };
+    // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).
+    const canMerge = wt && useServer && replyOpen(t) && ag.phase !== "working" && !ag.recapping && (ag.closed || ag.archived);
+    return { title: "Done", text: canMerge ? "Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it."
+      : wt ? "Its worktree is not merged yet. The merge button shows here once Claude has written the recap." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: canMerge ? [merge()] : [] };
   }
   if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [] };
   if (ag.phase === "working") {
