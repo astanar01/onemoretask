@@ -31,7 +31,8 @@ card ask first; "Trust folder and send" sets hasTrustDialogAccepted for it in ~/
 
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
 `subagentModel`) gets a delegation brief in its prompt (never plan mode): analyse the task, split
-it, and hand the independent parts to subagents on the chosen model. A task ticked "Answer only"
+it, hand the independent parts to subagents on the chosen model, and name in each subagent's prompt the skills it
+must invoke first (the lead picks them; a subagent sees the skills list but picks none alone). A task ticked "Answer only"
 (task field `answerOnly`) gets a brief to investigate and report back on the card without changing
 files or committing.
 
@@ -450,6 +451,14 @@ def delegate_lines(model, report, answer_only=False):
             "message so they run in parallel; run dependent parts after what they need. Keep tiny or tightly coupled "
             "parts yourself.",
             brief,
+            # Measured: an Agent-tool subagent sees the same skills list as the lead and can call Skill by name, but
+            # it picks none on its own. The `skills:` frontmatter field exists only for custom agent files
+            # (.claude/agents/*.md): it preloads a skill's text, so writing one per part would leave files behind.
+            "- Skills: a subagent sees the same skills list as you but picks none by itself. For each part, choose "
+            "the skills that cover its kind of work (the project's own skills, the domain skill for what it touches, "
+            "and the working rules this prompt or CLAUDE.md tells you to load at the start) and open its prompt with "
+            "them: `First invoke Skill('<name>') with the Skill tool` per skill, plus one line on why that skill "
+            "matters for this part. Leave task-observer out: you log the observations.",
             use,
             f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching subagents, '
             "then check and integrate their results yourself before reporting done."]
