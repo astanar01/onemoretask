@@ -107,8 +107,9 @@ the git repo you run it from.
 2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes.
 3. **Send to Claude.** Pick a model (or leave the default) and send. A background Claude
    session starts in the project folder with the task as its prompt. Tick
-   **Divide in subtasks / use subagents** to let it split the work; the card then lists each
-   subagent (running, finished or stopped) and what a running one is doing now.
+   **Divide in subtasks / use subagents** to let it split the work; Claude picks the skills each
+   part needs and tells that subagent to load them first. The card then lists each
+   subagent (running, finished or stopped), what a running one is doing now and the skills it used.
    Tick **Answer only** when you just want an answer: Claude looks into it and reports back
    on the card, but changes no files and makes no commits.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
