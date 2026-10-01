@@ -3,6 +3,18 @@
 ## 2026-10-01
 
 - The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back. Sending a card to Claude from an old window does not start Claude; the board asks you to send again. The last change you make before closing the page is kept.
+- An open card has a new look. The left side shows the task's name, its column and priority, and a "Next action" box that tells you what to do now: wait, look at the changes, bring them in, or mark the task done. The big button there is the one to press. Under it, small fold-out rows hold the technical bits, the helpers Claude used and the words it was given.
+- The right side of an open card now has four tabs: Summary (what Claude did, what changed and whether it is in your project yet), Changes (the files and saved changes, click one to see the difference), Conversation (all messages, with the reply box at the bottom) and Images. Finished tasks open on Summary, busy ones on Conversation.
+- The "Next action" box looks at your project for real: it counts files that are changed and saved changes that are not in your main copy yet, so "nothing to merge" is only said when it is true. If it cannot look, it says so instead of showing zero.
+- The orange note that a reply will cost more because Claude's memory went cold now sits right above the reply box and says how much it will reload.
+- The row of buttons at the bottom of a card is gone. Deleting the task or its separate copy is under the "⋯" menu at the top right; the "Review code", "Run app" and "Merge" buttons moved into the Next action box and the Changes tab.
+- The top bar is tidier: theme, text size and "Show subtasks" are under "View"; "Use worktrees" and the Changelog are under the gear button.
+
+- When the board starts again, each card fills in as soon as it is ready, open cards first, instead of all of them staying empty until the very end.
+- A small box at the top of the board shows which copy of the board you are using. It turns orange when you are on a task's separate copy instead of your main one, and you can pick another copy there to jump to it. The board will not throw away the copy it is running from: go back to main first. The top bar now stays on one line.
+- While "Delete worktree" is working, the whole board turns grey and shows "Deleting the worktree…", so you cannot click anything by mistake until it is finished.
+- If you write to Claude on a card after its separate copy was thrown away or brought into your project, Claude now gets a fresh separate copy to work in, so your own copy stays as it is.
+- The "Claude finished" and "Claude needs you" pop-ups now wait until the card has moved or shows the change, so you no longer look at the board before it is ready.
 
 ## 2026-09-30
 

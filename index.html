@@ -42,14 +42,15 @@ body { background: var(--bg); color: var(--text); font: calc(14px * var(--ts))/1
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-header h1 { font-size: calc(17px * var(--ts)); margin: 0 8px 0 0; }
+/* One line: the search box and the status text give up width first. */
+header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
+header > * { flex-shrink: 0; }
+header h1 { font-size: calc(17px * var(--ts)); margin: 0 4px 0 0; }
 header .grow { flex: 1; }
-#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 200px; }
+#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); flex: 10 1 200px; max-width: 520px; min-width: 90px; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
-.toggles { display: flex; flex-direction: column; gap: 2px; }
 label.toggle:has(input:disabled) { opacity: .6; }
-#status { color: var(--muted); font-size: calc(12px * var(--ts)); }
+#status { color: var(--muted); font-size: calc(12px * var(--ts)); flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #status.err { color: var(--danger); }
 #d-error { display: none; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); font-size: calc(13px * var(--ts)); align-items: flex-start; gap: 10px; white-space: pre-wrap; }
 #d-error.show { display: flex; }
@@ -61,17 +62,43 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .btn.danger { color: var(--danger); }
 .btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 #project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
-#project-wrap { position: relative; display: inline-flex; }
+#project-wrap { position: relative; display: inline-flex; flex-shrink: 1; min-width: 110px; }
+#project-wrap #project { min-width: 0; width: 100%; }
 #project-wrap.others #project { padding-right: 38px; }
 #others-waiting { position: absolute; right: 24px; top: 50%; transform: translateY(-45%); color: var(--major); font-weight: 800; font-size: 18px; line-height: 1; pointer-events: none; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
-#theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
+#app-copy { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 150px; text-overflow: ellipsis; }
+#app-copy.away { border-color: var(--wait); color: var(--wait); font-weight: 600; }
 #update { color: var(--muted); }
 #update.new { background: var(--ok); border-color: var(--ok); color: #fff; }
 #update.blocked { border-color: var(--wait); color: var(--wait); }
 #update:disabled { cursor: progress; opacity: .85; }
 #text-size { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: calc(13px * var(--ts)); }
+/* Header menus (View, Project settings): fixed so the header's overflow-x never clips them. */
+.hbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.hbtn svg { flex: none; color: var(--muted); }
+.hbtn.ico { padding-left: 7px; padding-right: 7px; }
+.hbtn::before { content: "\200b"; width: 0; margin-right: -6px; }
+@media (max-width: 560px) { header { gap: 8px; } .hbtn .t { display: none; } .hbtn { padding-left: 7px; padding-right: 7px; } }
+.hbtn[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.hbtn[aria-expanded="true"] svg { color: var(--accent); }
+.pop { position: fixed; z-index: 40; min-width: 250px; max-width: calc(100vw - 16px); background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.08); padding: 6px; font-size: calc(13px * var(--ts)); display: flex; flex-direction: column; gap: 2px; }
+.pop[hidden] { display: none; }
+.pop-head { padding: 6px 10px 8px; font-weight: 600; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.pop-head small { font-weight: 400; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-head small:empty { display: none; }
+.pop-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; user-select: none; min-height: calc(34px * var(--ts)); }
+.pop-row:hover, .pop-row:focus-within, button.pop-row:focus-visible { background: var(--col); }
+.pop-row .v { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.pop-row input[type="checkbox"] { margin: 0; accent-color: var(--accent); flex: none; }
+.pop-row.two { align-items: flex-start; justify-content: flex-start; gap: 10px; }
+.pop-row.two input { margin-top: 3px; }
+.pop-row.two small { display: block; color: var(--muted); font-size: calc(12px * var(--ts)); white-space: normal; max-width: 260px; }
+.pop-row:has(input:disabled) { opacity: .6; cursor: default; }
+.pop-sep { height: 1px; background: var(--line); margin: 4px 2px; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
 .column { background: var(--col); border-radius: 10px; width: 290px; min-width: 290px; display: flex; flex-direction: column; max-height: 100%; }
@@ -121,16 +148,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
-#panel { position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: flex; flex-direction: column; padding: 20px 28px 20px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
-#panel .crumb { font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 6px; }
-#panel .crumb a { color: var(--accent); cursor: pointer; }
-#d-title { width: 100%; font-size: calc(18px * var(--ts)); font-weight: 600; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; }
-#d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
-.panel-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 24px; }
-.panel-left { overflow-y: auto; padding-right: 6px; }
-.panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
-.panel-right > .block { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.actions { display: flex; gap: 10px; align-items: center; }
 #trust-modal, #repo-modal, #wtdel-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
 #trust-modal.open, #repo-modal.open, #wtdel-modal.open { display: flex; }
 #trust-modal .box, #repo-modal .box, #wtdel-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
@@ -159,30 +176,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #obs-modal .actions .grow, #cl-modal .actions .grow { flex: 1; }
 #obs-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 100%; }
 #obs-apply:disabled { opacity: .5; cursor: default; }
-#d-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 0; max-width: 11em; text-overflow: ellipsis; field-sizing: content; }
-#d-send, #d-delete { white-space: nowrap; flex: none; }
-.panel-right #d-agent { gap: 10px 12px; margin-top: 4px; }
-.panel-right #d-log { margin-top: 18px; gap: 26px; padding-right: 6px; }
-.panel-right #d-log li { padding: 2px 0 2px 16px; }
-.panel-right #d-log li .who { margin-bottom: 8px; }
-.panel-right #d-reply-wrap { margin-top: 14px; gap: 12px; }
-.panel-right > .block:first-child, .panel-left > .fields:first-child { margin-top: 12px; }
-.panel-right #d-log { flex: 1; min-height: 0; max-height: none; }
-.panel-right #d-reply-wrap { flex: none; }
-@media (max-width: 820px) {
-  #panel { overflow-y: auto; }
-  .panel-cols { flex: none; grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .panel-left { overflow: visible; }
-  .panel-right { border-left: 0; padding: 0; }
-  .panel-right #d-log { max-height: 260px; }
-}
-.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
-.fields label, .block > label { display: block; font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 3px; }
-.fields select, .fields input, #d-notes { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
-#d-notes { min-height: 90px; resize: vertical; }
-.fields label.check { display: flex; align-items: center; gap: 6px; margin: 22px 0 0; color: var(--fg); cursor: pointer; }
-.fields label.check input { width: auto; }
-.block { margin-top: 14px; }
 .sub-list { list-style: none; margin: 4px 0 6px; padding: 0; }
 .sub-list li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; }
 .sub-list li:hover { background: var(--card); }
@@ -190,9 +183,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .sub-list li.done .t { text-decoration: line-through; color: var(--muted); }
 .sub-list li .c { font-size: calc(11px * var(--ts)); color: var(--muted); }
 .sub-list li .n { font-size: calc(11px * var(--ts)); color: var(--muted); }
-#d-title:read-only, #d-tags:read-only, #d-notes:read-only { color: var(--muted); cursor: default; }
-#d-title:read-only:hover { border-color: transparent; background: transparent; }
-#d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
 :root { --wait: #e67e22; --ok: #3c9d6b; }
 .agent { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--accent); }
 .agent.working { background: var(--accent); color: #fff; }
@@ -213,22 +203,18 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .card.unread .title::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: .8em; vertical-align: 1px; }
 .btn.to-done { border-color: var(--ok); color: var(--ok); }
 .btn.to-done:hover { background: var(--ok); color: #fff; }
-#d-to-done { margin-right: 40px; }
 .btn.review { border-color: var(--accent); color: var(--accent); }
 .btn.review:hover { background: var(--accent); color: #fff; }
 #d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
-.panel-foot > span:last-child { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
-#d-review-wrap, #d-wt-wrap { display: flex; align-items: center; gap: 8px; }
-#d-wt-wrap .btn, #d-wt-del { white-space: nowrap; }
+#busy { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.5); display: none; justify-content: center; align-items: center; cursor: wait; }
+#busy.open { display: flex; }
+#busy .box { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 12px; padding: 16px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#busy svg { animation: spin 1.2s linear infinite; color: var(--accent); }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: calc(12px * var(--ts)); }
-#d-agent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: calc(12px * var(--ts)); color: var(--muted); }
-#d-agent code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: copy; }
-#d-log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-#d-log li { padding: 2px 0 2px 12px; line-height: 1.55; border-left: 3px solid var(--line); word-wrap: break-word; }
 #d-log li .msg { white-space: pre-wrap; }
 .md .gap { height: .6em; }
 .md .h, .md .fnd { font-weight: 700; margin: 2px 0; }
@@ -260,10 +246,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-#d-reply-wrap { display: none; margin-top: 8px; gap: 8px; flex-direction: column; }
-.reply-row { display: flex; gap: 10px; align-items: center; }
-#d-reply { flex: 1; min-height: 84px; resize: vertical; padding: 6px 8px; border: 1px solid var(--wait); border-radius: 6px; background: var(--card); }
-#d-reply:disabled, #d-reply-send:disabled { opacity: .5; cursor: default; }
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .thumbs:empty { display: none; }
 .thumb { position: relative; display: block; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
@@ -271,59 +253,103 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .thumb .x { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: calc(11px * var(--ts)); line-height: 1; padding: 3px 5px; display: none; }
 .thumb:hover .x { display: block; }
 #d-log .thumb { width: 120px; height: 80px; }
-.hint { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 4px; }
 #panel.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; }
-.x-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(18px * var(--ts)); line-height: 1; cursor: pointer; }
-.x-close:hover { background: var(--line); color: var(--text); }
-#panel #d-title { width: calc(100% - 34px); }
 #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; justify-content: center; align-items: center; padding: 40px; }
 #lightbox.open { display: flex; }
 #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 #lightbox .x-close { position: fixed; top: 14px; right: 18px; color: #fff; background: rgba(0,0,0,.4); }
 #lightbox .x-close:hover { background: rgba(255,255,255,.2); color: #fff; }
-.panel-foot { display: flex; justify-content: space-between; margin-top: 18px; color: var(--muted); font-size: calc(12px * var(--ts)); align-items: center; }
 /* sent task: the left pane swaps the edit form for an overview (#panel.sent) */
-#d-ov, #d-meta { display: none; }
-#panel.sent #d-ov { display: block; }
-#panel.sent #d-meta { display: flex; }
-#panel.sent #d-title { color: var(--text); font-size: calc(22px * var(--ts)); }
-#panel.sent .fields, #panel.sent #d-notesblock, #panel.sent #d-subblock { display: none; }
-#d-meta { align-items: center; gap: 10px; margin: 2px 0 0 7px; color: var(--muted); font-size: calc(13px * var(--ts)); }
-#d-meta .sep { width: 1px; height: 1em; background: var(--line); }
-#d-meta span, .chip span, .tab { display: inline-flex; align-items: center; gap: 6px; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 10px 0 14px; }
-.tab { border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--muted); padding: 8px 14px; }
-.tab:hover { color: var(--text); }
-.tab.on { color: var(--accent); border-bottom-color: var(--accent); }
 .badge { background: var(--col); color: var(--text); border-radius: 6px; padding: 0 7px; font-size: calc(11px * var(--ts)); }
 .badge:empty { display: none; }
-#d-ov[data-tab="images"] #d-tab-overview, #d-ov:not([data-tab="images"]) #d-allimgs { display: none; }
-.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-.img-grid .thumb { width: auto; height: 96px; }
-.img-grid:empty::before { content: "No images yet."; color: var(--muted); }
-.ov-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.ov-card, .ov-box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-.ov-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; min-width: 0; }
-.ov-card > div { min-width: 0; }
 .ov-ico { flex: none; display: flex; color: var(--muted); margin-top: 1px; }
 .ov-ico.st { color: var(--accent); }
 .ov-ico.fl { color: var(--wait); }
-.lbl { display: block; font-size: calc(12px * var(--ts)); color: var(--muted); }
-.sel { position: relative; display: inline-flex; align-items: center; max-width: 100%; }
-.sel select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; font-weight: 600; padding: 0 20px 0 0; max-width: 100%; text-overflow: ellipsis; cursor: pointer; }
-.sel select:focus-visible { outline: 1px solid var(--accent); border-radius: 4px; }
-.sel > [data-ico] { position: absolute; right: 0; display: flex; pointer-events: none; color: var(--muted); }
 [data-ico] { display: inline-flex; }
-.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.chips[hidden], .chip[hidden] { display: none; }
-.chip { display: inline-flex; border: 1px solid var(--line); background: var(--card); border-radius: 999px; font-size: calc(13px * var(--ts)); overflow: hidden; }
-.chip > span { padding: 5px 12px; }
-.chip > .k { color: var(--muted); border-right: 1px solid var(--line); }
-.chip .dirty { color: var(--muted); font-weight: 400; }
-.ov-box { margin-top: 12px; padding: 12px 14px; }
-.crit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-weight: 600; }
-.crit-head span { font-weight: 400; color: var(--muted); font-size: calc(12px * var(--ts)); }
-.crit-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 10px 0 6px; }
+.agent.stopped { background: var(--line); color: var(--muted); }
+
+/* ---------------------------------------------------------------- task panel: sidebar + main */
+#panel { position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: grid; grid-template-columns: clamp(320px, calc(300px * var(--ts) + 60px), 38%) minmax(0, 1fr); overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.x-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(18px * var(--ts)); line-height: 1; cursor: pointer; }
+.x-close:hover { background: var(--line); color: var(--text); }
+.hint { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 4px; }
+.hint.right { text-align: right; }
+.iconbtn { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: inline-grid; place-items: center; flex: none; }
+.iconbtn:hover, .iconbtn[aria-expanded="true"] { background: var(--col); color: var(--text); }
+.iconbtn:focus-visible, .tab:focus-visible, .btn:focus-visible, .back:focus-visible, .fold summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* sidebar */
+.side { overflow-y: auto; overflow-x: hidden; min-width: 0; padding: 18px 20px 20px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 0; }
+.side > * { flex-shrink: 0; }
+.back { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; border: 0; background: transparent; color: var(--muted); padding: 4px 6px 4px 0; border-radius: 6px; margin-bottom: 10px; }
+.back:hover { color: var(--text); }
+.side .crumb { font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 4px; overflow-wrap: anywhere; }
+.side .crumb a { color: var(--accent); cursor: pointer; }
+#d-title { display: block; width: calc(100% + 6px); font-size: calc(22px * var(--ts)); line-height: 1.25; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin-left: -6px; border-radius: 6px; field-sizing: content; resize: none; overflow: hidden; overflow-wrap: anywhere; }
+#d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
+#d-title:read-only { cursor: default; }
+#d-title:read-only:hover, #d-title:read-only:focus { border-color: transparent; background: transparent; }
+#d-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: calc(13px * var(--ts)); margin: 2px 0 14px; }
+.rows { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 10px 0; min-width: 0; }
+.row + .row { border-top: 1px solid var(--line); }
+.row .lbl { flex: 1; }
+.ov-ico { flex: none; display: flex; color: var(--muted); }
+.ov-ico.st { color: var(--accent); }
+.ov-ico.fl { color: var(--wait); }
+.sel { position: relative; display: inline-flex; align-items: center; max-width: 60%; border-radius: 8px; }
+.sel select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; font-weight: 600; padding: 5px 26px 5px 10px; max-width: 100%; text-overflow: ellipsis; cursor: pointer; border-radius: 8px; }
+.sel.on select { background: var(--accent-soft); color: var(--accent); }
+.sel select:focus-visible { outline: 2px solid var(--accent); }
+.sel > [data-ico] { position: absolute; right: 8px; display: flex; pointer-events: none; color: var(--muted); }
+.sel.on > [data-ico] { color: var(--accent); }
+[data-ico] { display: inline-flex; }
+.fields { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; }
+.fields label, .block > label { display: block; font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 3px; }
+.fields select, .fields input, #d-notes { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.fields label.check { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); cursor: pointer; }
+.fields label.check input { width: auto; accent-color: var(--accent); }
+#panel.sent .fields { display: none; }
+#d-tags:read-only { color: var(--muted); }
+/* next-action card */
+.next { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 14px 14px; margin-bottom: 16px; }
+.nx-k { display: flex; align-items: center; gap: 6px; font-size: calc(11px * var(--ts)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.nx-k [data-ico] { color: var(--accent); }
+#d-next-title { display: block; font-size: calc(16px * var(--ts)); margin-top: 4px; }
+.nx-text { color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+.nx-text:empty { display: none; }
+.nx-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.nx-actions:empty { display: none; }
+.nx-actions .btn { width: 100%; padding: 8px 12px; text-align: center; display: inline-flex; justify-content: center; align-items: center; gap: 8px; white-space: normal; }
+.nx-actions .btn.primary { font-weight: 600; }
+.nx-actions .btn.sec { border-color: var(--accent); color: var(--accent); background: transparent; }
+.nx-actions .btn.sec:hover { background: var(--accent-soft); }
+.nx-actions .btn.ghost { border-color: transparent; color: var(--muted); background: transparent; }
+.nx-actions .btn.ghost:hover { color: var(--text); border-color: var(--line); }
+.btn:disabled { opacity: .55; cursor: default; }
+.nx-send { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
+#panel:not(.sent) .nx-send { display: flex; }
+#panel:not(.sent) .next { border-left-color: var(--line); }
+#d-model { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); width: 100%; min-width: 0; text-overflow: ellipsis; }
+#d-send { width: 100%; padding: 8px 12px; font-weight: 600; }
+/* collapsible sections */
+.fold { border-top: 1px solid var(--line); }
+.fold:last-of-type { border-bottom: 1px solid var(--line); }
+.fold[hidden] { display: none; }
+.fold summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 11px 0; cursor: pointer; color: var(--text); user-select: none; border-radius: 6px; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary [data-ico] { color: var(--muted); }
+.fold summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; flex: none; margin-right: 4px; }
+.fold[open] summary::after { transform: rotate(225deg); margin-top: 4px; }
+.fold summary .badge { margin-left: -2px; }
+.fold > :not(summary) { margin: 0 0 12px; }
+.fold dl { display: flex; flex-direction: column; gap: 2px; font-size: calc(12.5px * var(--ts)); }
+.fold dt { color: var(--muted); white-space: nowrap; margin-top: 8px; }
+.fold dt:first-child { margin-top: 0; }
+.fold dd { line-height: 1.7; }
+.fold dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.fold dd code, #d-tech code { font: calc(12px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; overflow-wrap: anywhere; cursor: copy; }
+.fold dd .dirty { color: var(--wait); }
+.crit-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 2px 0 8px; }
 .crit-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 #d-crit .sub-list { margin: 0; }
 #d-crit .sub-list li { padding: 5px 0; }
@@ -331,27 +357,154 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-crit .sub-list li .t:hover { color: var(--accent); }
 #d-crit .sub-list li .c { display: none; }
 #d-crit .sub-list input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
-.ov-box.next { display: flex; gap: 10px; align-items: flex-start; }
-.pr-head { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; text-align: left; }
-.pr-head b { flex: 1; font-weight: 400; }
-.pr-head .chev { display: flex; color: var(--muted); transition: transform .15s; }
-#d-prompt.open .chev { transform: rotate(180deg); }
-.pr-body { display: none; margin-top: 10px; }
-#d-prompt.open .pr-body { display: block; }
-#d-prompt pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; font-size: calc(12px * var(--ts)); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.pr-body { }
+#d-prompt pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; font-size: calc(12px * var(--ts)); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 #d-prompt-note:empty { display: none; }
 #d-prompt-note { margin: 0 0 6px; }
-#panel.sent .actions { margin-top: 16px; }
-.sa-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .sa-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
 .sa-list .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-list .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: calc(12px * var(--ts)); }
-.sk-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.sa-list .act { grid-column: 1 / -1; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .sk-list li { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: calc(12px * var(--ts)); overflow-wrap: anywhere; }
 .sk-list li b { color: var(--muted); font-weight: 400; margin-left: 4px; }
-.sa-list .act { grid-column: 1 / -1; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent.stopped { background: var(--line); color: var(--muted); }
-@media (max-width: 480px) { .ov-cards { grid-template-columns: minmax(0, 1fr); } }
+.dates { margin-top: auto; padding-top: 18px; color: var(--muted); font-size: calc(12px * var(--ts)); }
+/* main */
+.main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.mainbar { display: flex; align-items: center; gap: 6px; padding: 10px 14px 0 24px; border-bottom: 1px solid var(--line); position: relative; }
+.mainbar .grow { flex: 1; }
+.tabs { display: flex; gap: 2px; margin-bottom: -1px; overflow-x: auto; }
+.tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 10px 14px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: calc(14px * var(--ts)); }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.badge { background: var(--col); color: var(--text); border-radius: 6px; padding: 0 7px; font-size: calc(11px * var(--ts)); }
+.badge:empty { display: none; }
+.badge.warn { background: var(--wait); color: #fff; }
+#panel:not(.sent) .tabs { visibility: hidden; }
+.menu { position: absolute; z-index: 5; right: 50px; top: 46px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 6px; min-width: 240px; display: flex; flex-direction: column; }
+.menu[hidden] { display: none; }
+.menu button { border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; display: flex; align-items: center; gap: 10px; color: var(--text); width: 100%; white-space: nowrap; }
+.menu button:hover, .menu button:focus-visible { background: var(--col); outline: none; }
+.menu button.danger { color: var(--danger); }
+.menu button.danger.armed { background: var(--danger); color: #fff; }
+.menu button[hidden] { display: none; }
+.menu code { font: calc(12px * var(--ts)) ui-monospace, Menlo, monospace; }
+#d-error { display: none; margin: 12px 24px 0; }
+.body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px 12px; }
+.tabpane { display: none; }
+.tabpane.on { display: block; }
+#panel:not(.sent) .tabpane { display: none; }
+.draft { display: none; }
+#panel:not(.sent) .draft { display: block; }
+.block { margin-top: 14px; }
+.draft .block:first-child { margin-top: 0; }
+#d-notes { min-height: 220px; resize: vertical; font-size: calc(14px * var(--ts)); line-height: 1.5; }
+#d-newsub { width: 100%; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; }
+/* summary */
+.sum-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+.pillset { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: calc(13px * var(--ts)); color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; color: var(--text); }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.working .dot { background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.pill.needs_you .dot { background: var(--wait); animation: pulse 1.6s ease-in-out infinite; }
+.pill.finished .dot { background: var(--ok); }
+.pill.gone .dot { background: var(--danger); }
+.pill.working, .pill.needs_you, .pill.finished, .pill.gone { border-color: transparent; background: transparent; padding-left: 0; }
+.pill .ttl { margin-left: 2px; }
+.sum-label { font-size: calc(11px * var(--ts)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0 0 6px; }
+.sum-result { padding: 0 0 4px; }
+.sum-result .md { white-space: pre-wrap; line-height: 1.55; }
+.sum-result .md > div:first-child { font-size: calc(20px * var(--ts)); font-weight: 700; line-height: 1.3; margin-bottom: 6px; }
+.sum-result .md .h1:first-child, .sum-result .md .fnd:first-child { font-size: calc(22px * var(--ts)); }
+.sum-result .when { color: var(--muted); font-size: calc(12px * var(--ts)); margin-top: 8px; }
+.sum-empty { color: var(--muted); }
+#d-tab-summary h3 { font-size: calc(16px * var(--ts)); margin: 22px 0 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+#d-tab-summary h3[hidden] { display: none; }
+.sum-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sum-list li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.sum-list li .ok { color: var(--accent); flex: none; font-weight: 700; }
+.sum-list code { font: calc(12.5px * var(--ts)) ui-monospace, Menlo, monospace; background: var(--col); border-radius: 4px; padding: 0 5px; }
+.sum-list .sub { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sum-list .n { color: var(--muted); font-size: calc(12px * var(--ts)); white-space: nowrap; }
+.repo-chips { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; margin-bottom: 10px; }
+.repo-chips > span { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-right: 1px solid var(--line); }
+.repo-chips > span:last-child { border-right: 0; }
+.repo-chips > span [data-ico], .repo-chips svg { color: var(--muted); }
+.repo-chips .warn { color: var(--wait); }
+.repo-note { color: var(--muted); overflow-wrap: anywhere; }
+#d-ch-note { overflow-wrap: anywhere; min-width: 0; }
+.repo-note b { color: var(--text); }
+.more-link { display: inline-block; margin-top: 18px; color: var(--accent); cursor: pointer; font-weight: 500; }
+.more-link:hover { text-decoration: underline; }
+/* changes */
+.ch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); }
+.ch-bar .grow { flex: 1; }
+#d-review-wrap { display: flex; align-items: center; gap: 8px; }
+#d-review-wrap[hidden] { display: none; }
+#d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.ch-group { margin-bottom: 18px; }
+.ch-group h4 { margin: 0 0 6px; font-size: calc(13px * var(--ts)); color: var(--muted); font-weight: 600; }
+.ch-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
+.ch-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; min-width: 0; }
+.ch-list li:first-child { border-top: 0; }
+.ch-list li:hover, .ch-list li.on { background: var(--col); }
+.ch-list .st { font: calc(11px * var(--ts)) ui-monospace, Menlo, monospace; font-weight: 700; width: 2.2em; flex: none; text-align: center; border-radius: 4px; padding: 1px 0; background: var(--col); color: var(--muted); }
+.ch-list .st.M { color: var(--minor); background: var(--minor-bg); }
+.ch-list .st.A, .ch-list .st.U { color: var(--ok); background: var(--ok-bg); }
+.ch-list .st.D { color: var(--crit); background: var(--crit-bg); }
+.ch-list .path, .ch-list .subj { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ch-list .sha { font: calc(12px * var(--ts)) ui-monospace, Menlo, monospace; color: var(--accent); flex: none; }
+.ch-list .pm { font: calc(12px * var(--ts)) ui-monospace, Menlo, monospace; white-space: nowrap; }
+.ch-list .pm .a { color: var(--ok); }
+.ch-list .pm .d { color: var(--crit); }
+.ch-empty { color: var(--muted); padding: 6px 0; }
+.ch-empty.warn { color: var(--wait); }
+.diff { margin: 0; font: calc(12px * var(--ts)) ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.45; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow: auto; max-height: 60vh; white-space: pre; }
+.diff[hidden] { display: none; }
+.diff .a { color: var(--ok); background: var(--ok-bg); display: block; }
+.diff .d { color: var(--crit); background: var(--crit-bg); display: block; }
+.diff .hh { color: var(--accent); display: block; }
+.diff .f { color: var(--muted); display: block; }
+/* conversation */
+#d-log { list-style: none; margin: 0; padding: 0 6px 0 0; display: flex; flex-direction: column; gap: 22px; }
+#d-log li { padding: 2px 0 2px 14px; line-height: 1.55; border-left: 3px solid var(--line); word-wrap: break-word; }
+#d-log li .msg { white-space: pre-wrap; }
+#d-log li .who { margin-bottom: 6px; }
+.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.img-grid .thumb { width: auto; height: 96px; }
+.img-grid:empty::before { content: "No images yet."; color: var(--muted); }
+/* composer */
+.composer { display: none; flex: none; flex-direction: column; gap: 8px; padding: 10px 24px 12px; border-top: 1px solid var(--line); }
+.composer.on { display: flex; }
+.reply-row { display: flex; gap: 8px; align-items: flex-end; }
+#d-reply { flex: 1; min-height: 64px; max-height: 40vh; resize: vertical; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); field-sizing: content; }
+#d-reply:focus { border-color: var(--accent); outline: none; }
+#d-reply:disabled, #d-reply-send:disabled { opacity: .5; cursor: default; }
+.composer .hint { margin: 0; }
+.cache-note { display: flex; align-items: flex-start; gap: 8px; padding: 7px 12px; border: 1px solid var(--wait); border-radius: 8px; color: var(--wait); font-size: calc(12.5px * var(--ts)); background: color-mix(in srgb, var(--wait) 10%, transparent); }
+.cache-note[hidden] { display: none; }
+.cache-note.warm { border-color: var(--line); color: var(--muted); background: transparent; }
+.cache-note details { flex: 1; min-width: 0; }
+.cache-note summary { cursor: pointer; list-style: none; }
+.cache-note summary::-webkit-details-marker { display: none; }
+.cache-note summary::after { content: " ▸"; opacity: .7; }
+.cache-note details[open] summary::after { content: " ▾"; }
+.cache-note .tech { margin-top: 4px; color: var(--muted); }
+/* narrow screens: the sidebar stacks above the main panel */
+@media (max-width: 900px) {
+  #overlay { padding: 0; }
+  #panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); border-radius: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; flex: none; padding: 14px 16px; }
+  .dates { padding-top: 10px; }
+  .main { flex: none; min-height: 70vh; }
+  .body { overflow: visible; padding: 14px 16px; }
+  .mainbar { padding-left: 16px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+  .composer { padding: 10px 16px; }
+  .menu { right: 44px; }
+  .sel { max-width: 70%; }
+  .tab { padding: 10px 9px 12px; }
+}
 </style>
 </head>
 <body>
@@ -360,89 +513,118 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <span id="project-wrap"><select id="project" title="Project"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
-  <span class="toggles"><label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
-  <label class="toggle" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"> Use worktrees</label></span>
   <span class="grow"></span>
+  <select id="app-copy" hidden></select>
   <button class="btn" id="update" hidden></button>
-  <button class="btn" id="theme"></button>
-  <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
-  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
-  <button class="btn" id="cl-btn" title="What changed in the task board app">Changelog</button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
+  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
+  <button class="btn hbtn" id="view-btn" data-pop="view-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-menu" title="View options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="t">View</span></button>
+  <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
 </header>
+<div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
+  <button class="pop-row" id="theme"></button>
+  <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
+  <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
+</div>
+<div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
+  <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
+  <label class="pop-row two" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"><span>Use worktrees<small>Each task gets its own copy of the project, merged back when you say so.</small></span></label>
+  <div class="pop-sep"></div>
+  <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
+</div>
 <div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
 
 <div id="overlay">
   <div id="panel">
-    <button class="x-close" id="d-x" title="Close">✕</button>
-    <div class="panel-cols">
-    <div class="panel-left">
-    <div class="crumb" id="d-crumb"></div>
-    <input id="d-title" placeholder="Task title">
-    <div id="d-meta"></div>
-    <div class="fields">
-      <div><label for="d-col">Column</label><select id="d-col"></select></div>
-      <div><label for="d-prio">Priority</label>
-        <select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select></div>
-      <div style="grid-column: 1 / -1"><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
-      <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
-      <div><label for="d-submodel">Subagent model</label>
-        <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
-      <div style="grid-column: 1 / -1"><label class="check" style="margin-top: 0" title="Claude only looks into it and reports back: no file changes, no commits"><input type="checkbox" id="d-answeronly"> Answer only (don't change anything)</label></div>
-    </div>
-    <div id="d-ov">
-      <div class="tabs"><button class="tab" data-tab="overview">Overview</button><button class="tab" data-tab="images">All images <span data-ico="image"></span><span class="badge" id="d-imgcount"></span></button></div>
-      <div id="d-tab-overview">
-        <div class="ov-cards">
-          <div class="ov-card"><span class="ov-ico st" data-ico="status" data-s="18"></span><div><span class="lbl">Status</span><span class="sel" id="d-col-slot"><span data-ico="chev" data-s="14"></span></span></div></div>
-          <div class="ov-card"><span class="ov-ico fl" data-ico="flag" data-s="18"></span><div><span class="lbl">Priority</span><span class="sel" id="d-prio-slot"><span data-ico="chev" data-s="14"></span></span></div></div>
-        </div>
-        <div class="chips" id="d-chips">
-          <span class="chip" id="d-git"><span class="k"><span data-ico="branch"></span>Git</span><span class="v"></span></span>
-          <span class="chip" id="d-rel"><span class="k"><span data-ico="tag"></span>Release</span><span class="v"></span></span>
-          <span class="chip" id="d-wt" hidden><span class="k"><span data-ico="branch"></span>Worktree</span><span class="v"></span></span>
-        </div>
-        <div class="ov-box" id="d-crit"><div class="crit-head">Completion criteria<span id="d-crit-n"></span></div><div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></div>
-        <div class="ov-box next"><span class="ov-ico st" data-ico="bolt" data-s="18"></span><div><span class="lbl">Next action</span><div id="d-next"></div></div></div>
-        <div class="ov-box" id="d-subagents"><div class="crit-head">Subagents<span id="d-sa-n"></span></div><ul class="sa-list" id="d-sa-list"></ul></div>
-        <div class="ov-box" id="d-skills"><div class="crit-head">Skills used<span id="d-sk-n"></span></div><ul class="sk-list" id="d-sk-list"></ul></div>
-        <div class="ov-box" id="d-prompt"><button class="pr-head"><span class="ov-ico" data-ico="doc" data-s="18"></span><b>Original prompt</b><span class="chev" data-ico="chev"></span></button>
-          <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></div>
+    <aside class="side" id="d-side">
+      <button class="back" id="d-back"><span data-ico="back" data-s="16"></span>Back to board</button>
+      <div class="crumb" id="d-crumb"></div>
+      <textarea id="d-title" rows="1" placeholder="Task title"></textarea>
+      <div id="d-meta"></div>
+      <div class="rows">
+        <div class="row"><span class="ov-ico st" data-ico="status" data-s="18"></span><span class="lbl">Status</span><span class="sel on" id="d-col-slot"><select id="d-col"></select><span data-ico="chev" data-s="14"></span></span></div>
+        <div class="row"><span class="ov-ico fl" data-ico="flag" data-s="18"></span><span class="lbl">Priority</span><span class="sel" id="d-prio-slot"><select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select><span data-ico="chev" data-s="14"></span></span></div>
       </div>
-      <div class="img-grid" id="d-allimgs"></div>
-    </div>
-    <div class="block" id="d-notesblock"><label for="d-notes">Notes</label><textarea id="d-notes"></textarea>
-      <div class="thumbs" id="d-images"></div>
-      <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
-    <div class="block" id="d-subblock">
-      <label>Subtasks <span id="d-subcount"></span></label>
-      <ul class="sub-list" id="d-subs"></ul>
-      <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
-    </div>
-    <div class="block actions"><button class="btn primary" id="d-send"></button><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option></select><button class="btn danger" id="d-delete">Delete</button></div>
-    </div>
-    <div class="panel-right" id="d-right">
-    <div class="block"><label>Claude</label><div id="d-agent"></div>
-      <ul id="d-log"></ul>
-      <div id="d-reply-wrap"><div class="reply-row"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste images to attach"></textarea><button class="btn primary" id="d-reply-send">Send reply</button></div><div class="thumbs" id="d-reply-images"></div></div>
-    </div>
-    </div>
-    </div>
-    <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
-    <div class="panel-foot">
-      <span id="d-dates"></span>
-      <span><span id="d-wt-wrap"><button class="btn review" id="d-wt-run" title="Claude starts the app from this task's worktree so you can try the changes">Run app from worktree</button>
-      <button class="btn review" id="d-wt-merge" title="Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way">Merge worktree to main</button></span>
-      <button class="btn danger" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first">Delete worktree</button>
-      <span id="d-review-wrap"><button class="btn review" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button>
-      <select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></span>
-      <button class="btn to-done" id="d-to-done" title="The work is finished — move this task to the done column">✓ Move to done</button>
-      <button class="btn primary" id="d-close">Close</button></span>
-    </div>
+      <div class="fields">
+        <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
+        <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
+        <div><label for="d-submodel">Subagent model</label>
+          <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
+        <div><label class="check" title="Claude only looks into it and reports back: no file changes, no commits"><input type="checkbox" id="d-answeronly"> Answer only (don't change anything)</label></div>
+      </div>
+      <div class="next" id="d-next">
+        <div class="nx-k"><span data-ico="bolt" data-s="14"></span>Next action</div>
+        <b id="d-next-title"></b>
+        <div class="nx-text" id="d-next-text"></div>
+        <div class="nx-actions" id="d-next-actions"></div>
+        <div class="nx-send" id="d-send-row"><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option></select><button class="btn primary" id="d-send">Send to Claude</button></div>
+      </div>
+      <details class="fold" id="d-crit"><summary><span data-ico="check" data-s="16"></span>Subtasks<span class="badge" id="d-crit-n"></span></summary>
+        <div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></details>
+      <details class="fold" id="d-tech"><summary><span data-ico="code" data-s="16"></span>Technical details</summary><dl id="d-tech-list"></dl></details>
+      <details class="fold" id="d-subagents"><summary><span data-ico="users" data-s="16"></span>Subagents<span class="badge" id="d-sa-n"></span></summary><ul class="sa-list" id="d-sa-list"></ul></details>
+      <details class="fold" id="d-skills"><summary><span data-ico="cap" data-s="16"></span>Skills used<span class="badge" id="d-sk-n"></span></summary><ul class="sk-list" id="d-sk-list"></ul></details>
+      <details class="fold" id="d-prompt"><summary><span data-ico="doc" data-s="16"></span>Original prompt</summary>
+        <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></details>
+      <div class="dates" id="d-dates"></div>
+    </aside>
+    <section class="main" id="d-main">
+      <div class="mainbar">
+        <div class="tabs" id="d-tabs" role="tablist">
+          <button class="tab" role="tab" data-tab="summary">Summary</button>
+          <button class="tab" role="tab" data-tab="changes">Changes <span class="badge" id="d-chcount"></span></button>
+          <button class="tab" role="tab" data-tab="conversation">Conversation</button>
+          <button class="tab" role="tab" data-tab="images">Images <span class="badge" id="d-imgcount"></span></button>
+        </div>
+        <span class="grow"></span>
+        <button class="iconbtn" id="d-more" title="More actions" aria-haspopup="menu" aria-expanded="false"><span data-ico="more" data-s="18"></span></button>
+        <button class="iconbtn" id="d-x" title="Close (Esc)"><span data-ico="x" data-s="18"></span></button>
+      </div>
+      <div class="menu" id="d-menu" role="menu" hidden>
+        <button role="menuitem" id="d-copy-attach"><span data-ico="copy" data-s="14"></span>Copy <code>claude attach</code> command</button>
+        <button role="menuitem" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first"><span data-ico="trash" data-s="14"></span>Delete worktree…</button>
+        <button role="menuitem" class="danger" id="d-delete"><span data-ico="trash" data-s="14"></span>Delete task</button>
+      </div>
+      <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
+      <div class="body" id="d-body">
+        <div class="draft" id="d-draft">
+          <div class="block" id="d-notesblock"><label for="d-notes">Notes for Claude</label><textarea id="d-notes" placeholder="What should Claude do? Paste or drop images to attach them."></textarea>
+            <div class="thumbs" id="d-images"></div>
+            <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
+          <div class="block" id="d-subblock">
+            <label>Subtasks <span id="d-subcount"></span></label>
+            <ul class="sub-list" id="d-subs"></ul>
+            <input id="d-newsub" placeholder="+ Add a subtask and press Enter">
+          </div>
+        </div>
+        <div class="tabpane" id="d-tab-summary" role="tabpanel">
+          <div class="sum-head"><span class="pillset" id="d-agent"></span></div>
+          <div id="d-sum-result"></div>
+          <h3 id="d-sum-changes-h">Commits and files</h3><div id="d-sum-changes"></div>
+          <h3 id="d-sum-verify-h">Verification</h3><div id="d-sum-verify"></div>
+          <h3>Repository status</h3><div id="d-sum-repo"></div>
+          <a class="more-link" id="d-sum-conv">View full conversation →</a>
+        </div>
+        <div class="tabpane" id="d-tab-changes" role="tabpanel">
+          <div class="ch-bar"><span id="d-ch-note"></span><span class="grow"></span><span id="d-review-wrap"><select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button class="btn" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button></span></div>
+          <div id="d-ch-list"></div>
+          <pre class="diff" id="d-diff" hidden></pre>
+        </div>
+        <div class="tabpane" id="d-tab-conversation" role="tabpanel"><ul id="d-log"></ul></div>
+        <div class="tabpane" id="d-tab-images" role="tabpanel"><div class="img-grid" id="d-allimgs"></div></div>
+      </div>
+      <div class="composer" id="d-reply-wrap">
+        <div class="cache-note" id="d-cache-note" hidden></div>
+        <div class="reply-row"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste images to attach"></textarea><button class="iconbtn" id="d-reply-attach" title="Attach an image"><span data-ico="clip" data-s="18"></span></button><button class="btn primary" id="d-reply-send">Send reply</button></div>
+        <div class="thumbs" id="d-reply-images"></div>
+        <div class="hint right">⌘ Enter to send</div>
+      </div>
+    </section>
   </div>
 </div>
+<input type="file" id="d-file" accept="image/*" multiple hidden>
 <div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
 <div id="trust-modal" role="dialog" aria-modal="true" aria-labelledby="trust-title"><div class="box">
   <h3 id="trust-title">Trust this folder?</h3>
@@ -460,6 +642,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <ul id="wtdel-list"></ul>
   <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
 </div></div>
+<div id="busy" role="alertdialog" aria-modal="true" aria-live="assertive"><div class="box"><span id="busy-icon"></span><span id="busy-text"></span></div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
   <button class="x-close" id="obs-x" title="Close">✕</button>
   <h3 id="obs-title">Skill observations</h3>
@@ -916,7 +1099,7 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
+    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1009,9 +1192,10 @@ function openDetail(id) {
   if (markSeen([id])) render();
   $("#overlay").classList.add("open");
   renderDetail();
-  $("#d-title").focus();
+  const t = task(id);
+  if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
 function settleDraft() {
@@ -1068,12 +1252,14 @@ function renderDetail() {
   }
   $("#d-newsub").value = "";
   $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
+  $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (t.agent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
   renderAgent(t);
-  $("#d-dates").textContent = `Created ${fmt(t.created)} · Updated ${fmt(t.updated)}`;
+  $("#d-dates").textContent = `Updated ${fmt(t.updated)} · Created ${fmt(t.created)}`;
   disarmDelete();
 }
 
-$("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value; touch(t); });
+$("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value.replace(/\n/g, " "); touch(t); });
+$("#d-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });   // one-line title in a wrapping box
 $("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
@@ -1091,8 +1277,22 @@ $("#d-newsub").addEventListener("keydown", (e) => {
   withDelegateChoice(addTask(e.target.value, isDone(parent) ? firstOpenCol() : parent.column, parent.id)); save();
   renderDetail(); $("#d-newsub").focus();
 });
-$("#d-close").onclick = closeDetail;
 $("#d-x").onclick = closeDetail;
+$("#d-back").onclick = closeDetail;
+// Overflow menu (⋯): rare and destructive actions. Click outside or Escape closes it; Escape then closes the panel.
+const menuOpen = () => !$("#d-menu").hidden;
+function toggleMenu(open = !menuOpen()) {
+  $("#d-menu").hidden = !open;
+  $("#d-more").setAttribute("aria-expanded", open);
+  if (open) { const f = $("#d-menu").querySelector("button:not([hidden])"); if (f) f.focus(); } else disarmDelete();
+}
+$("#d-more").onclick = () => toggleMenu();
+document.addEventListener("mousedown", (e) => { if (menuOpen() && !e.target.closest("#d-menu, #d-more")) toggleMenu(false); });
+$("#d-copy-attach").onclick = () => {
+  const t = task(openId), ag = t && agents[t.id], id = t && t.agent && ((ag && ag.id) || t.agent.id);
+  if (id) { navigator.clipboard.writeText("claude attach " + id); setStatus("Copied claude attach " + id); }
+  toggleMenu(false);
+};
 
 // Image thumbs open full size in a lightbox over the board, not a new tab.
 function openLightbox(src) { $("#lightbox img").src = src; $("#lightbox").classList.add("open"); }
@@ -1104,33 +1304,35 @@ document.addEventListener("click", (e) => {
   e.preventDefault(); openLightbox(a.href);
 });
 $("#lightbox").addEventListener("click", (e) => { if (e.target.tagName !== "IMG") closeLightbox(); });
-$("#d-to-done").onclick = () => { moveToDone(openId); closeDetail(); };
 $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeDetail(); });
 
 // Two-step delete instead of window.confirm (a modal dialog blocks browser automation).
 let deleteArmed = false;
-function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.textContent = "Delete"; }
+function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.innerHTML = icon("trash", 14) + "Delete task"; }
 $("#d-delete").onclick = () => {
   const t = task(openId);
   if (!deleteArmed) {
     const n = descendants(t.id).length;
     deleteArmed = true;
     $("#d-delete").classList.add("armed");
-    $("#d-delete").textContent = n ? `Delete with ${n} subtask${n > 1 ? "s" : ""}?` : "Really delete?";
+    $("#d-delete").textContent = n ? `Delete with ${n} subtask${n > 1 ? "s" : ""}? Click again` : "Really delete? Click again";
     return;
   }
+  toggleMenu(false);
   const parent = t.parent;
   deleteTask(t.id);
   if (parent && task(parent)) { openId = parent; renderDetail(); } else closeDetail();
 };
 
 document.addEventListener("keydown", (e) => {
+  if (busyOn()) { e.preventDefault(); e.stopPropagation(); return; }
   if (e.key === "Escape" && trustOpen()) closeTrust(true);
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
+  else if (e.key === "Escape" && openId && menuOpen()) { toggleMenu(false); $("#d-more").focus(); }
   else if (e.key === "Escape" && openId) closeDetail();
   else if (e.key === "/" && !openId && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") { e.preventDefault(); $("#search").focus(); }
 });
@@ -1187,6 +1389,8 @@ function tickCache() {
       ? (left > 0 ? `cache warm · ${dur(left)} left · ${tok}` : `cache expired ${dur(-left)} ago · reply re-reads ${tok} at full cost`)
       : (left > 0 ? `cache ${dur(left)}` : "cache cold");
   }
+  const o = openId && task(openId);
+  if (o && o.agent && agents[o.id]) renderCacheNote(agents[o.id]);
 }
 setInterval(tickCache, 15000);
 const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
@@ -1211,26 +1415,23 @@ function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 function renderAgent(t) {
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const ag = t.agent && agents[t.id];
-  // Send is one-shot: it sits in the left pane until the task has a session, then the right pane takes over.
+  // Send is one-shot: it lives in the next-action card until the task has a session.
   const send = $("#d-send");
-  send.textContent = "Send to Claude";
-  send.style.display = t.agent ? "none" : "";
   send.disabled = !useServer;
   send.title = useServer ? "Start a background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
   const model = $("#d-model");
-  model.style.display = send.style.display;
   model.disabled = !useServer;
   try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
   model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} };
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];
-  if (pend.length) send.style.display = model.style.display = "none";
-  $("#d-right").style.display = t.agent || pend.length ? "" : "none";
-  $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${t.agent.model ? `<span>${esc(t.agent.model)}</span>` : ""}${cacheChip(ag, true)}
-      <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
-  const code = $("#d-agent code");
-  if (code) code.onclick = () => { navigator.clipboard.writeText(code.textContent); setStatus("Copied " + code.textContent); };
+  $("#d-send-row").style.display = t.agent || pend.length ? "none" : "";
+  // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
+  const mdl = (t.agent && t.agent.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
+  $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>Claude${mdl ? ` · ${esc(mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
+      <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
+  document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
   const log = (ag && ag.log) || [];
   // A sent message stays on screen as pending until the poll brings its logged copy.
@@ -1239,43 +1440,62 @@ function renderAgent(t) {
   const start = Math.max(0, log.length - 30), nLog = log.length - start;
   const shown = log.slice(start).concat(pending[t.id] || []);
   // Polls re-render this list: only follow the end when opening a card, after a send, or already at the bottom, so reading older text is not yanked away.
-  const dl = $("#d-log"), keepTop = dl.scrollTop;
-  const follow = logFollow || dl.dataset.task !== t.id || dl.scrollHeight - dl.scrollTop - dl.clientHeight < 40;
+  const dl = $("#d-log"), sc = $("#d-body"), keepTop = sc.scrollTop;
+  const follow = logFollow || dl.dataset.task !== t.id || sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
   logFollow = false;
   dl.dataset.task = t.id;
   // Not following: pin the first entry in view (by log index) to its spot, since the oldest entries drop off the top once the log passes 30.
-  const top0 = dl.getBoundingClientRect().top;
+  const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
-  $("#d-to-done").style.display = canFinish(t) ? "" : "none";
-  $("#d-review-wrap").style.display = canReview(t) ? "" : "none";
-  $("#d-wt-wrap").style.display = canWorktree(t) ? "" : "none";
-  $("#d-wt-del").style.display = canDeleteWorktree(t) ? "" : "none";
+  $("#d-review-wrap").hidden = !canReview(t);
+  $("#d-copy-attach").hidden = !t.agent;
+  $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
   if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
-  $("#d-reply-wrap").style.display = replyOpen(t) ? "flex" : "none";
   const busy = ag && ag.phase === "working";
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
     : "Answer Claude — Cmd+Enter to send, paste images to attach";
   $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
-  $("#d-reply").disabled = $("#d-reply-send").disabled = recapping;
+  $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
   if (recapping) {
     $("#d-reply").placeholder = "Writing the recap — you can send once it is posted.";
     $("#d-reply-send").textContent = "Writing recap…";
   }
   renderReplyImages();
+  renderCacheNote(ag);
   renderOverview(t);
   // Last: the reply box and images above change the log's height.
-  const a = anchorI && dl.querySelector(`li[data-i="${anchorI}"]`);
-  dl.scrollTop = follow ? dl.scrollHeight : a ? dl.scrollTop + a.getBoundingClientRect().top - dl.getBoundingClientRect().top - anchorOff : keepTop;
+  if (mainTab === "conversation") {
+    const a = anchorI && dl.querySelector(`li[data-i="${anchorI}"]`);
+    sc.scrollTop = follow ? sc.scrollHeight : a ? sc.scrollTop + a.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchorOff : keepTop;
+  }
+}
+// Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.
+const AGENT_LABELS = { working: "Working", needs_you: "Needs you", finished: "Finished", gone: "Session removed" };
+const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? "Reviewing code" : AGENT_LABELS[ag.phase] || ag.phase) : "Starting…");
+
+// Compact notice above the composer: a reply after the prompt cache expired re-reads the whole context at full price.
+function renderCacheNote(ag) {
+  const box = $("#d-cache-note"), c = ag && ag.cache;
+  if (!c || ag.phase === "working" || ag.phase === "gone") { box.hidden = true; return; }
+  const left = c.expires - Date.now() / 1000, tok = c.tokens >= 1000 ? Math.round(c.tokens / 1000) + "k" : String(c.tokens || 0), tier = c.ttl >= 3600 ? "1 hour" : "5 minutes";
+  box.hidden = false;
+  box.classList.toggle("warm", left > 0);
+  const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min"; };
+  box.innerHTML = `<span data-ico="info" data-s="16"></span><details><summary>${left > 0
+    ? `Session cache warm for ${dur(left)}. A reply before then reads ${tok} tokens from cache.`
+    : `Session cache expired. A reply will reload approximately ${tok} tokens.`}</summary>
+    <div class="tech">Cache TTL ${tier} · last API call ${fmt(new Date(c.at * 1000).toISOString())} · expires ${fmt(new Date(c.expires * 1000).toISOString())} · context ${(c.tokens || 0).toLocaleString()} tokens. The number comes from the session transcript's last usage record.</div></details>`;
+  box.querySelector("[data-ico]").innerHTML = icon("info", 16);
 }
 
-// ---------------------------------------------------------------- sent-task overview (left pane)
+// ---------------------------------------------------------------- sent-task sidebar + main panel
 const ICONS = {
   status: `<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>`,
   flag: `<path d="M5 21V4h12l-2.5 4.5L17 13H5"/>`,
@@ -1285,72 +1505,190 @@ const ICONS = {
   doc: `<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>`,
   chev: `<path d="M6 9l6 6 6-6"/>`,
   image: `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>`,
+  back: `<path d="M19 12H5M11 18l-6-6 6-6"/>`,
+  code: `<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16"/>`,
+  users: `<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 15a5 5 0 0 1 5.5 5"/>`,
+  cap: `<path d="M2 9.5 12 5l10 4.5L12 14z"/><path d="M6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5M22 9.5V15"/>`,
+  check: `<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/>`,
+  more: `<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>`,
+  x: `<path d="M6 6l12 12M18 6 6 18"/>`,
+  copy: `<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>`,
+  trash: `<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>`,
+  clip: `<path d="m21 11.5-8.6 8.6a5 5 0 0 1-7-7l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.6 1.6 0 0 1-2.3-2.3l8.3-8.3"/>`,
+  info: `<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>`,
+  spark: `<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>`,
+  play: `<path d="M7 5v14l12-7z"/>`,
+  merge: `<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M16 12c-4 0-7-2-8-5"/>`,
+  file: `<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>`,
+  commit: `<circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/>`,
 };
 const icon = (k, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 document.querySelectorAll("[data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
-// Form elements move between the edit form and the overview, so each ID exists once.
+// Form elements move between the draft editor and the sent-task sidebar, so each ID exists once.
 const place = (el, box, before = null) => { if (el.parentNode !== box) box.insertBefore(el, before); };
-let ovFor = null, ovTab = "overview";
-function showTab() {
-  $("#d-ov").dataset.tab = ovTab;
-  document.querySelectorAll("#d-ov .tab").forEach((b) => b.classList.toggle("on", b.dataset.tab === ovTab));
+// Main-panel tab: finished tasks open on Summary, active ones on Conversation; the pick sticks while the card is open.
+let ovFor = null, mainTab = "summary";
+function showTab(tab) {
+  if (tab) mainTab = tab;
+  document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
+  document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
+  const t = openId && task(openId);
+  $("#d-reply-wrap").classList.toggle("on", !!t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation"));
+  if (tab === "changes" && t) { markReviewed(t); renderNext(t); }
+  if (tab === "conversation") { logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
 }
-document.querySelectorAll("#d-ov .tab").forEach((b) => (b.onclick = () => { ovTab = b.dataset.tab; showTab(); }));
+document.querySelectorAll("#d-tabs .tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+$("#d-tabs").addEventListener("keydown", (e) => {
+  const tabs = [...document.querySelectorAll("#d-tabs .tab")], i = tabs.findIndex((b) => b.dataset.tab === mainTab);
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  e.preventDefault();
+  const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+  showTab(n.dataset.tab); n.focus();
+});
+$("#d-sum-conv").onclick = () => showTab("conversation");
+// "Reviewed" = you opened Changes since Claude's latest message; the next-action card then offers the merge.
+const lastClaudeMsg = (ag) => { const e = ((ag && ag.log) || []).filter((x) => x.from !== "you").pop(); return e ? e.at : ""; };
+function markReviewed(t) { try { localStorage.setItem("taskboard.reviewed:" + t.id, lastClaudeMsg(agents[t.id]) || "1"); } catch (_) {} }
+function wasReviewed(t) { try { const v = localStorage.getItem("taskboard.reviewed:" + t.id); return !!v && v >= (lastClaudeMsg(agents[t.id]) || ""); } catch (_) { return false; } }
 
-function nextAction(t, ag) {
-  // The worktree buttons only show in Review (canWorktree), so a card finished before its merge has to say so.
-  if (isDone(t)) return t.agent && t.agent.worktree && ag && ag.worktree ? "Done, but its worktree is not merged yet. Move the card back to Review to merge it, or Delete worktree if you do not need it." : "Nothing — this task is done.";
-  if (!ag || ag.phase === "working") return "Claude is working — nothing to do yet.";
-  if (ag.phase === "gone") return "Session removed — nothing to do.";
-  const last = (ag.log || []).filter((e) => e.from !== "you").pop();
-  if (ag.phase === "needs_you") return last && last.status === "question" ? "Answer Claude's question." : ag.reason || "Claude is waiting on you.";
-  if ((ag.phase === "finished" || (last && last.status === "done")) && canWorktree(t)) return "Try it with Run app from worktree, then Merge worktree to main, then move it to done.";
-  if (ag.phase === "finished" || (last && last.status === "done")) return inReview(t) ? "Review the work (Review code runs a code review), then move it to done." : "Review the work.";
-  return "Claude is working — nothing to do yet.";
+// What to do next, from the task's column, the agent's phase and the real git state (loadTaskGit), never from the
+// agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
+function nextAction(t, ag, g) {
+  const last = ((ag && ag.log) || []).filter((e) => e.from !== "you").pop();
+  const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
+  const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
+  const review = (cls = "primary") => act("Review changes", cls, () => showTab("changes"));
+  const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
+  const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
+  const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
+  if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [] }
+    : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
+  if (isDone(t)) {
+    const wt = t.agent.worktree && ag && ag.worktree;
+    return { title: "Done", text: wt ? "Its worktree is not merged yet. Move the card back to Review to merge it, or delete the worktree from the ⋯ menu if you do not need it." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: wt && canWorktree(t) ? [merge("sec")] : [] };
+  }
+  if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [] };
+  if (ag.phase === "working") {
+    const subs = (ag.subagents || []).filter((s) => !s.finished).length;
+    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `Claude is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : "Claude is working. You can add a note in Conversation; it reads it as soon as it can.", actions: [] };
+  }
+  if (ag.phase === "gone") {
+    const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
+    return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [left ? review() : markDone(), ...(left ? [markDone("ghost")] : [])] : [] };
+  }
+  if (ag.phase === "needs_you") {
+    const q = last && last.status === "question";
+    const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
+    return { title: q ? "Claude has a question" : stopped ? "Run stopped" : "Claude needs you",
+      text: q ? "Answer it in Conversation to let Claude continue." : (ag.reason || "Claude is waiting on you.").replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
+      actions: replyOpen(t) ? [toReply()] : [] };
+  }
+  // Finished (or last message is a done report): what is there to review, merge, or complete?
+  if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
+  if (!canFinish(t)) return { title: "Waiting for Claude", text: "Your last message has not been answered yet.", actions: [] };
+  const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
+  if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [review(), ...extra] };
+  if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [review(), ...extra, markDone("ghost")] };
+  const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
+  const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const where = g.shared ? ` in the project folder (shared with other tasks)` : "";
+  if (!has) {
+    const why = g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "The worktree branch is already merged. Nothing left to merge." : g.worktree && !g.worktree.exists ? "The worktree is gone and its branch holds nothing unmerged." : "No repository changes to merge.";
+    return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
+  }
+  const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
+  if (!wasReviewed(t)) return { title: "Ready for review", text: `${what}${where}. Look through the changes first.`, actions: [review(), ...extra] };
+  if (wt) return { title: "Ready to merge", text: `${what}, reviewed. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [merge(), ...extra, markDone("ghost")] };
+  return { title: "Ready to complete", text: g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge.` : `${what}${where}.`, actions: [markDone(), ...extra] };
+}
+function renderNext(t) {
+  const ag = t.agent && agents[t.id];
+  const n = nextAction(t, ag, taskGitFor(t));
+  $("#d-next-title").textContent = n.title;
+  $("#d-next-text").textContent = n.text;
+  const box = $("#d-next-actions");
+  box.innerHTML = n.actions.map((a, i) => `<button class="btn ${a.cls}" data-i="${i}"${a.title ? ` title="${esc(a.title)}"` : ""}>${a.icon ? icon(a.icon, 16) : ""}${esc(a.label)}</button>`).join("");
+  box.querySelectorAll("button").forEach((b) => (b.onclick = n.actions[+b.dataset.i].onclick));
 }
 
 // Subagents come from the session's transcripts (server: subagents()). Unfinished while the session is not
 // working means it was cut off, so it shows as stopped rather than running forever.
 function renderSubagents(ag) {
   const subs = (ag && ag.subagents) || [];
-  $("#d-subagents").style.display = subs.length ? "" : "none";
+  $("#d-subagents").hidden = !subs.length;
   const run = subs.filter((s) => !s.finished && ag.phase === "working").length;
   $("#d-sa-n").textContent = run ? `${run} running of ${subs.length}` : `${subs.length}`;
   const dur = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "<1m" : m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
-  $("#d-sa-list").innerHTML = subs.map((s) => {
+  const html = subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
       <span class="meta"><span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
       ${s.action ? `<span class="act">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}</li>`;
   }).join("");
+  if ($("#d-sa-list").innerHTML !== html) $("#d-sa-list").innerHTML = html;
 }
 
 // Skills Claude loaded with the Skill tool, in this card's sessions and their subagents (server: skills()).
 function renderSkills(ag) {
   const used = (ag && ag.skills) || [];
-  $("#d-skills").style.display = used.length ? "" : "none";
+  $("#d-skills").hidden = !used.length;
   $("#d-sk-n").textContent = used.length || "";
   const html = used.map((s) => `<li title="First used ${esc(fmt(s.first))}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
   if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
 }
 
+// Technical details: branch, release, worktree, session — long names wrap; <code> copies on click.
+function renderTech(t) {
+  const g = (gitInfo.pid === P && gitInfo.data) || {}, tg = taskGitFor(t), ag = agents[t.id], wt = t.agent && t.agent.worktree;
+  const rows = [];
+  const code = (s, title = "Click to copy") => `<code title="${esc(title)}">${esc(s)}</code>`;
+  if (wt) {
+    rows.push(["Worktree", code(wt.path) + (ag && ag.worktree === false ? ` <span class="dirty">(merged or removed)</span>` : "")]);
+    rows.push(["Branch", code(wt.branch) + (wt.base ? ` from ${code(wt.base)}` : "")]);
+  } else if (g.branch) rows.push(["Branch", code(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes in the project folder">• uncommitted changes</span>` : "")]);
+  if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push(["Merges into", code(tg.target)]);
+  if (g.tag) rows.push(["Release", code(g.tag)]);
+  if (t.agent) {
+    rows.push(["Session", code("claude attach " + ((ag && ag.id) || t.agent.id))]);
+    rows.push(["Model", esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? prettyModel(defaultModel.model) + " (default)" : "default"))]);
+    rows.push(["Started", esc(fmt(t.agent.started))]);
+    if (t.delegate) rows.push(["Subagents", "allowed" + (t.subagentModel ? ` (${esc(t.subagentModel)})` : "")]);
+    if (t.answerOnly) rows.push(["Mode", "answer only"]);
+  }
+  rows.push(["Task id", code(t.id)]);
+  const html = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  if ($("#d-tech-list").innerHTML !== html) {
+    $("#d-tech-list").innerHTML = html;
+    $("#d-tech-list").querySelectorAll("code").forEach((c) => (c.onclick = () => { navigator.clipboard.writeText(c.textContent); setStatus("Copied " + c.textContent); }));
+  }
+}
+
 function renderOverview(t) {
   const sent = !!t.agent;
   $("#panel").classList.toggle("sent", sent);
+  if (ovFor !== t.id) {
+    ovFor = t.id;
+    const ag = agents[t.id];
+    mainTab = !sent ? "summary" : ag && (ag.phase === "working" || ag.phase === "needs_you") ? "conversation" : "summary";
+    for (const d of document.querySelectorAll("#d-side details")) d.open = false;
+    $("#d-diff").hidden = true;
+    loadTaskGit(t, true);
+  }
   if (!sent) {
-    place($("#d-col"), $("label[for=d-col]").parentNode);
-    place($("#d-prio"), $("label[for=d-prio]").parentNode);
     place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
     place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
+    $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-prompt").hidden = true;
+    $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = true));
+    $("#d-reply-wrap").classList.remove("on");
+    renderNext(t);
     return;
   }
-  place($("#d-col"), $("#d-col-slot"), $("#d-col-slot").firstChild);
-  place($("#d-prio"), $("#d-prio-slot"), $("#d-prio-slot").firstChild);
+  $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = false));
   place($("#d-subs"), $("#d-crit-slot"));
   place($("#d-images"), $("#d-prompt-imgs"));
-  if (ovFor !== t.id) { ovFor = t.id; ovTab = "overview"; $("#d-prompt").classList.remove("open"); }
+  $("#d-tech").hidden = $("#d-prompt").hidden = false;
   showTab();
   const ag = agents[t.id];
   const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => e.images || []))];
@@ -1358,18 +1696,128 @@ function renderOverview(t) {
   const grid = thumbItems(own, fileDir("images")) + thumbItems(fromLog, fileDir("agent_reports/images"));
   if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;
   const kids = children(t.id), done = kids.filter(isDone).length;
-  $("#d-crit").style.display = kids.length ? "" : "none";
+  $("#d-crit").hidden = !kids.length;
   $("#d-crit-n").textContent = `${done} of ${kids.length}`;
   $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
-  $("#d-next").textContent = nextAction(t, ag);
+  renderNext(t);
   renderSubagents(ag);
   renderSkills(ag);
-  if ($("#d-prompt").classList.contains("open")) loadPrompt(t);
-  paintGit(t);
-  loadGit().then(() => { const o = openId && task(openId); if (o && o.agent) paintGit(o); });
+  renderTech(t);
+  renderSummary(t);
+  renderChanges(t);
+  if ($("#d-prompt").open) loadPrompt(t);
+  loadGit().then(() => { const o = openId && task(openId); if (o && o.agent) renderTech(o); });
 }
 
-// GET /api/git -> { branch, tag, dirty }; cached per project for 30 s. A failed fetch just hides the chips.
+// ---------------------------------------------------------------- Summary tab
+// Built from what exists: Claude's latest report on the card, the commits and files from git, the latest code
+// review's findings. Nothing is generated here, so opening the tab never costs an API call.
+const REPORT = ["done", "answer", "recap"];
+function renderSummary(t) {
+  const ag = agents[t.id], log = (ag && ag.log) || [], g = taskGitFor(t);
+  const reviews = log.map((e, i) => [e, i]).filter(([e]) => e.status === "review");
+  const lastReview = reviews.length ? reviews[reviews.length - 1][1] : -1;
+  // The task's own latest report: skip a reviewer's findings (they come after a "review" entry).
+  const ownLog = lastReview < 0 ? log : log.slice(0, lastReview);
+  const rep = [...ownLog].reverse().find((e) => e.from !== "you" && REPORT.includes(e.status));
+  const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
+  const box = $("#d-sum-result");
+  let html;
+  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? "Recap" : rep.status === "answer" ? "Answer" : "Result"} · Claude · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
+  else if (latest) html = `<div class="sum-label">No final report yet · latest ${esc(latest.status)} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
+  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? "Claude has not reported anything yet." : "No report from Claude on this task."}</div>`;
+  if (box.innerHTML !== html) box.innerHTML = html;
+  // What changed: commits named on the card / ahead of the target, and uncommitted files.
+  const items = [];
+  if (g && g.available) {
+    for (const c of (g.ahead || []).slice(0, 12)) items.push(`<li><span class="ok">✓</span><span class="sub">${inl(esc(c.subject || "(no message)"))}</span><span class="n"><code>${esc(c.sha)}</code></span></li>`);
+    if ((g.ahead || []).length > 12) items.push(`<li><span class="n">… ${g.ahead.length - 12} more commits in Changes</span></li>`);
+    const ch = g.changed || [];
+    if (ch.length) items.push(`<li><span class="ok">•</span><span class="sub">${ch.length} uncommitted file${ch.length > 1 ? "s" : ""}${g.shared ? " in the project folder" : ""}: ${ch.slice(0, 5).map((f) => `<code>${esc(f.path)}</code>`).join(", ")}${ch.length > 5 ? ", …" : ""}</span></li>`);
+  }
+  $("#d-sum-changes").innerHTML = items.length ? `<ul class="sum-list">${items.join("")}</ul>`
+    : `<div class="sum-empty">${!g ? "Loading repository state…" : !g.available ? "Repository state unavailable." : g.answerOnly ? "Answer-only task: no changes were expected." : "No commits or uncommitted files found for this task."}</div>`;
+  // Verification: the latest code review's findings, if a review ran after the report.
+  const vh = $("#d-sum-verify-h"), vb = $("#d-sum-verify");
+  const finding = lastReview >= 0 && [...log.slice(lastReview + 1)].reverse().find((e) => e.from !== "you" && e.status === "done");
+  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">Code review · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
+  else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">Code review started ${esc(fmt(log[lastReview].at))}; no findings posted yet.</div>`; }
+  else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">No code review yet. Start one from the Changes tab.</div>`; }
+  $("#d-sum-repo").innerHTML = repoStatusHtml(t, g);
+  $("#d-sum-conv").textContent = `View full conversation (${log.length} message${log.length === 1 ? "" : "s"}) →`;
+}
+function repoStatusHtml(t, g) {
+  if (g === null) return `<div class="repo-note">Checking the repository state…</div>`;
+  if (!g) return `<div class="repo-note">Repository state not loaded.</div>`;
+  if (!g.available) return `<div class="repo-note"><b>Repository state unavailable.</b> ${esc(g.error || "git did not answer.")}</div>`;
+  const files = (g.changed || []).length, ahead = (g.ahead || []).length;
+  const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files} changed file${files === 1 ? "" : "s"}${g.truncated ? "+" : ""}</span>
+    <span>${icon("commit", 16)}${ahead} commit${ahead === 1 ? "" : "s"} ${g.aheadKind === "own" ? `on ${esc(g.branch || "HEAD")}` : `ahead of ${esc(g.target || "main")}`}</span>
+    ${g.behind ? `<span class="warn">${icon("branch", 16)}${g.behind} behind ${esc(g.target)}</span>` : ""}</div>`;
+  let note;
+  if (g.worktree && g.worktree.exists) note = ahead || files ? `Work on branch <b>${esc(g.branch)}</b> in its own worktree, not yet in <b>${esc(g.target)}</b>.` : g.merged ? `Branch <b>${esc(g.branch)}</b> is fully merged into <b>${esc(g.target)}</b>.` : `The worktree has no changes to merge.`;
+  else if (g.worktree) note = g.merged ? `The worktree was removed and its branch is merged into <b>${esc(g.target)}</b>.` : ahead ? `The worktree folder is gone, but branch <b>${esc(g.branch)}</b> still holds ${ahead} unmerged commit${ahead === 1 ? "" : "s"}.` : `The worktree was removed. Nothing left to merge.`;
+  else note = ahead ? `Commits named on this card are already on <b>${esc(g.branch)}</b>. No merge is needed.` : files ? `The project folder has uncommitted changes (shared with other tasks).` : `Changes were made outside the repository, or none were made. No merge is needed.`;
+  return chips + `<div class="repo-note">${note}</div>`;
+}
+
+// ---------------------------------------------------------------- Changes tab
+function renderChanges(t) {
+  const g = taskGitFor(t), badge = $("#d-chcount"), list = $("#d-ch-list"), note = $("#d-ch-note");
+  badge.classList.remove("warn");
+  if (g === null) { badge.textContent = "…"; note.textContent = "Checking the repository state…"; list.innerHTML = ""; return; }
+  if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
+  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">Repository state unavailable: ${esc(g.error || "git did not answer")}.</div>`; return; }
+  const files = g.changed || [], ahead = g.ahead || [];
+  badge.textContent = files.length + ahead.length || "0";
+  note.textContent = g.shared ? `Project folder on ${g.branch || "HEAD"} (shared with other tasks)` : `Worktree branch ${g.branch}${g.target ? " → " + g.target : ""}`;
+  const pm = (f) => f.added == null && f.deleted == null ? "" : `<span class="pm"><span class="a">+${f.added || 0}</span> <span class="d">−${f.deleted || 0}</span></span>`;
+  let html = "";
+  if (files.length) html += `<div class="ch-group"><h4>Uncommitted files (${files.length}${g.truncated ? "+" : ""})</h4><ul class="ch-list">${files.map((f) => `<li data-path="${esc(f.path)}" title="Show diff"><span class="st ${esc(f.status.trim()[0] || "?")}">${esc(f.status.trim() || "?")}</span><span class="path">${esc(f.path)}</span>${pm(f)}</li>`).join("")}</ul></div>`;
+  if (ahead.length) html += `<div class="ch-group"><h4>${g.aheadKind === "own" ? `Commits this task named on ${esc(g.branch || "HEAD")}` : `Commits ahead of ${esc(g.target)}`} (${ahead.length})</h4><ul class="ch-list">${ahead.map((c) => `<li data-sha="${esc(c.sha)}" title="Show commit"><span class="sha">${esc(c.sha)}</span><span class="subj">${esc(c.subject)}</span></li>`).join("")}</ul></div>`;
+  if (!html) html = `<div class="ch-empty">${g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "Already merged: nothing left to show." : "No uncommitted files and no commits to show."}</div>`;
+  if (list.innerHTML !== html) {
+    list.innerHTML = html;
+    list.querySelectorAll("li").forEach((li) => (li.onclick = () => showDiff(t, li)));
+  }
+}
+async function showDiff(t, li) {
+  const pre = $("#d-diff"), q = li.dataset.sha ? "&sha=" + encodeURIComponent(li.dataset.sha) : "&path=" + encodeURIComponent(li.dataset.path);
+  $("#d-ch-list").querySelectorAll("li").forEach((x) => x.classList.toggle("on", x === li));
+  pre.hidden = false; pre.textContent = "Loading diff…";
+  try {
+    const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || r.status);
+    pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
+  } catch (e) { pre.textContent = "Could not load the diff: " + e.message; }
+  pre.scrollIntoView({ block: "nearest" });
+}
+
+// GET /api/task-git -> per-task repository state (server: task_git()). null = loading, undefined = never asked,
+// {available:false, error} = git could not answer. Fetched when a card opens and after actions; polls refresh it
+// when the agent's phase changes.
+const taskGit = {};   // task id -> { at, data }
+const taskGitFor = (t) => { const e = taskGit[P + ":" + t.id]; return e ? e.data : undefined; };
+async function loadTaskGit(t, force) {
+  const key = P + ":" + t.id, e = taskGit[key];
+  if (!useServer || !t.agent) { delete taskGit[key]; return; }
+  if (e && !force && Date.now() - e.at < 30000) return;
+  if (e && e.data === null) return;   // in flight
+  taskGit[key] = { at: Date.now(), data: e ? e.data : null };
+  if (!e) taskGit[key].data = null;
+  let data;
+  try {
+    const r = await fetch(api("/api/task-git") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" });
+    data = await r.json();
+    if (r.status === 404 && !data.available && !("changed" in data)) data = { available: false, error: "the board server runs older code without /api/task-git; restart it" };
+    else if (!r.ok) data = { available: false, error: data.error || "HTTP " + r.status };
+  } catch (err) { data = { available: false, error: err.message }; }
+  taskGit[key] = { at: Date.now(), data };
+  if (openId === t.id) { renderNext(t); renderTech(t); renderSummary(t); renderChanges(t); }
+}
+
+// GET /api/git -> { branch, tag, dirty }; cached per project for 30 s. A failed fetch just hides the rows.
 let gitInfo = { pid: null, at: 0, data: null };
 async function loadGit() {
   const pid = P;
@@ -1379,22 +1827,10 @@ async function loadGit() {
   try { const r = await fetch(api("/api/git"), { cache: "no-store" }); if (r.ok) data = await r.json(); } catch (_) {}
   if (gitInfo.pid === pid) gitInfo.data = data;
 }
-function paintGit(t) {
-  const g = (gitInfo.pid === P && gitInfo.data) || {};
-  $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (g.branch ? `<i class="sep"></i><span>${icon("branch", 14)}${esc(g.branch)}</span>` : "");
-  $("#d-git").hidden = !g.branch;
-  $("#d-git .v").innerHTML = g.branch ? esc(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes">•</span>` : "") : "";
-  $("#d-rel").hidden = !g.tag;
-  $("#d-rel .v").textContent = g.tag || "";
-  const wt = t.agent && t.agent.worktree, ag = agents[t.id];
-  $("#d-wt").hidden = !wt;
-  $("#d-wt .v").textContent = wt ? wt.branch + (ag && ag.worktree === false ? " (merged or removed)" : "") : "";
-  $("#d-chips").hidden = !g.branch && !g.tag && !wt;
-}
 
 // GET /api/prompt&t=<id> -> { prompt, saved }. Fixed once sent, so kept per task; failures retry on the next open.
 const prompts = {};
-$("#d-prompt .pr-head").onclick = () => { const t = task(openId); if ($("#d-prompt").classList.toggle("open") && t) loadPrompt(t); };
+$("#d-prompt").addEventListener("toggle", () => { const t = task(openId); if ($("#d-prompt").open && t) loadPrompt(t); });
 async function loadPrompt(t) {
   const key = P + ":" + t.id;
   if (!prompts[key] && useServer) {
@@ -1582,6 +2018,7 @@ async function worktreeAction(t, action) {
     await post("/api/agent/worktree", { p: P, taskId: t.id, action });
     pm.state = "sent";
     setStatus(action === "run" ? "Asked Claude to run the app from the worktree" : "Asked Claude to merge the worktree");
+    if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);
     setStatus(label + " failed: " + e.message, true);
@@ -1589,19 +2026,29 @@ async function worktreeAction(t, action) {
   refreshAgent(t); render();
   await pollAgents();
 }
-$("#d-wt-run").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "run"); };
-$("#d-wt-merge").onclick = () => { const t = task(openId); if (t) worktreeAction(t, "merge"); };
 // No Claude involved: the server removes the folder and branch. Work that would be lost is listed in a modal first.
 const wtdelOpen = () => $("#wtdel-modal").classList.contains("open");
 function closeWtdel() { $("#wtdel-modal").classList.remove("open"); }
+// Greys out and locks the whole page (clicks and keys) while a server action runs; busy(false) lifts it.
+const busyOn = () => $("#busy").classList.contains("open");
+function busy(msg) {
+  for (const el of document.body.children) if (el.id !== "busy") el.inert = !!msg;
+  if (msg) { $("#busy-icon").innerHTML = COG.replace(/"12"/g, '"20"'); $("#busy-text").textContent = msg; }
+  $("#busy").classList.toggle("open", !!msg);
+}
 async function deleteWorktree(t, force) {
+  busy("Deleting the worktree…");
+  try { await deleteWorktreeNow(t, force); } finally { busy(false); }
+  if (wtdelOpen()) $("#wtdel-no").focus();  // inert while busy, so focus only now
+}
+async function deleteWorktreeNow(t, force) {
   $("#d-wt-del").disabled = $("#wtdel-yes").disabled = true;
   setStatus("Deleting the worktree…");
+  closeWtdel();
   try {
     await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
-    closeWtdel();
     if (agents[t.id]) agents[t.id].worktree = false;
-    gitInfo.at = 0;
+    gitInfo.at = 0; delete taskGit[P + ":" + t.id]; loadTaskGit(t, true);
     setStatus("Worktree deleted");
   } catch (e) {
     if (e.unsaved && !force) {
@@ -1614,14 +2061,13 @@ async function deleteWorktree(t, force) {
       $("#wtdel-no").onclick = closeWtdel;
       $("#wtdel-yes").onclick = () => deleteWorktree(t, true);
       $("#wtdel-modal").classList.add("open");
-      $("#wtdel-no").focus();
       setStatus("");
     } else setStatus("Delete worktree failed: " + e.message, true);
   } finally { $("#d-wt-del").disabled = $("#wtdel-yes").disabled = false; }
   refreshAgent(t); render();
   await pollAgents();
 }
-$("#d-wt-del").onclick = () => { const t = task(openId); if (t) deleteWorktree(t, false); };
+$("#d-wt-del").onclick = () => { toggleMenu(false); const t = task(openId); if (t) deleteWorktree(t, false); };
 $("#wtdel-modal").addEventListener("mousedown", (e) => { if (e.target.id === "wtdel-modal") closeWtdel(); });
 $("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.reviewLevel", e.target.value); } catch (_) {} render(); };
 
@@ -1632,7 +2078,9 @@ async function sendReply() {
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? "Sending note…" : "Sending reply…");
   const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images);
-  $("#d-reply").value = ""; replyImages = []; renderReplyImages(); refreshAgent(t);
+  $("#d-reply").value = ""; replyImages = []; renderReplyImages();
+  if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
+  refreshAgent(t);
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
@@ -1647,6 +2095,8 @@ async function sendReply() {
   await pollAgents();
 }
 $("#d-reply-send").onclick = sendReply;
+$("#d-reply-attach").onclick = () => $("#d-file").click();
+$("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files], true); e.target.value = ""; });
 $("#d-reply").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
 
 let pollTimer = null, polledOnce = false;
@@ -1654,11 +2104,13 @@ async function pollAgents() {
   clearTimeout(pollTimer);
   if (!useServer || !P) return;
   const pid = P, revBefore = rev;
+  let wait = 4000;
   try {
     const [r, rp] = await Promise.all([fetch(api("/api/agents"), { cache: "no-store" }), fetch("/api/projects", { cache: "no-store" })]);
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
+    if (r.headers.get("X-Board-Loading")) wait = 1000;   // the server just started: show cards as they come in
     if (rp.ok) projects = await rp.json();
     // Another window saved: take its board before the moves below, unless an edit of ours is on its way
     // (its PUT will 409 and reload) or we saved since this poll left (then the header is just older than rev).
@@ -1684,7 +2136,10 @@ async function pollAgents() {
       if (a.phase === "working" && prog && review && t.column === review.id) moveTask(t.id, prog.id, null);
     }
     const changed = moved || JSON.stringify(next) !== JSON.stringify(agents);
+    // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
+    const op = openId && agents[openId] && agents[openId].phase;
     agents = next;
+    if (openId && next[openId] && next[openId].phase !== op) { const o = task(openId); if (o) loadTaskGit(o, true); }
     if (!polledOnce && !seenPrimed) markSeen(Object.keys(next));
     if (openId) markSeen([openId]);   // news that lands while you have the card open is read
     polledOnce = true;
@@ -1696,7 +2151,7 @@ async function pollAgents() {
   } catch (e) {
     setStatus("Claude status check failed: " + e.message, true);
   }
-  pollTimer = setTimeout(pollAgents, 4000);
+  pollTimer = setTimeout(pollAgents, wait);
 }
 
 function updateWaiting() {
@@ -2004,7 +2459,7 @@ $("#text-size").addEventListener("change", (e) => {
 const THEMES = { "": ["◐", "System"], light: ["☀", "Light"], dark: ["☾", "Dark"] };
 function showTheme() {
   const [icon, name] = THEMES[document.documentElement.dataset.theme || ""];
-  $("#theme").textContent = icon;
+  $("#theme").innerHTML = `<span>Theme</span><span class="v">${icon} ${name}</span>`;
   $("#theme").title = `Theme: ${name} (click to change)`;
 }
 $("#theme").addEventListener("click", () => {
@@ -2061,8 +2516,53 @@ async function runUpdate() {
     showUpdate("Update failed", "", again(e.message));
   }
 }
+// Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
+let copies = null;
+async function checkAppCopy() {
+  if (!useServer) return;
+  try {
+    const r = await fetch("/api/app-copy", { cache: "no-store" });
+    if (!r.ok) return;
+    copies = await r.json();
+  } catch (_) { return; }
+  const sel = $("#app-copy");
+  const cur = copies.copies.find((c) => c.path === copies.current);
+  sel.hidden = copies.copies.length < 2 && (!cur || cur.main);
+  sel.classList.toggle("away", !cur || !cur.main);
+  sel.title = cur && cur.main ? "The board runs from the main copy. Pick a worktree to try a task's changes"
+    : "The board runs from a worktree, not from main: " + copies.current;
+  const name = (c) => (c.main ? "main" : "⎇ " + (c.name || c.branch));
+  sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
+    + esc(name(c)) + (c.canSwitch ? "" : " (too old)") + "</option>").join("");
+  if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);
+}
+$("#app-copy").addEventListener("change", async (e) => {
+  const sel = e.target, path = sel.value;
+  sel.disabled = true;
+  setStatus("Restarting the board from " + path + "…");
+  try {
+    const r = await fetch("/api/app-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    for (let t0 = Date.now(), down = false; ; ) {
+      await new Promise((ok) => setTimeout(ok, 500));
+      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      // Any answer counts once it went down: an older main copy has no /api/app-copy (404).
+      let q = null;
+      try { q = await fetch("/api/app-copy", { cache: "no-store" }); } catch (_) {}
+      if (!q) down = true;
+      else if (down || (q.ok && (await q.json().catch(() => ({}))).current === path)) break;
+    }
+    location.reload();
+  } catch (err) {
+    sel.disabled = false;
+    setStatus("Could not switch: " + err.message, true);
+    checkAppCopy();
+  }
+});
 $("#update").addEventListener("click", () => (upd && !upd.error && upd.behind > 0 && upd.canUpdate ? runUpdate() : checkUpdate(true)));
 setInterval(() => checkUpdate(), 30 * 60000);
+setInterval(() => checkAppCopy(), 60000);
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
@@ -2070,9 +2570,49 @@ $("#show-subs").addEventListener("change", () => {
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
 try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
+// Header menus: one open at a time; outside click, Escape, resize or header scroll closes them.
+let popBtn = null;
+function closePop(focusBtn) {
+  if (!popBtn) return;
+  const b = popBtn; popBtn = null;
+  $("#" + b.dataset.pop).hidden = true;
+  b.setAttribute("aria-expanded", "false");
+  if (focusBtn) b.focus();
+}
+function openPop(b, kbd) {
+  closePop();
+  const m = $("#" + b.dataset.pop);
+  if (b.id === "proj-btn") {
+    const p = typeof project === "function" ? project() : null;
+    $("#proj-menu-name").textContent = p ? p.name || p.path || "" : "";
+  }
+  m.hidden = false;
+  const r = b.getBoundingClientRect(), w = m.offsetWidth;
+  m.style.top = r.bottom + 6 + "px";
+  m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+  b.setAttribute("aria-expanded", "true");
+  popBtn = b;
+  const first = m.querySelector("button, select, input:not(:disabled)");
+  if (first && kbd) first.focus({ preventScroll: true });
+}
+document.querySelectorAll("[data-pop]").forEach((b) => b.addEventListener("click", (e) => (popBtn === b ? closePop() : openPop(b, e.detail === 0))));
+document.addEventListener("pointerdown", (e) => {
+  if (popBtn && !popBtn.contains(e.target) && !$("#" + popBtn.dataset.pop).contains(e.target)) closePop();
+}, true);
+// Capture on window runs before the board's own Escape handling, so Escape closes only the menu.
+window.addEventListener("keydown", (e) => {
+  if (popBtn && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePop(true); }
+}, true);
+window.addEventListener("resize", () => closePop());
+$("header").addEventListener("scroll", () => closePop());
+$("#cl-btn").addEventListener("click", () => closePop());
+// Tabbing out of an open menu closes it.
+document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", (e) => {
+  if (popBtn && e.relatedTarget && !m.contains(e.relatedTarget) && e.relatedTarget !== popBtn) closePop();
+}));
 
 load().then(() => {
-  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate();
+  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
   if (!useServer) { $("#use-worktrees").disabled = true; $("#use-worktrees-lbl").title = "Needs server.py"; }
 })
   .catch((e) => setStatus("Could not load the board: " + e.message, true));

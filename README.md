@@ -162,7 +162,11 @@ under **Next action**; move it back to Review to get the buttons.
 
 **Delete worktree** (on the card in any column, while the worktree exists and Claude is not working) removes
 the worktree and its branch right away, without Claude and without merging. If that would lose work (changed
-files not committed, or commits that are on no other branch) a window lists it and asks first.
+files not committed, or commits that are on no other branch) a window lists it and asks first. The board is
+greyed out and locked until it finishes.
+
+A reply sent to the card after its worktree was deleted or merged makes a fresh one (same folder and branch name,
+from the main checkout's current commit), and the session is told to work there.
 
 ### Skill observations
 
