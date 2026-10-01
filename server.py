@@ -1150,6 +1150,7 @@ class Watcher:
         self.cache = {}       # (project id, task id) -> {id, sessionId, state, phase, reason, log}
         self.launched = {}    # agent id -> launch time, for sessions not listed yet
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
+        self.loaded = False   # a first pass has ended, even with an error: the page stops polling fast
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
@@ -1232,6 +1233,11 @@ class Watcher:
             done_cols |= {c["id"] for c in state.get("columns", []) if c.get("done")}
         sessions = {s["id"]: s for s in list_sessions(HERE)} if work else {}
         fresh = {}
+        with self.lock:
+            old = dict(self.cache)
+        # Open cards first: each card is published as soon as it is read, so after a restart the board fills in
+        # card by card instead of all at once when the pass ends.
+        work.sort(key=lambda pt: pt[1].get("column") in done_cols)
         for p, t in work:
             log = reports.read(p.board, t["id"])
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
@@ -1317,9 +1323,11 @@ class Watcher:
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs, "skills": used,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t))}
+            with self.lock:
+                self.cache[key] = fresh[key]
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
-            old, self.cache = self.cache, fresh
+            self.cache = fresh
             primed, self.primed = self.primed, True
         if not primed:
             return
@@ -1386,6 +1394,8 @@ class Watcher:
                     self.flush_alerts()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
                 print("watcher:", e)
+            finally:
+                self.loaded = last > 0  # a first pass that failed still ends the page's fast polling
             time.sleep(0.5)
 
     def snapshot(self, pid):
@@ -1992,16 +2002,18 @@ class Handler(SimpleHTTPRequestHandler):
     def guess_type(self, path):
         return TYPES.get(os.path.splitext(path)[1].lower()) or super().guess_type(path)
 
-    def _send(self, code, body=b"", ctype="application/json"):
+    def _send(self, code, body=b"", ctype="application/json", headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, code, obj):
-        self._send(code, json.dumps(obj).encode())
+    def _json(self, code, obj, headers=None):
+        self._send(code, json.dumps(obj).encode(), headers=headers)
 
     def _host_ok(self):
         # DNS rebinding: a page on evil.example rebound to 127.0.0.1 sends Host: evil.example, with a matching Origin.
@@ -2071,7 +2083,9 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/default-model":
             self._errors(lambda: self._json(200, default_model(project(pid))))
         elif path == "/api/agents":
-            self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
+            # The page polls faster while the first pass after a start still fills in cards.
+            self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id),
+                                            {} if WATCH.loaded else {"X-Board-Loading": "1"}))
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
         elif path == "/api/observations":
