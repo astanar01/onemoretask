@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-01
+
+- The "Claude finished" and "Claude needs you" pop-ups now wait until the card has moved or shows the change, so you no longer look at the board before it is ready.
+
 ## 2026-09-30
 
 - A card with its own separate copy of your project now has a "Delete worktree" button, in any column. It throws that copy away without bringing its changes in. If the copy holds work you would lose, a small window shows it and asks first.
