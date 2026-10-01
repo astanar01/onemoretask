@@ -1778,6 +1778,7 @@ function repoStatusHtml(t, g) {
 function renderChanges(t) {
   const g = taskGitFor(t), badge = $("#d-chcount"), list = $("#d-ch-list"), note = $("#d-ch-note");
   badge.classList.remove("warn");
+  if (!g || !g.available) closeDiff();
   if (g === null) { badge.textContent = "…"; note.textContent = "Checking the repository state…"; list.innerHTML = ""; return; }
   if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
   if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">Repository state unavailable: ${esc(g.error || "git did not answer")}.</div>`; return; }
