@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- The "Next action" box no longer jumps to "Merge" the moment you press the review button. It now offers two ways: "Ask Claude to review" starts a real check of the changes, and "Look at the changes" opens them for you to read. The merge button shows once Claude has posted its review, or once you come back from reading the changes.
 - A card in Done whose changes are not in your project yet now has a "Merge worktree to main" button in its "Next action" box. Before, the button never showed there.
 - The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back. Sending a card to Claude from an old window does not start Claude; the board asks you to send again. The last change you make before closing the page is kept.
 - An open card has a new look. The left side shows the task's name, its column and priority, and a "Next action" box that tells you what to do now: wait, look at the changes, bring them in, or mark the task done. The big button there is the one to press. Under it, small fold-out rows hold the technical bits, the helpers Claude used and the words it was given.
