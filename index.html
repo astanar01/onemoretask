@@ -279,6 +279,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .iconbtn:focus-visible, .tab:focus-visible, .btn:focus-visible, .back:focus-visible, .fold summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* sidebar */
 .side { overflow-y: auto; overflow-x: hidden; min-width: 0; padding: 18px 20px 20px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 0; }
+.side > * { flex-shrink: 0; }
 .back { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; border: 0; background: transparent; color: var(--muted); padding: 4px 6px 4px 0; border-radius: 6px; margin-bottom: 10px; }
 .back:hover { color: var(--text); }
 .side .crumb { font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 4px; overflow-wrap: anywhere; }
@@ -429,7 +430,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .repo-chips > span:last-child { border-right: 0; }
 .repo-chips > span [data-ico], .repo-chips svg { color: var(--muted); }
 .repo-chips .warn { color: var(--wait); }
-.repo-note { color: var(--muted); }
+.repo-note { color: var(--muted); overflow-wrap: anywhere; }
+#d-ch-note { overflow-wrap: anywhere; min-width: 0; }
 .repo-note b { color: var(--text); }
 .more-link { display: inline-block; margin-top: 18px; color: var(--accent); cursor: pointer; font-weight: 500; }
 .more-link:hover { text-decoration: underline; }
@@ -499,6 +501,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   .composer { padding: 10px 16px; }
   .menu { right: 44px; }
   .sel { max-width: 70%; }
+  .tab { padding: 10px 9px 12px; }
 }
 </style>
 </head>
@@ -1039,7 +1042,7 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Move to done</button>` : ""}`;
+    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
   el.addEventListener("click", () => openDetail(t.id));
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1135,7 +1138,7 @@ function openDetail(id) {
   const t = task(id);
   if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
 function settleDraft() {
@@ -1390,6 +1393,7 @@ function renderAgent(t) {
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
+  $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
   // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
@@ -1474,7 +1478,7 @@ function showTab(tab) {
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
   $("#d-reply-wrap").classList.toggle("on", !!t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation"));
-  if (tab === "changes" && t) markReviewed(t);
+  if (tab === "changes" && t) { markReviewed(t); renderNext(t); }
   if (tab === "conversation") { logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
 }
 document.querySelectorAll("#d-tabs .tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
@@ -1512,18 +1516,21 @@ function nextAction(t, ag, g) {
     const subs = (ag.subagents || []).filter((s) => !s.finished).length;
     return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `Claude is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : "Claude is working. You can add a note in Conversation; it reads it as soon as it can.", actions: [] };
   }
-  if (ag.phase === "gone") return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone("sec")] : [] };
+  if (ag.phase === "gone") {
+    const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
+    return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [left ? review() : markDone(), ...(left ? [markDone("ghost")] : [])] : [] };
+  }
   if (ag.phase === "needs_you") {
     const q = last && last.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
     return { title: q ? "Claude has a question" : stopped ? "Run stopped" : "Claude needs you",
-      text: q ? "Answer it in Conversation to let Claude continue." : (ag.reason || "Claude is waiting on you.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
+      text: q ? "Answer it in Conversation to let Claude continue." : (ag.reason || "Claude is waiting on you.").replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
   // Finished (or last message is a done report): what is there to review, merge, or complete?
   if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
   if (!canFinish(t)) return { title: "Waiting for Claude", text: "Your last message has not been answered yet.", actions: [] };
-  const wt = canWorktree(t), extra = wt ? [runApp()] : [];
+  const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
   if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [review(), ...extra] };
   if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [review(), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
@@ -1725,7 +1732,7 @@ async function showDiff(t, li) {
     const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : /^(diff|index|commit|Author|Date|---|\+\+\+)/.test(l) ? "f" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
+    pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
   } catch (e) { pre.textContent = "Could not load the diff: " + e.message; }
   pre.scrollIntoView({ block: "nearest" });
 }
@@ -1939,7 +1946,7 @@ async function worktreeAction(t, action) {
     await post("/api/agent/worktree", { p: P, taskId: t.id, action });
     pm.state = "sent";
     setStatus(action === "run" ? "Asked Claude to run the app from the worktree" : "Asked Claude to merge the worktree");
-    if (action === "merge") delete taskGit[P + ":" + t.id];
+    if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);
     setStatus(label + " failed: " + e.message, true);
@@ -1969,7 +1976,7 @@ async function deleteWorktreeNow(t, force) {
   try {
     await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
     if (agents[t.id]) agents[t.id].worktree = false;
-    gitInfo.at = 0; delete taskGit[P + ":" + t.id];
+    gitInfo.at = 0; delete taskGit[P + ":" + t.id]; loadTaskGit(t, true);
     setStatus("Worktree deleted");
   } catch (e) {
     if (e.unsaved && !force) {
