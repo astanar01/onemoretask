@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- When the board starts again, each card fills in as soon as it is ready, open cards first, instead of all of them staying empty until the very end.
 - A small box at the top of the board shows which copy of the board you are using. It turns orange when you are on a task's separate copy instead of your main one, and you can pick another copy there to jump to it. The board will not throw away the copy it is running from: go back to main first. The top bar now stays on one line.
 - While "Delete worktree" is working, the whole board turns grey and shows "Deleting the worktree…", so you cannot click anything by mistake until it is finished.
 - If you write to Claude on a card after its separate copy was thrown away or brought into your project, Claude now gets a fresh separate copy to work in, so your own copy stays as it is.

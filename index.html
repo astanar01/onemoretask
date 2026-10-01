@@ -1607,11 +1607,13 @@ async function pollAgents() {
   clearTimeout(pollTimer);
   if (!useServer || !P) return;
   const pid = P;
+  let wait = 4000;
   try {
     const [r, rp] = await Promise.all([fetch(api("/api/agents"), { cache: "no-store" }), fetch("/api/projects", { cache: "no-store" })]);
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
+    if (r.headers.get("X-Board-Loading")) wait = 1000;   // the server just started: show cards as they come in
     if (rp.ok) projects = await rp.json();
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
@@ -1643,7 +1645,7 @@ async function pollAgents() {
   } catch (e) {
     setStatus("Claude status check failed: " + e.message, true);
   }
-  pollTimer = setTimeout(pollAgents, 4000);
+  pollTimer = setTimeout(pollAgents, wait);
 }
 
 function updateWaiting() {
