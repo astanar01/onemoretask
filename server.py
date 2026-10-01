@@ -1540,7 +1540,12 @@ def worktree_action(p, task_id, action):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if action == "merge" and board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
+
+
+STILL_RUNNING_HERE = "The board itself runs from this worktree — switch it back to main (the box at the top) first"
 
 
 class UnsavedWorkError(Exception):
@@ -1560,6 +1565,8 @@ def delete_worktree(p, task_id, force=False):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     branch = wt["branch"]
     ref = f"refs/heads/{branch}"
     has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
@@ -1908,8 +1915,26 @@ def app_copies():
             can_switch = False
         copies.append({"path": path, "branch": branch or "(no branch) " + f.get("HEAD", "")[:7].strip(),
                        "main": i == 0, "canSwitch": can_switch})  # git lists the main checkout first
+    # A task's worktree branch is "<slug>-<task id>": the name drops the id only when it is a task on the app's board.
+    home = next((x for x in projects() if copies and copies[0]["main"] and x.path == os.path.realpath(copies[0]["path"])),
+                None)
+    try:
+        ids = {t["id"] for t in load_tasks(home)["tasks"]} if home else set()
+    except (OSError, ValueError, KeyError):
+        ids = set()
+    for c in copies:
+        slug, _, tail = c["branch"].rpartition("-")
+        c["name"] = "main" if c["main"] else slug if slug and tail in ids else c["branch"]
     current = next((c["path"] for c in copies if os.path.samefile(c["path"], APP)), APP)
     return {"current": current, "copies": copies}
+
+
+def board_runs_from(path):
+    """True when this server runs from `path` (a worktree it must not remove under itself)."""
+    try:
+        return os.path.samefile(path, APP)
+    except OSError:
+        return False
 
 
 RESTART = threading.Event()
