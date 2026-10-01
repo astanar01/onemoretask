@@ -375,6 +375,11 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .sa-list .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: calc(12px * var(--ts)); }
 .sa-list .act { grid-column: 1 / -1; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-list .sks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--muted); font-size: calc(12px * var(--ts)); }
+.sa-list li { cursor: pointer; border-radius: 6px; }
+.sa-list li:hover .nm { color: var(--accent); }
+.sa-list .nm::before { content: ""; display: inline-block; width: 6px; height: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); margin: 0 8px 1px 1px; transition: transform .15s; }
+.sa-list li.open .nm::before { transform: rotate(45deg); }
+.sa-list li:not(.open) .act:not(.now), .sa-list li:not(.open) .sks { display: none; }
 .sa-list .sks i { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text); overflow-wrap: anywhere; }
 .sk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .sk-list li { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: calc(12px * var(--ts)); overflow-wrap: anywhere; }
@@ -1627,6 +1632,15 @@ function renderNext(t) {
   box.querySelectorAll("button").forEach((b) => (b.onclick = n.actions[+b.dataset.i].onclick));
 }
 
+// Rows start as one line (plus "Now:" while running); a click shows the rest. Kept across re-renders.
+const saOpen = new Set();
+$("#d-sa-list").addEventListener("click", (e) => {
+  const li = e.target.closest("li[data-id]");
+  if (!li) return;
+  saOpen.has(li.dataset.id) ? saOpen.delete(li.dataset.id) : saOpen.add(li.dataset.id);
+  li.classList.toggle("open");
+});
+
 // Subagents come from the session's transcripts (server: subagents()). Unfinished while the session is not
 // working means it was cut off, so it shows as stopped rather than running forever.
 function renderSubagents(ag) {
@@ -1638,9 +1652,9 @@ function renderSubagents(ag) {
   const html = subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
-    return `<li title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
+    return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
       <span class="meta"><span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
-      ${s.action ? `<span class="act">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
+      ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
       <span class="sks">Skills: ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : "none"}</span></li>`;
   }).join("");
   if ($("#d-sa-list").innerHTML !== html) $("#d-sa-list").innerHTML = html;

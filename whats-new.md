@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- The Subagents list is now short: each helper takes one line. Click a helper to see what it did last and the skills it used, and click again to fold it back. A helper that is still working also shows what it is doing now.
 - When a task is split between helpers and you answer Claude's question, Claude now hands the new work to helpers again instead of doing it all alone.
 - When a task is split between helpers, Claude now picks the right helpers' guides for each part and tells them to read those first, so each helper works the way the project wants.
 - Each helper in the Subagents list now shows the skills it used, so you can see what each one is following.
