@@ -1571,7 +1571,7 @@ function nextAction(t, ag, g) {
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
   const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
   const look = (cls = "primary") => act("Look at the changes", cls, () => showTab("changes"), { title: "Opens the Changes tab. Once you come back from it, the merge button shows here." });
-  const askReview = () => act("Ask Claude to review", "primary", () => startReview(t), { title: `A fresh Claude session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
+  const askReview = () => act("Review code", "primary", () => startReview(t), { title: `A fresh Claude session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
   // Either a Claude code review or your own look at Changes unlocks the merge; both are offered while neither happened.
   const review = () => canReview(t) ? [askReview(), look("sec")] : [look()];
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
@@ -1616,7 +1616,7 @@ function nextAction(t, ag, g) {
     return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
   }
   const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
-  if (!wasReviewed(t)) return { title: "Ready for review", text: `${what}${where}. ` + (canReview(t) ? "Ask Claude to review them, or look through them yourself." : "Look through the changes first."), actions: [...review(), ...extra] };
+  if (!wasReviewed(t)) return { title: "Ready for review", text: `${what}${where}. ` + (canReview(t) ? "Press Review code to have Claude check them, or look through them yourself." : "Look through the changes first."), actions: [...review(), ...extra] };
   const by = claudeReviewed(ag) ? "Claude reviewed them" : "you looked at them";
   if (wt) return { title: "Ready to merge", text: `${what}, ${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [merge(), ...extra, markDone("ghost")] };
   return { title: "Ready to complete", text: g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge.` : `${what}${where}.`, actions: [markDone(), ...extra] };
