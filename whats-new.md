@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- When a task is split between helpers and you answer Claude's question, Claude now hands the new work to helpers again instead of doing it all alone.
 - When a task is split between helpers, Claude now picks the right helpers' guides for each part and tells them to read those first, so each helper works the way the project wants.
 - Each helper in the Subagents list now shows the skills it used, so you can see what each one is following.
 - The "Next action" box now always shows "Merge worktree to main" and "Review code" side by side. You no longer have to read the changes or wait for a check before you can merge. To read the changes, open the Changes tab.

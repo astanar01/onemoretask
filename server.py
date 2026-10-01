@@ -32,7 +32,8 @@ card ask first; "Trust folder and send" sets hasTrustDialogAccepted for it in ~/
 A task ticked "Divide in subtasks / use subagents" (task fields `delegate`,
 `subagentModel`) gets a delegation brief in its prompt (never plan mode): analyse the task, split
 it, hand the independent parts to subagents on the chosen model, and name in each subagent's prompt the skills it
-must invoke first (the lead picks them; a subagent sees the skills list but picks none alone). A task ticked "Answer only"
+must invoke first (the lead picks them; a subagent sees the skills list but picks none alone). A card reply that
+resumes such a session repeats the rule (delegate_reminder), since the brief is many turns back by then. A task ticked "Answer only"
 (task field `answerOnly`) gets a brief to investigate and report back on the card without changing
 files or committing.
 
@@ -461,7 +462,24 @@ def delegate_lines(model, report, answer_only=False):
             "matters for this part. Leave task-observer out: you log the observations.",
             use,
             f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching subagents, '
-            "then check and integrate their results yourself before reporting done."]
+            "then check and integrate their results yourself before reporting done.",
+            "- This holds for the whole task, not just this first turn: when a reply from the card (an answer to your "
+            "question, a follow-up change) asks for more work, split and delegate that work the same way."]
+
+
+def delegate_reminder(t):
+    """Appended to a card reply that resumes a delegating session: the brief is many turns back by then."""
+    if not t or not t.get("delegate"):
+        return ""
+    model = t.get("subagentModel") or ""
+    if model and not MODEL.fullmatch(model):
+        model = ""
+    look = "the looking-into this reply needs" if t.get("answerOnly") else "the work this reply asks for"
+    on = f' on the "{model}" model (`model: "{model}"` on each Agent call)' if model else ""
+    return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to subagents{on}, "
+            "as the first brief says (a self-contained prompt per part, naming the skills to invoke first). Split it and "
+            "launch them before you edit anything yourself, not only for the check at the end. Keep only tiny or "
+            "tightly coupled parts yourself.")
 
 
 # ---------------------------------------------------------------- agents
@@ -1674,6 +1692,7 @@ def reply(p, task_id, text, images=(), extra=""):
     wt = t and renew_worktree(p, t)
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
+    extra += delegate_reminder(t)
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
     message = text + extra + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
     message += reports.LANGUAGE_RULE + ")"
