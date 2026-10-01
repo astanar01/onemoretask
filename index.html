@@ -1203,7 +1203,7 @@ function openDetail(id) {
   const t = task(id);
   if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { showPanelError(""); settleDraft(); leaveChanges(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
 function settleDraft() {
@@ -1545,7 +1545,7 @@ function showTab(tab) {
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
   $("#d-reply-wrap").classList.toggle("on", !!t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation"));
-  if (tab === "changes" && t) { markReviewed(t); renderNext(t); }
+  if (mainTab === "changes" && t) changesSeen = t.id; else leaveChanges();
   if (tab === "conversation") { logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
 }
 document.querySelectorAll("#d-tabs .tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
@@ -1557,10 +1557,22 @@ $("#d-tabs").addEventListener("keydown", (e) => {
   showTab(n.dataset.tab); n.focus();
 });
 $("#d-sum-conv").onclick = () => showTab("conversation");
-// "Reviewed" = you opened Changes since Claude's latest message; the next-action card then offers the merge.
+// "Reviewed" = a code-review session (server: review()) posted its findings and nothing was sent since, or you
+// looked at Changes since Claude's latest message. The look counts when you LEAVE the tab (another tab, or the
+// panel closes), not when it opens: the merge button must not appear the instant you ask to see the changes.
 const lastClaudeMsg = (ag) => { const e = ((ag && ag.log) || []).filter((x) => x.from !== "you").pop(); return e ? e.at : ""; };
+const claudeReviewed = (ag) => { const log = (ag && ag.log) || []; return reviewing(ag || {}) && log.slice(log.findLastIndex((x) => x.status === "review") + 1).some((x) => x.from !== "you" && x.status === "done"); };
 function markReviewed(t) { try { localStorage.setItem("taskboard.reviewed:" + t.id, lastClaudeMsg(agents[t.id]) || "1"); } catch (_) {} }
-function wasReviewed(t) { try { const v = localStorage.getItem("taskboard.reviewed:" + t.id); return !!v && v >= (lastClaudeMsg(agents[t.id]) || ""); } catch (_) { return false; } }
+function lookedAtChanges(t) { try { const v = localStorage.getItem("taskboard.reviewed:" + t.id); return !!v && v >= (lastClaudeMsg(agents[t.id]) || ""); } catch (_) { return false; } }
+function wasReviewed(t) { return claudeReviewed(agents[t.id]) || lookedAtChanges(t); }
+let changesSeen = null; // task whose Changes tab is open; marked reviewed when the tab is left
+function leaveChanges() {
+  const t = changesSeen && task(changesSeen);
+  changesSeen = null;
+  if (!t) return;
+  markReviewed(t);
+  if (openId === t.id) renderNext(t);
+}
 
 // What to do next, from the task's column, the agent's phase and the real git state (loadTaskGit), never from the
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
@@ -1568,7 +1580,10 @@ function nextAction(t, ag, g) {
   const last = ((ag && ag.log) || []).filter((e) => e.from !== "you").pop();
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
   const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
-  const review = (cls = "primary") => act("Review changes", cls, () => showTab("changes"));
+  const look = (cls = "primary") => act("Look at the changes", cls, () => showTab("changes"), { title: "Opens the Changes tab. Once you come back from it, the merge button shows here." });
+  const askReview = () => act("Review code", "primary", () => startReview(t), { title: `A fresh Claude session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
+  // Either a Claude code review or your own look at Changes unlocks the merge; both are offered while neither happened.
+  const review = () => canReview(t) ? [askReview(), look("sec")] : [look()];
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
   const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
   const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
@@ -1588,7 +1603,7 @@ function nextAction(t, ag, g) {
   }
   if (ag.phase === "gone") {
     const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
-    return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [left ? review() : markDone(), ...(left ? [markDone("ghost")] : [])] : [] };
+    return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [...(left ? review() : [markDone()]), ...(left ? [markDone("ghost")] : [])] : [] };
   }
   if (ag.phase === "needs_you") {
     const q = last && last.status === "question";
@@ -1601,8 +1616,8 @@ function nextAction(t, ag, g) {
   if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
   if (!canFinish(t)) return { title: "Waiting for Claude", text: "Your last message has not been answered yet.", actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
-  if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [review(), ...extra] };
-  if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [review(), ...extra, markDone("ghost")] };
+  if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [...review(), ...extra] };
+  if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [...review(), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
   const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
   const where = g.shared ? ` in the project folder (shared with other tasks)` : "";
@@ -1611,8 +1626,9 @@ function nextAction(t, ag, g) {
     return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
   }
   const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
-  if (!wasReviewed(t)) return { title: "Ready for review", text: `${what}${where}. Look through the changes first.`, actions: [review(), ...extra] };
-  if (wt) return { title: "Ready to merge", text: `${what}, reviewed. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [merge(), ...extra, markDone("ghost")] };
+  if (!wasReviewed(t)) return { title: "Ready for review", text: `${what}${where}. ` + (canReview(t) ? "Press Review code to have Claude check them, or look through them yourself." : "Look through the changes first."), actions: [...review(), ...extra] };
+  const by = claudeReviewed(ag) ? "Claude reviewed them" : "you looked at them";
+  if (wt) return { title: "Ready to merge", text: `${what}, ${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [merge(), ...extra, markDone("ghost")] };
   return { title: "Ready to complete", text: g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge.` : `${what}${where}.`, actions: [markDone(), ...extra] };
 }
 function renderNext(t) {
