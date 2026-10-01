@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- In the Changes tab, clicking an open change again now closes it. Before, it just opened the same thing again.
 - A card in Done whose changes are not in your project yet now has a "Merge worktree to main" button in its "Next action" box. Before, the button never showed there.
 - The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back. Sending a card to Claude from an old window does not start Claude; the board asks you to send again. The last change you make before closing the page is kept.
 - While Claude is working, a small arrow turns in a circle next to "Work in progress" and on the card's "Claude: working" label, so you can see it is still busy and not stuck. It sits in the middle of the words and grows with the text size.
