@@ -457,7 +457,8 @@ def delegate_lines(model, report, answer_only=False):
             # (.claude/agents/*.md): it preloads a skill's text, so writing one per part would leave files behind.
             "- Skills: a subagent sees the same skills list as you but picks none by itself. For each part, choose "
             "the skills that cover its kind of work (the project's own skills, the domain skill for what it touches, "
-            "and the working rules this prompt or CLAUDE.md tells you to load at the start) and open its prompt with "
+            "and EVERY working-rules skill a hook, this prompt or CLAUDE.md tells you to load at the start: all of "
+            "them, not one, e.g. both cmm-rules and ctx-rules when your setup asks for them) and open its prompt with "
             "them: `First invoke Skill('<name>') with the Skill tool` per skill, plus one line on why that skill "
             "matters for this part. Leave task-observer out: you log the observations.",
             use,
@@ -478,7 +479,8 @@ def delegate_reminder(t):
     on = f' on the "{model}" model (`model: "{model}"` on each Agent call)' if model else ""
     return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to subagents{on}, "
             "as the first brief says: a self-contained prompt per part that opens with `First invoke Skill('<name>') with "
-            "the Skill tool` for each skill you chose for that part (a subagent picks none by itself). Split it and "
+            "the Skill tool` for each skill you chose for that part, working-rules skills included (a subagent picks "
+            "none by itself). Split it and "
             "launch them before you edit anything yourself, not only for the check at the end. Keep only tiny or "
             "tightly coupled parts yourself.")
 
