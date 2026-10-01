@@ -483,6 +483,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const now = () => new Date().toISOString();
 
 let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
+let rev = null;            // X-Board-Rev of the tasks.json we last loaded or saved; null without a server (or an old one)
 let useServer = true;
 let projects = [];         // [{ id, path, name, board }] from server.py, most recent first
 let P = null;              // current project id; every /api call carries it
@@ -515,16 +516,22 @@ async function load() {
   P = (projects.find((p) => p.id === want) || projects[0] || {}).id || null;
   await loadTasks();
 }
+async function fetchBoard() {
+  const r = await fetch(api("/api/tasks"), { cache: "no-store" });
+  if (!r.ok) throw new Error("server said " + r.status);
+  const board = (await r.json()) || defaultState();
+  // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
+  const extra = board.columns.filter((c) => c.done).slice(0, -1);
+  extra.forEach((c) => { c.done = false; });
+  return { board, rev: r.headers.get("X-Board-Rev"), fixed: extra.length > 0 };
+}
 async function loadTasks() {
   state = defaultState();
+  rev = null;
   if (P) {
-    const r = await fetch(api("/api/tasks"), { cache: "no-store" });
-    if (!r.ok) throw new Error("server said " + r.status);
-    state = (await r.json()) || defaultState();
-    // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
-    const extra = state.columns.filter((c) => c.done).slice(0, -1);
-    extra.forEach((c) => { c.done = false; });
-    if (extra.length) save();
+    const b = await fetchBoard();
+    state = b.board; rev = b.rev;
+    if (b.fixed) save();
   }
   const p = project();
   try { if (P) localStorage.setItem(LS_KEY + ":project", P); } catch (_) {}
@@ -534,6 +541,24 @@ async function loadTasks() {
   updateWaiting();
   if (p) setStatus("Saving to " + p.board.replace(p.path, p.name) + "/tasks.json");
   else setStatus("Open a project folder to start");
+}
+// Swaps in the board as saved on disk (another window changed it). force: replace it even if an edit made
+// meanwhile is waiting to save (the 409 path); without it such an edit wins and the reload is dropped.
+async function reloadBoard(force = false) {
+  if (!useServer || !P) return false;
+  const pid = P;
+  try {
+    const b = await fetchBoard();
+    if (pid !== P || (!force && (saveTimer || saving))) return false;
+    clearTimeout(saveTimer); saveTimer = null;
+    state = b.board; rev = b.rev;
+    render(); updateWaiting(); renderProjects();
+    if (openId) { if (task(openId)) renderDetail(); else closeDetail(); }
+    return true;
+  } catch (e) {
+    setStatus("Could not reload the board: " + e.message, true);
+    return false;
+  }
 }
 const api = (url) => url + "?p=" + encodeURIComponent(P);
 const project = () => projects.find((p) => p.id === P);
@@ -568,7 +593,7 @@ function renderProjects() {
 }
 
 async function switchProject(id) {
-  if (saveTimer) await flush();
+  await settled();
   openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
   P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
   try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
@@ -613,18 +638,39 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 300);
 }
-async function flush(keepalive = false) {
+let saving = null;          // the PUT chain in flight; each flush queues behind it so it sends the rev the last one got
+function flush(keepalive = false) {
   clearTimeout(saveTimer);
   saveTimer = null;
-  const body = JSON.stringify(state);
-  if (useServer && !P) return;
+  if (useServer && !P) return Promise.resolve();
+  if (!useServer) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); setStatus("Saved"); }
+    catch (e) { setStatus("Save failed: " + e.message, true); }
+    return Promise.resolve();
+  }
+  if (keepalive) return putBoard(true);   // the page is going away: no time to wait for the queue
+  const run = (saving || Promise.resolve()).then(() => putBoard(false));
+  saving = run;
+  run.then(() => { if (saving === run) saving = null; });
+  return run;
+}
+// Waits until the board on disk has every edit: a queued save is sent, a save in flight is awaited.
+const settled = () => saveTimer ? flush() : (saving || Promise.resolve());
+// If-Match makes the server refuse (409) a save based on an older board than disk, so a stale window cannot overwrite newer work.
+async function putBoard(keepalive) {
+  const pid = P;
   try {
-    if (useServer) {
-      const r = await fetch(api("/api/tasks"), { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
-      if (!r.ok) throw new Error("server said " + r.status);
-    } else {
-      localStorage.setItem(LS_KEY, body);
+    const headers = { "Content-Type": "application/json" };
+    if (typeof rev === "string") headers["If-Match"] = rev;
+    const r = await fetch(api("/api/tasks"), { method: "PUT", headers, body: JSON.stringify(state), keepalive });
+    if (r.status === 409) {
+      if (!keepalive && pid === P && await reloadBoard(true))
+        setStatus("The board changed in another window, so it was reloaded. Please redo your last change.", true);
+      return;
     }
+    if (!r.ok) throw new Error("server said " + r.status);
+    const next = r.headers.get("X-Board-Rev");
+    if (next !== null && pid === P) rev = next;
     setStatus("Saved");
   } catch (e) {
     setStatus("Save failed: " + e.message, true);
@@ -1465,19 +1511,19 @@ async function sendToClaude(t) {
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); $("#d-col").value = t.column;
-  if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // server builds the prompt from tasks.json
+  await settled();   // server builds the prompt from tasks.json
   try {
     const model = $("#d-model").value;
     const res = await post("/api/agent", { p: P, taskId: t.id, model, worktree: $("#use-worktrees").checked && !t.answerOnly });
     t.agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }) };
     touch(t);
-    if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // the watcher reads t.agent from tasks.json
+    await settled();   // the watcher reads t.agent from tasks.json
     pm.state = "sent";
     setStatus("Claude session " + res.id + " started");
   } catch (e) {
     dropPending(t, pm);
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
-    if (saveTimer) { clearTimeout(saveTimer); await flush(); }   // else its "Saved" would replace the error
+    await settled();   // else its "Saved" would replace the error
     if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
     else if (e.norepo) { askRepo(t); setStatus("Worktrees need a local repo first", true); }
     else setStatus("Send to Claude failed: " + e.message, true);
@@ -1583,13 +1629,19 @@ let pollTimer = null, polledOnce = false;
 async function pollAgents() {
   clearTimeout(pollTimer);
   if (!useServer || !P) return;
-  const pid = P;
+  const pid = P, revBefore = rev;
   try {
     const [r, rp] = await Promise.all([fetch(api("/api/agents"), { cache: "no-store" }), fetch("/api/projects", { cache: "no-store" })]);
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
     if (rp.ok) projects = await rp.json();
+    // Another window saved: take its board before the moves below, unless an edit of ours is on its way
+    // (its PUT will 409 and reload) or we saved since this poll left (then the header is just older than rev).
+    const diskRev = r.headers.get("X-Board-Rev");
+    if (rev !== null && diskRev !== null && diskRev !== rev && rev === revBefore && !saveTimer && !saving
+        && await reloadBoard()) setStatus("Board updated from another window");
+    if (pid !== P) return;
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
     for (const [id, a] of Object.entries(next)) {

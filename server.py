@@ -13,6 +13,9 @@ itself (.gitignore `*`), and a send lists the folder in the repo's info/exclude.
 With no projects remembered yet, the git repo containing the current directory
 (or --project) is opened. Opening index.html directly (file://) also works, but
 then tasks live only in that browser's localStorage.
+GET /api/tasks?p=<pid> answers the board (or null) and PUT saves the whole board. Both, and GET /api/agents, carry
+X-Board-Rev (sha1 of tasks.json's bytes, "0" when missing). A PUT with If-Match that no longer equals it is refused
+with 409 `changed` and the current `rev`, so a stale window cannot overwrite a newer board; no If-Match always writes.
 
 "Send to Claude" (task panel) starts `claude --bg` in the project folder with
 the task's title, notes, subtasks and parent chain as the prompt. The session
@@ -274,6 +277,26 @@ def pick_folder():
 
 
 # ---------------------------------------------------------------- prompt
+BOARD_LOCKS = {}
+BOARD_LOCKS_LOCK = threading.Lock()
+
+
+def board_lock(p):
+    with BOARD_LOCKS_LOCK:
+        return BOARD_LOCKS.setdefault(p.id, threading.Lock())
+
+
+def board_rev(p, raw=None):
+    """sha1 of tasks.json's bytes (or of `raw`, bytes already read from it), "0" when there is no file."""
+    if raw is None:
+        try:
+            with open(p.data, "rb") as f:
+                raw = f.read()
+        except FileNotFoundError:
+            return "0"
+    return hashlib.sha1(raw).hexdigest()
+
+
 def load_tasks(p):
     with open(p.data, encoding="utf-8") as f:
         return json.load(f)
@@ -1847,16 +1870,18 @@ class Handler(SimpleHTTPRequestHandler):
     def guess_type(self, path):
         return TYPES.get(os.path.splitext(path)[1].lower()) or super().guess_type(path)
 
-    def _send(self, code, body=b"", ctype="application/json"):
+    def _send(self, code, body=b"", ctype="application/json", headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, code, obj):
-        self._send(code, json.dumps(obj).encode())
+    def _json(self, code, obj, headers=None):
+        self._send(code, json.dumps(obj).encode(), headers=headers)
 
     def _host_ok(self):
         # DNS rebinding: a page on evil.example rebound to 127.0.0.1 sends Host: evil.example, with a matching Origin.
@@ -1917,16 +1942,21 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/tasks":
             def tasks():
                 p = project(pid)
-                if os.path.exists(p.data):
+                try:
                     with open(p.data, "rb") as f:
-                        self._send(200, f.read())
+                        raw = f.read()
+                except FileNotFoundError:
+                    self._send(200, b"null", headers={"X-Board-Rev": "0"})
                 else:
-                    self._send(200, b"null")
+                    self._send(200, raw, headers={"X-Board-Rev": board_rev(p, raw)})
             self._errors(tasks)
         elif path == "/api/default-model":
             self._errors(lambda: self._json(200, default_model(project(pid))))
         elif path == "/api/agents":
-            self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
+            def agents():
+                p = project(pid)
+                self._json(200, WATCH.snapshot(p.id), headers={"X-Board-Rev": board_rev(p)})
+            self._errors(agents)
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
         elif path == "/api/observations":
@@ -2028,22 +2058,33 @@ class Handler(SimpleHTTPRequestHandler):
             if not ok:
                 raise ValueError("need columns and tasks lists")
             reports.ensure_board(p.board)
-            # Only the board page that sent a card sets its "agent", and nothing clears it. A tab opened before
-            # the send (or a save racing the send) would drop it, and the card would vanish from the watcher.
-            try:
-                before = load_tasks(p)
-                sent = {t["id"]: t["agent"] for t in before["tasks"] if t.get("agent")}
-            except (OSError, ValueError, KeyError, TypeError):
-                before, sent = None, {}
-            for t in data["tasks"]:
-                if isinstance(t, dict) and not t.get("agent") and t.get("id") in sent:
-                    t["agent"] = sent[t["id"]]
-            # Write-then-rename so a crash mid-write never leaves a truncated tasks.json.
-            fd, tmp = tempfile.mkstemp(dir=p.board, suffix=".tmp")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-                f.write("\n")
-            replace_file(tmp, p.data)
+            match = self.headers.get("If-Match")
+            with board_lock(p):
+                try:
+                    with open(p.data, "rb") as f:
+                        cur = f.read()
+                except FileNotFoundError:
+                    cur = None
+                rev = board_rev(p, cur) if cur is not None else "0"
+                if match is not None and match.strip('"') != rev:
+                    self._json(409, {"error": "The board changed in another window", "changed": True, "rev": rev})
+                    return
+                # Only the board page that sent a card sets its "agent", and nothing clears it. A tab opened before
+                # the send (or a save racing the send) would drop it, and the card would vanish from the watcher.
+                try:
+                    before = json.loads(cur.decode("utf-8"))
+                    sent = {t["id"]: t["agent"] for t in before["tasks"] if t.get("agent")}
+                except (AttributeError, ValueError, KeyError, TypeError):
+                    before, sent = None, {}
+                for t in data["tasks"]:
+                    if isinstance(t, dict) and not t.get("agent") and t.get("id") in sent:
+                        t["agent"] = sent[t["id"]]
+                out = (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+                # Write-then-rename so a crash mid-write never leaves a truncated tasks.json.
+                fd, tmp = tempfile.mkstemp(dir=p.board, suffix=".tmp")
+                with os.fdopen(fd, "wb") as f:
+                    f.write(out)
+                replace_file(tmp, p.data)
             if isinstance(before, dict):
                 # A card with a session that lands in a done column gets a recap, then its sessions are removed.
                 done = {c.get("id") for c in data["columns"] if isinstance(c, dict) and c.get("done")}
@@ -2051,7 +2092,7 @@ class Handler(SimpleHTTPRequestHandler):
                 for t in data["tasks"]:
                     if isinstance(t, dict) and t.get("agent") and t.get("column") in done and was.get(t.get("id")) not in done:
                         WATCH.close_when_idle(p, t["id"])
-            self._send(204)
+            self._send(204, headers={"X-Board-Rev": board_rev(p, out)})
         self._errors(write)
 
     def log_message(self, fmt, *args):

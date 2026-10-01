@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-01
+
+- The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back.
+
 ## 2026-09-30
 
 - A card with its own separate copy of your project now has a "Delete worktree" button, in any column. It throws that copy away without bringing its changes in. If the copy holds work you would lose, a small window shows it and asks first.
