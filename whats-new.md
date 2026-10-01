@@ -2,7 +2,7 @@
 
 ## 2026-10-01
 
-- At the top of the board, "Running" shows which copy of the board you are using. It turns orange when you are on a task's separate copy instead of your main one, and you can pick another copy there to jump to it.
+- A small box at the top of the board shows which copy of the board you are using. It turns orange when you are on a task's separate copy instead of your main one, and you can pick another copy there to jump to it. The top bar now stays on one line.
 - While "Delete worktree" is working, the whole board turns grey and shows "Deleting the worktree…", so you cannot click anything by mistake until it is finished.
 - If you write to Claude on a card after its separate copy was thrown away or brought into your project, Claude now gets a fresh separate copy to work in, so your own copy stays as it is.
 - The "Claude finished" and "Claude needs you" pop-ups now wait until the card has moved or shows the change, so you no longer look at the board before it is ready.
