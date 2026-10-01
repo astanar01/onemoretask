@@ -42,14 +42,16 @@ body { background: var(--bg); color: var(--text); font: calc(14px * var(--ts))/1
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-header h1 { font-size: calc(17px * var(--ts)); margin: 0 8px 0 0; }
+/* One line: the search box and the status text give up width first. */
+header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
+header > * { flex-shrink: 0; }
+header h1 { font-size: calc(17px * var(--ts)); margin: 0 4px 0 0; }
 header .grow { flex: 1; }
-#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-width: 200px; }
+#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); width: 200px; min-width: 90px; flex-shrink: 1; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
 .toggles { display: flex; flex-direction: column; gap: 2px; }
 label.toggle:has(input:disabled) { opacity: .6; }
-#status { color: var(--muted); font-size: calc(12px * var(--ts)); }
+#status { color: var(--muted); font-size: calc(12px * var(--ts)); flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #status.err { color: var(--danger); }
 #d-error { display: none; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--danger); border-radius: 8px; color: var(--danger); font-size: calc(13px * var(--ts)); align-items: flex-start; gap: 10px; white-space: pre-wrap; }
 #d-error.show { display: flex; }
@@ -61,11 +63,14 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .btn.danger { color: var(--danger); }
 .btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 #project { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 260px; font-weight: 600; }
-#project-wrap { position: relative; display: inline-flex; }
+#project-wrap { position: relative; display: inline-flex; flex-shrink: 1; min-width: 110px; }
+#project-wrap #project { min-width: 0; width: 100%; }
 #project-wrap.others #project { padding-right: 38px; }
 #others-waiting { position: absolute; right: 24px; top: 50%; transform: translateY(-45%); color: var(--major); font-weight: 800; font-size: 18px; line-height: 1; pointer-events: none; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
 #theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
+#app-copy { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 150px; text-overflow: ellipsis; }
+#app-copy.away { border-color: var(--wait); color: var(--wait); font-weight: 600; }
 #update { color: var(--muted); }
 #update.new { background: var(--ok); border-color: var(--ok); color: #fff; }
 #update.blocked { border-color: var(--wait); color: var(--wait); }
@@ -367,6 +372,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <span class="toggles"><label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <label class="toggle" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"> Use worktrees</label></span>
   <span class="grow"></span>
+  <select id="app-copy" hidden></select>
   <button class="btn" id="update" hidden></button>
   <button class="btn" id="theme"></button>
   <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
@@ -2002,8 +2008,53 @@ async function runUpdate() {
     showUpdate("Update failed", "", again(e.message));
   }
 }
+// Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
+let copies = null;
+async function checkAppCopy() {
+  if (!useServer) return;
+  try {
+    const r = await fetch("/api/app-copy", { cache: "no-store" });
+    if (!r.ok) return;
+    copies = await r.json();
+  } catch (_) { return; }
+  const sel = $("#app-copy");
+  const cur = copies.copies.find((c) => c.path === copies.current);
+  sel.hidden = copies.copies.length < 2 && (!cur || cur.main);
+  sel.classList.toggle("away", !cur || !cur.main);
+  sel.title = cur && cur.main ? "The board runs from the main copy. Pick a worktree to try a task's changes"
+    : "The board runs from a worktree, not from main: " + copies.current;
+  const name = (c) => (c.main ? "main" : "⎇ " + (c.name || c.branch));
+  sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
+    + esc(name(c)) + (c.canSwitch ? "" : " (too old)") + "</option>").join("");
+  if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);
+}
+$("#app-copy").addEventListener("change", async (e) => {
+  const sel = e.target, path = sel.value;
+  sel.disabled = true;
+  setStatus("Restarting the board from " + path + "…");
+  try {
+    const r = await fetch("/api/app-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    for (let t0 = Date.now(), down = false; ; ) {
+      await new Promise((ok) => setTimeout(ok, 500));
+      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      // Any answer counts once it went down: an older main copy has no /api/app-copy (404).
+      let q = null;
+      try { q = await fetch("/api/app-copy", { cache: "no-store" }); } catch (_) {}
+      if (!q) down = true;
+      else if (down || (q.ok && (await q.json().catch(() => ({}))).current === path)) break;
+    }
+    location.reload();
+  } catch (err) {
+    sel.disabled = false;
+    setStatus("Could not switch: " + err.message, true);
+    checkAppCopy();
+  }
+});
 $("#update").addEventListener("click", () => (upd && !upd.error && upd.behind > 0 && upd.canUpdate ? runUpdate() : checkUpdate(true)));
 setInterval(() => checkUpdate(), 30 * 60000);
+setInterval(() => checkAppCopy(), 60000);
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
@@ -2013,7 +2064,7 @@ try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checke
 try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
 
 load().then(() => {
-  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate();
+  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
   if (!useServer) { $("#use-worktrees").disabled = true; $("#use-worktrees-lbl").title = "Needs server.py"; }
 })
   .catch((e) => setStatus("Could not load the board: " + e.message, true));

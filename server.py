@@ -1540,7 +1540,12 @@ def worktree_action(p, task_id, action):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if action == "merge" and board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
+
+
+STILL_RUNNING_HERE = "The board itself runs from this worktree — switch it back to main (the box at the top) first"
 
 
 class UnsavedWorkError(Exception):
@@ -1560,6 +1565,8 @@ def delete_worktree(p, task_id, force=False):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     branch = wt["branch"]
     ref = f"refs/heads/{branch}"
     has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
@@ -1887,7 +1894,65 @@ class Updater:
 UPDATER = Updater()
 
 
+def app_copies():
+    """The checkouts of the app's repo (the main one first, then its worktrees) and which one this server runs
+    from. Empty when the app is not a git checkout."""
+    if _git_out("rev-parse", "--show-toplevel") is None:
+        return {"current": APP, "copies": []}
+    copies = []
+    blocks = (_git_out("worktree", "list", "--porcelain") or "").split("\n\n")
+    for i, block in enumerate(blocks):
+        f = dict((line + " ").split(" ", 1) for line in block.splitlines() if line)
+        path = f.get("worktree", "").strip()
+        if not path or "bare" in f or not os.path.isfile(os.path.join(path, "server.py")):
+            continue
+        branch = f.get("branch", "").strip().removeprefix("refs/heads/")
+        try:
+            with open(os.path.join(path, "server.py"), encoding="utf-8") as fh:
+                # A worktree made before this switch existed would leave the board with no way back (main is home).
+                can_switch = i == 0 or "def app_copies(" in fh.read()
+        except OSError:
+            can_switch = False
+        copies.append({"path": path, "branch": branch or "(no branch) " + f.get("HEAD", "")[:7].strip(),
+                       "main": i == 0, "canSwitch": can_switch})  # git lists the main checkout first
+    # A task's worktree branch is "<slug>-<task id>": the name drops the id only when it is a task on the app's board.
+    home = next((x for x in projects() if copies and copies[0]["main"] and x.path == os.path.realpath(copies[0]["path"])),
+                None)
+    try:
+        ids = {t["id"] for t in load_tasks(home)["tasks"]} if home else set()
+    except (OSError, ValueError, KeyError):
+        ids = set()
+    for c in copies:
+        slug, _, tail = c["branch"].rpartition("-")
+        c["name"] = "main" if c["main"] else slug if slug and tail in ids else c["branch"]
+    current = next((c["path"] for c in copies if os.path.samefile(c["path"], APP)), APP)
+    return {"current": current, "copies": copies}
+
+
+def board_runs_from(path):
+    """True when this server runs from `path` (a worktree it must not remove under itself)."""
+    try:
+        return os.path.samefile(path, APP)
+    except OSError:
+        return False
+
+
 RESTART = threading.Event()
+RESTART_FROM = [APP]  # the app folder whose server.py the restart runs
+
+
+def switch_copy(path):
+    """Run the board from another checkout of the app (main or a worktree): checked against app_copies()."""
+    info = app_copies()
+    target = next((c for c in info["copies"] if c["path"] == path), None)
+    if not target:
+        raise LookupError("not a copy of the app: " + str(path))
+    if target["path"] == info["current"]:
+        raise PermissionError("The board already runs from that copy")
+    if not target["canSwitch"]:
+        raise PermissionError("That copy is older than this switch: the board could not switch back from it")
+    target = target["path"]
+    RESTART_FROM[0] = target
 
 
 def restart(server):
@@ -1900,8 +1965,8 @@ def restart(server):
 
 
 def reexec():
-    """Re-run server.py with the same arguments so pulled code takes effect."""
-    cmd = [sys.executable, os.path.join(APP, "server.py"), *SERVER_ARGS]
+    """Re-run server.py with the same arguments so pulled code takes effect (or another copy's, after a switch)."""
+    cmd = [sys.executable, os.path.join(RESTART_FROM[0], "server.py"), *SERVER_ARGS]
     for stream in (sys.stdout, sys.stderr):
         stream.flush()
     if WINDOWS:  # execv there starts a new process and returns the console to the shell
@@ -2016,6 +2081,8 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
+        elif path == "/api/app-copy":
+            self._errors(lambda: self._json(200, app_copies()))
         elif path == "/api/update":
             force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
             self._errors(lambda: self._json(200, UPDATER.status(force)))
@@ -2031,7 +2098,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree",
                   "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update")
+                  "/api/update", "/api/app-copy")
         if not self._host_ok():
             return
         if path not in routes:
@@ -2073,6 +2140,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if old != new:
                     self.wfile.flush()
                     threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+            elif path == "/api/app-copy":
+                switch_copy(body.get("path"))
+                self._json(200, {"ok": True, "restarting": True})
+                self.wfile.flush()
+                threading.Thread(target=restart, args=(self.server,), daemon=True).start()
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
