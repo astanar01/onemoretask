@@ -269,17 +269,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .agent.stopped { background: var(--line); color: var(--muted); }
 
 /* ---------------------------------------------------------------- task panel: sidebar + main */
-#panel { --sw: clamp(320px, calc(300px * var(--ts) + 60px), 38%); position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: grid; grid-template-columns: 0px var(--sw) minmax(0, 1fr) 0px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
-/* Spacer tracks around sidebar + main: a new task (#panel.solo) shows both centred, the main one sidebar wide;
-   on Send (#panel.grow) the spacers animate to 0 so the pair slides left and main widens. Same track shape both ways. */
-#panel.solo { grid-template-columns: calc((100% - 2 * var(--sw)) / 2) var(--sw) minmax(0, 1fr) calc((100% - 2 * var(--sw)) / 2); }
-#panel.grow { transition: grid-template-columns .55s cubic-bezier(.4, 0, .2, 1); }
-#panel > .side { grid-column: 2; }
-#panel > .main { grid-column: 3; }
-@media (min-width: 901px) {
-  #panel.solo > .side { border-left: 1px solid var(--line); }
-  #panel.solo > .main { border-right: 1px solid var(--line); }
-}
+#panel { position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: grid; grid-template-columns: clamp(320px, calc(300px * var(--ts) + 60px), 38%) minmax(0, 1fr); overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
 .x-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(18px * var(--ts)); line-height: 1; cursor: pointer; }
 .x-close:hover { background: var(--line); color: var(--text); }
 .hint { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 4px; }
@@ -1437,7 +1427,6 @@ function renderAgent(t) {
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];
   $("#d-send-row").style.display = t.agent || pend.length ? "none" : "";
-  $("#panel").classList.toggle("solo", !t.agent && !pend.length);
   // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
   const mdl = (t.agent && t.agent.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
   $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>Claude${mdl ? ` · ${esc(mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
@@ -1965,10 +1954,6 @@ async function sendToClaude(t) {
   $("#d-send").disabled = true;
   setStatus("Starting Claude…");
   const pm = addPending(t, "launch", "Sending to Claude" + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
-  // The centred new-task card slides left and its right side widens; only on this click, not on open.
-  const panel = $("#panel");
-  panel.classList.add("grow");
-  setTimeout(() => panel.classList.remove("grow"), 700);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
@@ -1978,7 +1963,6 @@ async function sendToClaude(t) {
   await settled();   // server builds the prompt from tasks.json
   if (boardGen !== gen) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.
-    panel.classList.remove("grow");
     dropPending(t, pm); t = task(t.id) || t;
     render(); if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
     setStatus("The board changed in another window, so Claude was not started. Please send again.", true);
@@ -1999,7 +1983,6 @@ async function sendToClaude(t) {
     pm.state = "sent";
     setStatus("Claude session " + res.id + " started");
   } catch (e) {
-    panel.classList.remove("grow");
     dropPending(t, pm); t = task(t.id) || t;
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     await settled();   // else its "Saved" would replace the error
