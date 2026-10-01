@@ -283,10 +283,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .back:hover { color: var(--text); }
 .side .crumb { font-size: calc(12px * var(--ts)); color: var(--muted); margin-bottom: 4px; overflow-wrap: anywhere; }
 .side .crumb a { color: var(--accent); cursor: pointer; }
-#d-title { width: 100%; font-size: calc(22px * var(--ts)); line-height: 1.25; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin-left: -6px; border-radius: 6px; field-sizing: content; min-height: 1.6em; }
+#d-title { display: block; width: calc(100% + 6px); font-size: calc(22px * var(--ts)); line-height: 1.25; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 4px 6px; margin-left: -6px; border-radius: 6px; field-sizing: content; resize: none; overflow: hidden; overflow-wrap: anywhere; }
 #d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
 #d-title:read-only { cursor: default; }
-#d-title:read-only:hover { border-color: transparent; background: transparent; }
+#d-title:read-only:hover, #d-title:read-only:focus { border-color: transparent; background: transparent; }
 #d-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: calc(13px * var(--ts)); margin: 2px 0 14px; }
 .rows { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; min-width: 0; }
@@ -496,7 +496,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   .main { flex: none; min-height: 70vh; }
   .body { overflow: visible; padding: 14px 16px; }
   .mainbar { padding-left: 16px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
-  .composer { padding: 10px 16px; position: sticky; bottom: 0; background: var(--bg); }
+  .composer { padding: 10px 16px; }
   .menu { right: 44px; }
   .sel { max-width: 70%; }
 }
@@ -536,7 +536,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
     <aside class="side" id="d-side">
       <button class="back" id="d-back"><span data-ico="back" data-s="16"></span>Back to board</button>
       <div class="crumb" id="d-crumb"></div>
-      <input id="d-title" placeholder="Task title">
+      <textarea id="d-title" rows="1" placeholder="Task title"></textarea>
       <div id="d-meta"></div>
       <div class="rows">
         <div class="row"><span class="ov-ico st" data-ico="status" data-s="18"></span><span class="lbl">Status</span><span class="sel on" id="d-col-slot"><select id="d-col"></select><span data-ico="chev" data-s="14"></span></span></div>
@@ -597,7 +597,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
         <div class="tabpane" id="d-tab-summary" role="tabpanel">
           <div class="sum-head"><span class="pillset" id="d-agent"></span></div>
           <div id="d-sum-result"></div>
-          <h3 id="d-sum-changes-h">What changed</h3><div id="d-sum-changes"></div>
+          <h3 id="d-sum-changes-h">Commits and files</h3><div id="d-sum-changes"></div>
           <h3 id="d-sum-verify-h">Verification</h3><div id="d-sum-verify"></div>
           <h3>Repository status</h3><div id="d-sum-repo"></div>
           <a class="more-link" id="d-sum-conv">View full conversation →</a>
@@ -1132,7 +1132,8 @@ function openDetail(id) {
   if (markSeen([id])) render();
   $("#overlay").classList.add("open");
   renderDetail();
-  $("#d-title").focus();
+  const t = task(id);
+  if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
 function closeDetail() { showPanelError(""); settleDraft(); openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
@@ -1197,7 +1198,8 @@ function renderDetail() {
   disarmDelete();
 }
 
-$("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value; touch(t); });
+$("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value.replace(/\n/g, " "); touch(t); });
+$("#d-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });   // one-line title in a wrapping box
 $("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
@@ -1368,7 +1370,7 @@ function renderAgent(t) {
   // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
   const mdl = (t.agent && t.agent.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
   $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>Claude${mdl ? ` · ${esc(mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
-      <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>${cacheChip(ag, false)}` : "";
+      <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
   const log = (ag && ag.log) || [];
