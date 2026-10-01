@@ -1150,6 +1150,7 @@ class Watcher:
         self.cache = {}       # (project id, task id) -> {id, sessionId, state, phase, reason, log}
         self.launched = {}    # agent id -> launch time, for sessions not listed yet
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
+        self.loaded = False   # a first pass has ended, even with an error: the page stops polling fast
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
@@ -1325,7 +1326,7 @@ class Watcher:
             with self.lock:
                 self.cache[key] = fresh[key]
         with self.lock:
-            fresh.update({k: v for k, v in old.items() if k[0] in unread})
+            fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
             self.cache = fresh
             primed, self.primed = self.primed, True
         if not primed:
@@ -1393,6 +1394,8 @@ class Watcher:
                     self.flush_alerts()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
                 print("watcher:", e)
+            finally:
+                self.loaded = last > 0  # a first pass that failed still ends the page's fast polling
             time.sleep(0.5)
 
     def snapshot(self, pid):
@@ -2082,7 +2085,7 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/agents":
             # The page polls faster while the first pass after a start still fills in cards.
             self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id),
-                                            {} if WATCH.primed else {"X-Board-Loading": "1"}))
+                                            {} if WATCH.loaded else {"X-Board-Loading": "1"}))
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
         elif path == "/api/observations":
