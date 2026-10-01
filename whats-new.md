@@ -2,7 +2,7 @@
 
 ## 2026-10-01
 
-- The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back.
+- The board now notices when another window changed it (a card moved, a note typed) and shows the change within a few seconds, so you no longer need to reload the page. If you change something in an old window, the board reloads itself and asks you to do that change again, instead of putting the old board back. Sending a card to Claude from an old window does not start Claude; the board asks you to send again. The last change you make before closing the page is kept.
 
 ## 2026-09-30
 
