@@ -4,7 +4,7 @@
 
 - When a task is split between helpers, Claude now picks the right helpers' guides for each part and tells them to read those first, so each helper works the way the project wants.
 - Each helper in the Subagents list now shows the skills it used, so you can see what each one is following.
-- The "Next action" box no longer jumps to "Merge" the moment you press the review button. It now offers two ways: the purple "Review code" button starts a real check of the changes, and "Look at the changes" opens them for you to read. The merge button shows once Claude has posted its review, or once you come back from reading the changes. If you only read them, "Review code" stays next to the merge button, so you can still ask Claude to check.
+- The "Next action" box now always shows "Merge worktree to main" and "Review code" side by side. You no longer have to read the changes or wait for a check before you can merge. To read the changes, open the Changes tab.
 - When you press "Run app" on a website task, Claude now opens it in a new tab for you. Web addresses Claude writes on a card can now be clicked too, and open in a new tab.
 - In the Changes tab, clicking an open change again now closes it. Before, it just opened the same thing again.
 - A card in Done whose changes are not in your project yet now has a "Merge worktree to main" button in its "Next action" box. Before, the button never showed there.
