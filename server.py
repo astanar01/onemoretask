@@ -687,7 +687,14 @@ def renew_worktree(p, t):
     wt = (t.get("agent") or {}).get("worktree")
     if not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or live_worktree(t):
         return None
-    return make_worktree(p, t, name=wt["branch"])
+    branch = wt["branch"]
+    # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts at HEAD.
+    # One holding unmerged commits is reused, so that work stays. Prune first: a stale registration blocks -D.
+    git_try(p.path, "worktree", "prune")
+    if (git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None
+            and git_try(p.path, "merge-base", "--is-ancestor", f"refs/heads/{branch}", "HEAD") is not None):
+        git_try(p.path, "branch", "-D", branch)
+    return make_worktree(p, t, name=branch)
 
 
 def renewed_lines(wt, main):
