@@ -246,6 +246,11 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* turning arrow while Claude works; turning() sets a negative delay so a re-render keeps the turn going instead of restarting it */
+.turning { display: inline-flex; flex: none; vertical-align: -0.15em; animation: spin 1.4s linear infinite; }
+.agent .turning { margin-right: 4px; }
+#d-next-title .turning { margin-right: 8px; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .turning { animation: none; } }
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .thumbs:empty { display: none; }
 .thumb { position: relative; display: block; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
@@ -1049,7 +1054,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `Claude: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `Claude: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1477,8 +1482,10 @@ const ICONS = {
   merge: `<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M16 12c-4 0-7-2-8-5"/>`,
   file: `<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>`,
   commit: `<circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/>`,
+  turn: `<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>`,
 };
 const icon = (k, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
+const turning = (s = 16) => `<span class="turning" aria-hidden="true" style="animation-delay:-${Date.now() % 1400}ms">${icon("turn", s)}</span>`;
 document.querySelectorAll("[data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
 // Form elements move between the draft editor and the sent-task sidebar, so each ID exists once.
@@ -1518,16 +1525,16 @@ function nextAction(t, ag, g) {
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
   const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
   const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
-  if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [] }
+  if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [], busy: true }
     : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
     return { title: "Done", text: wt ? "Its worktree is not merged yet. Move the card back to Review to merge it, or delete the worktree from the ⋯ menu if you do not need it." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: wt && canWorktree(t) ? [merge("sec")] : [] };
   }
-  if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [] };
+  if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [], busy: true };
   if (ag.phase === "working") {
     const subs = (ag.subagents || []).filter((s) => !s.finished).length;
-    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `Claude is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : "Claude is working. You can add a note in Conversation; it reads it as soon as it can.", actions: [] };
+    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `Claude is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : "Claude is working. You can add a note in Conversation; it reads it as soon as it can.", actions: [], busy: true };
   }
   if (ag.phase === "gone") {
     const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
@@ -1561,7 +1568,7 @@ function nextAction(t, ag, g) {
 function renderNext(t) {
   const ag = t.agent && agents[t.id];
   const n = nextAction(t, ag, taskGitFor(t));
-  $("#d-next-title").textContent = n.title;
+  $("#d-next-title").innerHTML = (n.busy ? turning(16) : "") + esc(n.title);
   $("#d-next-text").textContent = n.text;
   const box = $("#d-next-actions");
   box.innerHTML = n.actions.map((a, i) => `<button class="btn ${a.cls}" data-i="${i}"${a.title ? ` title="${esc(a.title)}"` : ""}>${a.icon ? icon(a.icon, 16) : ""}${esc(a.label)}</button>`).join("");

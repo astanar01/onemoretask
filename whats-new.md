@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- While Claude is working, a small arrow turns in a circle next to "Work in progress" and on the card's "Claude: working" label, so you can see it is still busy and not stuck.
 - A new task now opens in the middle of the window, with both of its sides the same width. When you send it to Claude, it slides to the left and Claude's side grows to fill the rest.
 - An open card has a new look. The left side shows the task's name, its column and priority, and a "Next action" box that tells you what to do now: wait, look at the changes, bring them in, or mark the task done. The big button there is the one to press. Under it, small fold-out rows hold the technical bits, the helpers Claude used and the words it was given.
 - The right side of an open card now has four tabs: Summary (what Claude did, what changed and whether it is in your project yet), Changes (the files and saved changes, click one to see the difference), Conversation (all messages, with the reply box at the bottom) and Images. Finished tasks open on Summary, busy ones on Conversation.
