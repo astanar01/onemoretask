@@ -2,6 +2,7 @@
 
 ## 2026-10-01
 
+- Each helper in the Subagents list now shows the skills it used, so you can see what each one is following.
 - The "Next action" box no longer jumps to "Merge" the moment you press the review button. It now offers two ways: the purple "Review code" button starts a real check of the changes, and "Look at the changes" opens them for you to read. The merge button shows once Claude has posted its review, or once you come back from reading the changes.
 - When you press "Run app" on a website task, Claude now opens it in a new tab for you. Web addresses Claude writes on a card can now be clicked too, and open in a new tab.
 - In the Changes tab, clicking an open change again now closes it. Before, it just opened the same thing again.
