@@ -1,5 +1,10 @@
 # What's new
 
+## 2026-10-01
+
+- While "Delete worktree" is working, the whole board turns grey and shows "Deleting the worktree…", so you cannot click anything by mistake until it is finished.
+- If you write to Claude on a card after its separate copy was thrown away or brought into your project, Claude now gets a fresh separate copy to work in, so your own copy stays as it is.
+
 ## 2026-09-30
 
 - A card with its own separate copy of your project now has a "Delete worktree" button, in any column. It throws that copy away without bringing its changes in. If the copy holds work you would lose, a small window shows it and asks first.

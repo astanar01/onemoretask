@@ -42,7 +42,7 @@ worktree to main" (POST /api/agent/worktree): canned replies that have the sessi
 merge the branch into the base branch, then remove the worktree and branch (anything going wrong: abort, ask on the card).
 "Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
 server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
-`force` once the user confirms.
+`force` once the user confirms. A reply after the worktree was deleted or merged makes a fresh one (renew_worktree).
 
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
@@ -646,10 +646,10 @@ def worktree_name(t):
     return f"{slug}-{tid}" if slug else f"task-{tid}"
 
 
-def make_worktree(p, t, made=None):
+def make_worktree(p, t, made=None, name=None):
     """Create the task's worktree, or reuse it (a retry after a failed launch): <repo>/.claude/worktrees/<name> on
     branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}. `made` (a list)
-    gets "worktree" and "branch" for what this call created."""
+    gets "worktree" and "branch" for what this call created. `name` defaults to one made from the task's title."""
     made = [] if made is None else made
     if git_try(p.path, "rev-parse", "--is-inside-work-tree") != "true":
         raise NoRepoError(f"{p.name} has no git repo yet, so its tasks cannot use worktrees")
@@ -657,7 +657,7 @@ def make_worktree(p, t, made=None):
         raise NoRepoError(f"The git repo of {p.name} has no commit yet, so its tasks cannot use worktrees")
     top = os.path.normpath(git_run(p.path, "rev-parse", "--show-toplevel"))
     prefix = git_run(p.path, "rev-parse", "--show-prefix")
-    name = worktree_name(t)
+    name = name or worktree_name(t)
     path = os.path.join(top, *WORKTREES.split("/"), name)
     exclude_local(p)
     base = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD") or git_run(p.path, "rev-parse", "--short", "HEAD")
@@ -679,6 +679,28 @@ def live_worktree(t):
     """The task's worktree record while its folder exists, else None."""
     wt = (t.get("agent") or {}).get("worktree")
     return wt if isinstance(wt, dict) and wt.get("path") and os.path.isdir(wt["path"]) else None
+
+
+def renew_worktree(p, t):
+    """A message to a "use worktrees" task whose worktree was deleted or merged away: make a fresh one, same folder
+    and branch name (the card's record stays valid), from the main checkout's HEAD. Returns it, else None."""
+    wt = (t.get("agent") or {}).get("worktree")
+    if not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or live_worktree(t):
+        return None
+    branch = wt["branch"]
+    # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts at HEAD.
+    # One holding unmerged commits is reused, so that work stays. Prune first: a stale registration blocks -D.
+    git_try(p.path, "worktree", "prune")
+    if (git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None
+            and git_try(p.path, "merge-base", "--is-ancestor", f"refs/heads/{branch}", "HEAD") is not None):
+        git_try(p.path, "branch", "-D", branch)
+    return make_worktree(p, t, name=branch)
+
+
+def renewed_lines(wt, main):
+    return ["The task's earlier worktree was removed (the user deleted it, or it was merged), so the board made a "
+            "fresh one for this message. Anything you said earlier about the old worktree's folder or branch is out "
+            "of date.", *worktree_lines(wt, main)]
 
 
 def commit_ref(p, t):
@@ -1369,6 +1391,10 @@ def reply(p, task_id, text, images=(), extra=""):
         return False
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    wt = t and renew_worktree(p, t)
+    if wt:
+        extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
     message = text + extra + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
     message += reports.LANGUAGE_RULE + ")"
@@ -1659,7 +1685,9 @@ def reopen(p, task_id, text, images=(), handed=0):
     recap = reports.read_recap(p.board, task_id)
     if not t or not recap:
         raise LookupError("no Claude session for this task")
-    prompt = "\n".join([build_prompt(p, state, t, live_worktree(t)), "",
+    fresh = renew_worktree(p, t)
+    prompt = "\n".join([build_prompt(p, state, t, fresh or live_worktree(t)), "",
+                        *((renewed_lines(fresh, p.path)[0], "") if fresh else ()),
                         "This task was worked on before. Its sessions were closed when the card moved to done, and "
                         "this recap was written from them:", "", recap, "",
                         "The user reopened the card with this message. It is what to do now; where it differs from the "

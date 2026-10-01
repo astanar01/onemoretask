@@ -220,6 +220,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .panel-foot > span:last-child { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
 #d-review-wrap, #d-wt-wrap { display: flex; align-items: center; gap: 8px; }
 #d-wt-wrap .btn, #d-wt-del { white-space: nowrap; }
+#busy { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.5); display: none; justify-content: center; align-items: center; cursor: wait; }
+#busy.open { display: flex; }
+#busy .box { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 12px; padding: 16px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#busy svg { animation: spin 1.2s linear infinite; color: var(--accent); }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
@@ -460,6 +464,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <ul id="wtdel-list"></ul>
   <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
 </div></div>
+<div id="busy" role="alertdialog" aria-modal="true" aria-live="assertive"><div class="box"><span id="busy-icon"></span><span id="busy-text"></span></div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
   <button class="x-close" id="obs-x" title="Close">✕</button>
   <h3 id="obs-title">Skill observations</h3>
@@ -1070,6 +1075,7 @@ $("#d-delete").onclick = () => {
 };
 
 document.addEventListener("keydown", (e) => {
+  if (busyOn()) { e.preventDefault(); e.stopPropagation(); return; }
   if (e.key === "Escape" && trustOpen()) closeTrust(true);
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
@@ -1524,12 +1530,24 @@ $("#d-wt-merge").onclick = () => { const t = task(openId); if (t) worktreeAction
 // No Claude involved: the server removes the folder and branch. Work that would be lost is listed in a modal first.
 const wtdelOpen = () => $("#wtdel-modal").classList.contains("open");
 function closeWtdel() { $("#wtdel-modal").classList.remove("open"); }
+// Greys out and locks the whole page (clicks and keys) while a server action runs; busy(false) lifts it.
+const busyOn = () => $("#busy").classList.contains("open");
+function busy(msg) {
+  for (const el of document.body.children) if (el.id !== "busy") el.inert = !!msg;
+  if (msg) { $("#busy-icon").innerHTML = COG.replace(/"12"/g, '"20"'); $("#busy-text").textContent = msg; }
+  $("#busy").classList.toggle("open", !!msg);
+}
 async function deleteWorktree(t, force) {
+  busy("Deleting the worktree…");
+  try { await deleteWorktreeNow(t, force); } finally { busy(false); }
+  if (wtdelOpen()) $("#wtdel-no").focus();  // inert while busy, so focus only now
+}
+async function deleteWorktreeNow(t, force) {
   $("#d-wt-del").disabled = $("#wtdel-yes").disabled = true;
   setStatus("Deleting the worktree…");
+  closeWtdel();
   try {
     await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
-    closeWtdel();
     if (agents[t.id]) agents[t.id].worktree = false;
     gitInfo.at = 0;
     setStatus("Worktree deleted");
@@ -1544,7 +1562,6 @@ async function deleteWorktree(t, force) {
       $("#wtdel-no").onclick = closeWtdel;
       $("#wtdel-yes").onclick = () => deleteWorktree(t, true);
       $("#wtdel-modal").classList.add("open");
-      $("#wtdel-no").focus();
       setStatus("");
     } else setStatus("Delete worktree failed: " + e.message, true);
   } finally { $("#d-wt-del").disabled = $("#wtdel-yes").disabled = false; }
