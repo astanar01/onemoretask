@@ -477,7 +477,8 @@ def delegate_reminder(t):
     look = "the looking-into this reply needs" if t.get("answerOnly") else "the work this reply asks for"
     on = f' on the "{model}" model (`model: "{model}"` on each Agent call)' if model else ""
     return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to subagents{on}, "
-            "as the first brief says (a self-contained prompt per part, naming the skills to invoke first). Split it and "
+            "as the first brief says: a self-contained prompt per part that opens with `First invoke Skill('<name>') with "
+            "the Skill tool` for each skill you chose for that part (a subagent picks none by itself). Split it and "
             "launch them before you edit anything yourself, not only for the check at the end. Keep only tiny or "
             "tightly coupled parts yourself.")
 
