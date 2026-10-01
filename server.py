@@ -1236,7 +1236,7 @@ def _action(block):
 
 def subagents(session_id):
     """The session's Agent-tool subagents from <session>/subagents/agent-<id>.{meta.json,jsonl}:
-    [{id, name, type, started, updated, finished, action}], oldest first. finished = its last entry is an
+    [{id, name, type, started, updated, finished, action, skills}], oldest first. finished = its last entry is an
     end_turn reply; a subagent cut off mid-run stays unfinished (the board shows it as stopped)."""
     path = transcript_path(session_id)
     folder = path and os.path.join(path[:-len(".jsonl")], "subagents")
@@ -1277,11 +1277,16 @@ def subagents(session_id):
         msg = last.get("message") or {}
         action = next((_action(b) for e in reversed(entries) for b in reversed((e.get("message") or {}).get("content") or [])
                        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") != "SubagentHandback"), "")
+        calls, failed = _skill_calls(f)
+        used = []
+        for tid, (skill, _) in sorted(calls.items(), key=lambda c: c[1][1]):
+            if tid not in failed and skill not in used:
+                used.append(skill)
         row = {"id": name[len("agent-"):-len(".jsonl")], "name": meta.get("description") or "Subagent",
                "type": meta.get("agentType") or "", "started": started,
                "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
                "finished": last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
-               "action": action}
+               "action": action, "skills": used}
         _sub_memo[f] = ((st.st_mtime, st.st_size), row)
         rows.append(row)
     return sorted(rows, key=lambda r: r["started"])
