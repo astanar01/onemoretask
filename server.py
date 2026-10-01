@@ -183,6 +183,8 @@ SHA_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
 TYPE_RETRY = 15  # seconds before typing a note into a session is tried again (a prompt was on screen)
+ALERT_WAIT = 75  # seconds an alert waits for the board to show the change (a hidden tab polls once a minute)
+PAGE_GONE = 75  # seconds without a board page reading a project's cards: nothing will move them, alert at once
 
 
 # ---------------------------------------------------------------- projects
@@ -1154,6 +1156,8 @@ class Watcher:
         # A card moved to done is marked by reports.close_path (a file, so a server restart keeps it) until it is closed.
         self.closing = set()   # (project id, task id) whose recap is being written
         self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
+        self.alerts = {}  # (project id, task id) -> alert waiting for the board to show the change
+        self.seen = {}    # project id -> last time a board page read its cards
 
     def close_when_idle(self, p, task_id):
         path = reports.close_path(p.board, task_id)
@@ -1322,23 +1326,71 @@ class Watcher:
         for p, t in work:
             key = (p.id, t["id"])
             was, now_ = (old.get(key) or {}).get("phase"), fresh[key]["phase"]
+            with self.lock:
+                if key in self.alerts and self.alerts[key]["phase"] != now_:
+                    del self.alerts[key]  # it went back to work before the card showed the change
             if now_ == was or (was is None and fresh[key]["id"] not in self.launched):
                 continue
-            if now_ == "needs_you":
-                notify("Claude needs you", f"{p.name}: {t['title']}", fresh[key]["reason"])
-            elif now_ == "finished":
-                notify("Claude finished", f"{p.name}: {t['title']}", fresh[key]["reason"])
+            if now_ in ("needs_you", "finished"):
+                with self.lock:
+                    self.alerts[key] = {"p": p, "id": t["id"], "phase": now_, "at": time.time(),
+                                        "column": t.get("column"), "updated": t.get("updated"),
+                                        "title": "Claude needs you" if now_ == "needs_you" else "Claude finished",
+                                        "sub": f"{p.name}: {t['title']}", "reason": fresh[key]["reason"]}
+        self.flush_alerts()
+
+    def flush_alerts(self):
+        """Alert only once the board shows the change: the page moves a finished card to Review and saves it, and
+        shows "needs you" after its next /api/agents read. With no page open nothing will change, so alert at once."""
+        with self.lock:
+            pending = list(self.alerts.items())
+        now, boards, fire = time.time(), {}, []
+        for key, a in pending:
+            p = a["p"]
+            page = self.seen.get(p.id, 0)
+            ready = now - page > PAGE_GONE or now - a["at"] > ALERT_WAIT
+            if not ready and a["phase"] == "needs_you":
+                ready = page > a["at"]
+            elif not ready:
+                if p.id not in boards:
+                    try:
+                        boards[p.id] = load_tasks(p)
+                    except (OSError, ValueError):
+                        boards[p.id] = None
+                state = boards[p.id]
+                t = state and next((x for x in state["tasks"] if x.get("id") == a["id"]), None)
+                cols = {c["id"]: c for c in (state or {}).get("columns", [])}
+                review = next((c["id"] for c in cols.values() if not c.get("done") and re.search("review", c.get("name", ""), re.I)), None)
+                col = t and cols.get(t.get("column"))
+                # The page puts finished work on top of Review even when it was there, so a move shows as a new
+                # "updated"; a card in a done column or a board with no Review column has nothing to wait for.
+                ready = not t or not review or bool(col and col.get("done")) or (
+                    t.get("column") == review and (a["column"] != review or t.get("updated") != a["updated"]))
+            if ready:
+                fire.append((key, a))
+        for key, a in fire:
+            with self.lock:
+                if self.alerts.get(key) is not a:
+                    continue
+                del self.alerts[key]
+            notify(a["title"], a["sub"], a["reason"])
 
     def run(self):
+        last = 0
         while True:
             try:
-                self.poll()
+                if time.time() - last >= 4:
+                    last = time.time()
+                    self.poll()
+                elif self.alerts:
+                    self.flush_alerts()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
                 print("watcher:", e)
-            time.sleep(4)
+            time.sleep(0.5)
 
     def snapshot(self, pid):
         with self.lock:
+            self.seen[pid] = time.time()
             return {tid: v for (p, tid), v in self.cache.items() if p == pid}
 
     def attention(self, pid):

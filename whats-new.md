@@ -4,6 +4,7 @@
 
 - While "Delete worktree" is working, the whole board turns grey and shows "Deleting the worktree…", so you cannot click anything by mistake until it is finished.
 - If you write to Claude on a card after its separate copy was thrown away or brought into your project, Claude now gets a fresh separate copy to work in, so your own copy stays as it is.
+- The "Claude finished" and "Claude needs you" pop-ups now wait until the card has moved or shows the change, so you no longer look at the board before it is ready.
 
 ## 2026-09-30
 
