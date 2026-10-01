@@ -66,6 +66,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #others-waiting { position: absolute; right: 24px; top: 50%; transform: translateY(-45%); color: var(--major); font-weight: 800; font-size: 18px; line-height: 1; pointer-events: none; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
 #theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
+#app-copy-lbl.away { color: var(--wait); font-weight: 600; }
+#app-copy-lbl.away select { border-color: var(--wait); color: var(--wait); }
 #update { color: var(--muted); }
 #update.new { background: var(--ok); border-color: var(--ok); color: #fff; }
 #update.blocked { border-color: var(--wait); color: var(--wait); }
@@ -367,6 +369,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <span class="toggles"><label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
   <label class="toggle" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"> Use worktrees</label></span>
   <span class="grow"></span>
+  <label class="toggle" id="app-copy-lbl" hidden>Running <select id="app-copy"></select></label>
   <button class="btn" id="update" hidden></button>
   <button class="btn" id="theme"></button>
   <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
@@ -2002,8 +2005,52 @@ async function runUpdate() {
     showUpdate("Update failed", "", again(e.message));
   }
 }
+// Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
+let copies = null;
+async function checkAppCopy() {
+  if (!useServer) return;
+  try {
+    const r = await fetch("/api/app-copy", { cache: "no-store" });
+    if (!r.ok) return;
+    copies = await r.json();
+  } catch (_) { return; }
+  const lbl = $("#app-copy-lbl"), sel = $("#app-copy");
+  const cur = copies.copies.find((c) => c.path === copies.current);
+  lbl.hidden = copies.copies.length < 2 && (!cur || cur.main);
+  lbl.classList.toggle("away", !cur || !cur.main);
+  lbl.title = cur && cur.main ? "The board runs from the main copy. Pick a worktree to try a task's changes"
+    : "The board runs from a worktree, not from main: " + copies.current;
+  sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
+    + esc(c.main ? `main (${c.branch})` : "worktree " + c.branch) + (c.canSwitch ? "" : " — too old to switch to") + "</option>").join("");
+  if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);
+}
+$("#app-copy").addEventListener("change", async (e) => {
+  const sel = e.target, path = sel.value;
+  sel.disabled = true;
+  setStatus("Restarting the board from " + path + "…");
+  try {
+    const r = await fetch("/api/app-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    for (let t0 = Date.now(), down = false; ; ) {
+      await new Promise((ok) => setTimeout(ok, 500));
+      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      // Any answer counts once it went down: an older main copy has no /api/app-copy (404).
+      let q = null;
+      try { q = await fetch("/api/app-copy", { cache: "no-store" }); } catch (_) {}
+      if (!q) down = true;
+      else if (down || (q.ok && (await q.json().catch(() => ({}))).current === path)) break;
+    }
+    location.reload();
+  } catch (err) {
+    sel.disabled = false;
+    setStatus("Could not switch: " + err.message, true);
+    checkAppCopy();
+  }
+});
 $("#update").addEventListener("click", () => (upd && !upd.error && upd.behind > 0 && upd.canUpdate ? runUpdate() : checkUpdate(true)));
 setInterval(() => checkUpdate(), 30 * 60000);
+setInterval(() => checkAppCopy(), 60000);
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
@@ -2013,7 +2060,7 @@ try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checke
 try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
 
 load().then(() => {
-  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate();
+  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
   if (!useServer) { $("#use-worktrees").disabled = true; $("#use-worktrees-lbl").title = "Needs server.py"; }
 })
   .catch((e) => setStatus("Could not load the board: " + e.message, true));
