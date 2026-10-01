@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-01
+
+- A new task now opens wide, in the middle of the window. When you send it to Claude, it slides back to the left and Claude's side comes in on the right.
+
 ## 2026-09-30
 
 - A card with its own separate copy of your project now has a "Delete worktree" button, in any column. It throws that copy away without bringing its changes in. If the copy holds work you would lose, a small window shows it and asks first.

@@ -126,9 +126,15 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #panel .crumb a { color: var(--accent); cursor: pointer; }
 #d-title { width: 100%; font-size: calc(18px * var(--ts)); font-weight: 600; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; }
 #d-title:hover, #d-title:focus { border-color: var(--line); background: var(--card); outline: none; }
-.panel-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 24px; }
-.panel-left { overflow-y: auto; padding-right: 6px; }
-.panel-right { border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
+/* Three tracks (spacer, left, right) so a new task's form can sit wide and centred (#panel.solo) and slide to
+   the left when it is sent (#panel.grow): the tracks keep one shape, so the browser can animate between them. */
+.panel-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 0fr) minmax(0, 1fr) minmax(0, 3fr); gap: 0; }
+#panel.solo .panel-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); }
+#panel.grow .panel-cols { transition: grid-template-columns .55s cubic-bezier(.4, 0, .2, 1); }
+#panel.grow .panel-right { animation: right-in .55s cubic-bezier(.4, 0, .2, 1); }
+@keyframes right-in { from { opacity: 0; transform: translateX(40px); } }
+.panel-left { grid-column: 2; overflow-y: auto; padding-right: 6px; }
+.panel-right { grid-column: 3; margin-left: 24px; border-left: 1px solid var(--line); padding: 0 8px 0 28px; display: flex; flex-direction: column; min-height: 0; }
 .panel-right > .block { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .actions { display: flex; gap: 10px; align-items: center; }
 #trust-modal, #repo-modal, #wtdel-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
@@ -171,9 +177,9 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .panel-right #d-reply-wrap { flex: none; }
 @media (max-width: 820px) {
   #panel { overflow-y: auto; }
-  .panel-cols { flex: none; grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .panel-left { overflow: visible; }
-  .panel-right { border-left: 0; padding: 0; }
+  .panel-cols, #panel.solo .panel-cols { flex: none; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .panel-left { grid-column: 1; overflow: visible; }
+  .panel-right { grid-column: 1; margin-left: 0; border-left: 0; padding: 0; }
   .panel-right #d-log { max-height: 260px; }
 }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
@@ -276,6 +282,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .x-close { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: calc(18px * var(--ts)); line-height: 1; cursor: pointer; }
 .x-close:hover { background: var(--line); color: var(--text); }
 #panel #d-title { width: calc(100% - 34px); }
+#panel.solo #d-title { width: 100%; }
 #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; justify-content: center; align-items: center; padding: 40px; }
 #lightbox.open { display: flex; }
 #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
@@ -1172,6 +1179,7 @@ function renderAgent(t) {
   const pend = pending[t.id] || [];
   if (pend.length) send.style.display = model.style.display = "none";
   $("#d-right").style.display = t.agent || pend.length ? "" : "none";
+  $("#panel").classList.toggle("solo", !t.agent && !pend.length);
   $("#d-agent").innerHTML = t.agent ? `<span class="agent ${ag ? ag.phase : ""}">${esc(phaseLabel(ag))}</span><span>started ${fmt(t.agent.started)}</span>${t.agent.model ? `<span>${esc(t.agent.model)}</span>` : ""}${cacheChip(ag, true)}
       <code title="Click to copy">claude attach ${esc((ag && ag.id) || t.agent.id)}</code>` : "";
   const code = $("#d-agent code");
@@ -1460,6 +1468,10 @@ async function sendToClaude(t) {
   $("#d-send").disabled = true;
   setStatus("Starting Claude…");
   const pm = addPending(t, "launch", "Sending to Claude" + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  // The wide centred form slides back to the left while the Claude pane comes in; only on this click, not on open.
+  const panel = $("#panel");
+  panel.classList.add("grow");
+  setTimeout(() => panel.classList.remove("grow"), 700);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
