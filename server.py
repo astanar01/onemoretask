@@ -842,6 +842,186 @@ def git_info(p):
             "dirty": bool(git("status", "--porcelain")), "repo": repo, "commits": commits}
 
 
+class GitUnavailable(Exception):
+    """Git cannot answer for a task right now (no git, not a repo, timeout, failed command)."""
+
+
+def _git_raw(cwd, *args, ok=(0,), timeout=10):
+    """Unstripped stdout of `git -C cwd args` (porcelain lines start with a space); GitUnavailable on failure.
+    `ok` lists the accepted exit codes (`diff --no-index` exits 1 when the files differ)."""
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}, **TEXT)
+    except OSError:
+        raise GitUnavailable("git is not installed") from None
+    except subprocess.SubprocessError:
+        raise GitUnavailable(f"git {args[0]} timed out") from None
+    if r.returncode not in ok:
+        raise GitUnavailable(f"git {args[0]}: {_git_err(r)}")
+    return r.stdout
+
+
+def _branch_exists(cwd, name):
+    return bool(name) and git_try(cwd, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", timeout=5) is not None
+
+
+def _find_task(p, task_id):
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t:
+        raise LookupError("no such task")
+    return t
+
+
+def _task_git_place(p, t):
+    """Where a task's git state lives: {cwd (folder for uncommitted changes, a work tree top, or None), ref (the
+    task's commits), target_ref, target, branch, wt, live, branch_alive, shared}. GitUnavailable when git can't say."""
+    if git_try(p.path, "rev-parse", "--is-inside-work-tree", timeout=5) != "true":
+        raise GitUnavailable("this project folder is not a git repo")
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", timeout=5) is None:
+        raise GitUnavailable("the git repo has no commits yet")
+    current = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD", timeout=5) or git_try(
+        p.path, "rev-parse", "--short", "HEAD", timeout=5)
+    wt = (t.get("agent") or {}).get("worktree")
+    if isinstance(wt, dict) and wt.get("branch"):
+        branch, base = wt["branch"], wt.get("base")
+        live = bool(live_worktree(t))
+        if _branch_exists(p.path, base):
+            target, target_ref = base, f"refs/heads/{base}"
+        elif base and git_try(p.path, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}", timeout=5):
+            target, target_ref = base, base  # the worktree was made from a detached HEAD
+        else:
+            target, target_ref = current, "HEAD"  # the base branch is gone: compare with the main checkout
+        alive = _branch_exists(p.path, branch)
+        return {"cwd": wt["path"] if live else None, "ref": f"refs/heads/{branch}" if alive else "HEAD",
+                "target_ref": target_ref, "target": target, "branch": branch, "wt": wt, "live": live,
+                "branch_alive": alive, "shared": False}
+    top = git_try(p.path, "rev-parse", "--show-toplevel", timeout=5)
+    if not top:
+        raise GitUnavailable("git could not find the repo's top folder")
+    return {"cwd": os.path.normpath(top), "ref": "HEAD", "target_ref": "HEAD", "target": current, "branch": current,
+            "wt": None, "live": False, "branch_alive": False, "shared": True}
+
+
+TASK_GIT_MAX_FILES = 200
+
+
+def _changed_files(cwd):
+    """(uncommitted changes in the work tree at `cwd`, truncated). Paths are relative to that work tree's top."""
+    raw = _git_raw(cwd, "status", "--porcelain=v1", "-z", "--no-renames")
+    entries = [e for e in raw.split("\0") if e]
+    truncated = len(entries) > TASK_GIT_MAX_FILES
+    counts = {}
+    for line in _git_raw(cwd, "diff", "--numstat", "--no-renames", "HEAD", "--").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            counts[parts[2]] = (None if parts[0] == "-" else int(parts[0]), None if parts[1] == "-" else int(parts[1]))
+    out = []
+    for e in entries[:TASK_GIT_MAX_FILES]:
+        xy, path = e[:2], e[3:]
+        status = "??" if xy == "??" else (xy.replace(" ", "")[:1] or "M")
+        added, deleted = counts.get(path, (None, None))
+        out.append({"status": status, "path": path, "added": added, "deleted": deleted})
+    return out, truncated
+
+
+def task_git(p, task_id):
+    """The real git state of a task's work, so the card can tell whether anything is left to merge. Git trouble
+    gives available=False with an error, never an exception; LookupError only for an unknown task."""
+    t = _find_task(p, task_id)
+    out = {"available": False, "error": None, "repo": False, "shared": False, "target": None, "branch": None,
+           "worktree": None, "changed": [], "ahead": [], "aheadKind": "own", "behind": 0, "merged": False,
+           "answerOnly": bool(t.get("answerOnly")), "sent": bool(t.get("agent"))}
+    if not t.get("agent"):
+        out["error"] = "this task was never sent to Claude"
+        return out
+    try:
+        place = _task_git_place(p, t)
+        out["repo"] = True
+        out.update(shared=place["shared"], target=place["target"], branch=place["branch"])
+        if place["wt"] is not None:
+            wt = place["wt"]
+            out["worktree"] = {"path": wt.get("path"), "branch": wt.get("branch"), "base": wt.get("base"),
+                               "exists": place["live"]}
+            out["aheadKind"] = "branch"
+        if place["cwd"]:
+            out["changed"], truncated = _changed_files(place["cwd"])
+            if truncated:
+                out["truncated"] = True
+        if place["shared"]:
+            log = reports.read(p.board, task_id)
+            own = own_commits(p, log, launched_at(log, t), "HEAD")
+            if own is None:
+                raise GitUnavailable("git log failed")
+            out["ahead"] = [{"sha": sha, "subject": subj} for sha, subj in own]
+        elif place["branch_alive"]:
+            rng = f"{place['target_ref']}..{place['ref']}"
+            out["ahead"] = [{"sha": x.split(" ", 1)[0], "subject": x.split(" ", 1)[1] if " " in x else ""}
+                            for x in _git_raw(p.path, "log", "--format=%h %s", rng, "--").splitlines() if x]
+            out["behind"] = int(_git_raw(p.path, "rev-list", "--count", f"{place['ref']}..{place['target_ref']}",
+                                         "--").strip() or 0)
+            out["merged"] = git_try(p.path, "merge-base", "--is-ancestor", place["ref"], place["target_ref"],
+                                    timeout=5) is not None
+        else:
+            out["merged"] = True  # the branch was merged and deleted
+        out["available"] = True
+    except (GitUnavailable, OSError, ValueError) as e:
+        out.update(available=False, error=str(e) or "git failed", changed=[], ahead=[], behind=0, merged=False)
+        out.pop("truncated", None)
+    return out
+
+
+TASK_DIFF_MAX = 200_000
+
+
+def _cap(text):
+    data = text.encode("utf-8")
+    if len(data) <= TASK_DIFF_MAX:
+        return text, False
+    return data[:TASK_DIFF_MAX].decode("utf-8", "ignore"), True
+
+
+def task_diff(p, task_id, path=None, sha=None):
+    """{diff, truncated, binary}: one uncommitted file's diff in the task's work tree (`path`), or one of the task's
+    commits (`sha`, only a commit reachable from the task's branch / HEAD). Git trouble gives an "error" field."""
+    t = _find_task(p, task_id)
+    out = {"diff": "", "truncated": False, "binary": False}
+    if bool(path) == bool(sha):
+        raise ValueError("pass exactly one of path or sha")
+    if path is not None:
+        norm = path.replace("\\", "/")
+        if norm.startswith("/") or re.match(r"^[A-Za-z]:", norm) or ".." in norm.split("/") or norm.startswith(":"):
+            raise ValueError("bad path")
+    elif not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+        raise ValueError("bad commit id")
+    if not t.get("agent"):
+        out["error"] = "this task was never sent to Claude"
+        return out
+    try:
+        place = _task_git_place(p, t)
+        if path is not None:
+            cwd = place["cwd"]
+            if not cwd:
+                out["error"] = "the task's worktree folder is gone"
+                return out
+            text = _git_raw(cwd, "diff", "--no-color", "--no-renames", "HEAD", "--", norm)
+            if not text and _git_raw(cwd, "ls-files", "--others", "--exclude-standard", "--", norm).strip() \
+                    and os.path.isfile(os.path.join(cwd, *norm.split("/"))):
+                text = _git_raw(cwd, "diff", "--no-color", "--no-index", "--", os.devnull, norm, ok=(0, 1))
+        else:
+            full = git_try(p.path, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", timeout=5)
+            if not full or git_try(p.path, "merge-base", "--is-ancestor", full, place["ref"], timeout=5) is None:
+                raise ValueError("that commit is not part of this task's work")
+            text = _git_raw(p.path, "show", "--no-color", "--format=fuller", "--stat", "-p", full, "--")
+        if re.search(r"^Binary files .* differ$", text, re.M) and not re.search(r"^@@ ", text, re.M):
+            out["binary"] = True
+            if path is not None:
+                text = ""
+        out["diff"], out["truncated"] = _cap(text)
+    except (GitUnavailable, OSError) as e:
+        out["error"] = str(e) or "git failed"
+    return out
+
+
 def phase_of(session, log, launched_at):
     """(phase, reason) from the CLI's session record and the card's message log."""
     log = [e for e in log if e.get("status") != "note"]  # a note sent mid-work changes nothing about the turn
@@ -2095,6 +2275,14 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
+        elif path in ("/api/task-git", "/api/task-diff"):
+            q = parse_qs(urlsplit(self.path).query)
+            tid = q.get("t", [""])[0]
+            if path == "/api/task-git":
+                self._errors(lambda: self._json(200, task_git(project(pid), tid)))
+            else:
+                self._errors(lambda: self._json(200, task_diff(project(pid), tid, q.get("path", [None])[0],
+                                                               q.get("sha", [None])[0])))
         elif path == "/api/app-copy":
             self._errors(lambda: self._json(200, app_copies()))
         elif path == "/api/update":

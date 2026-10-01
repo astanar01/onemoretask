@@ -1724,7 +1724,7 @@ async function showDiff(t, li) {
   try {
     const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.status);
+    if (!r.ok || d.error) throw new Error(d.error || r.status);
     pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : /^(diff|index|commit|Author|Date|---|\+\+\+)/.test(l) ? "f" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
   } catch (e) { pre.textContent = "Could not load the diff: " + e.message; }
   pre.scrollIntoView({ block: "nearest" });
