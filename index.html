@@ -1703,7 +1703,7 @@ function renderOverview(t) {
     const ag = agents[t.id];
     mainTab = !sent ? "summary" : ag && (ag.phase === "working" || ag.phase === "needs_you") ? "conversation" : "summary";
     for (const d of document.querySelectorAll("#d-side details")) d.open = false;
-    $("#d-diff").hidden = true;
+    closeDiff();
     loadTaskGit(t, true);
   }
   if (!sent) {
@@ -1795,6 +1795,7 @@ function repoStatusHtml(t, g) {
 function renderChanges(t) {
   const g = taskGitFor(t), badge = $("#d-chcount"), list = $("#d-ch-list"), note = $("#d-ch-note");
   badge.classList.remove("warn");
+  if (!g || !g.available) closeDiff();
   if (g === null) { badge.textContent = "…"; note.textContent = "Checking the repository state…"; list.innerHTML = ""; return; }
   if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
   if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">Repository state unavailable: ${esc(g.error || "git did not answer")}.</div>`; return; }
@@ -1808,19 +1809,34 @@ function renderChanges(t) {
   if (!html) html = `<div class="ch-empty">${g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "Already merged: nothing left to show." : "No uncommitted files and no commits to show."}</div>`;
   if (list.innerHTML !== html) {
     list.innerHTML = html;
-    list.querySelectorAll("li").forEach((li) => (li.onclick = () => showDiff(t, li)));
+    list.querySelectorAll("li").forEach((li) => {
+      li.onclick = () => showDiff(t, li);
+      if (diffKey(li) === diffSel) li.classList.add("on");
+    });
+    if (diffSel && ![...list.querySelectorAll("li")].some((li) => diffKey(li) === diffSel)) closeDiff();
   }
 }
+// The open diff's row ("sha:…" / "path:…"). Clicking that row again closes the diff.
+let diffSel = null, diffReq = 0;
+const diffKey = (li) => li.dataset.sha ? "sha:" + li.dataset.sha : "path:" + li.dataset.path;
+function closeDiff() {
+  diffSel = null; diffReq++;
+  $("#d-diff").hidden = true;
+  $("#d-ch-list").querySelectorAll("li.on").forEach((x) => x.classList.remove("on"));
+}
 async function showDiff(t, li) {
-  const pre = $("#d-diff"), q = li.dataset.sha ? "&sha=" + encodeURIComponent(li.dataset.sha) : "&path=" + encodeURIComponent(li.dataset.path);
+  if (diffSel === diffKey(li)) return closeDiff();
+  diffSel = diffKey(li);
+  const req = ++diffReq, pre = $("#d-diff"), q = li.dataset.sha ? "&sha=" + encodeURIComponent(li.dataset.sha) : "&path=" + encodeURIComponent(li.dataset.path);
   $("#d-ch-list").querySelectorAll("li").forEach((x) => x.classList.toggle("on", x === li));
   pre.hidden = false; pre.textContent = "Loading diff…";
   try {
     const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
     const d = await r.json();
+    if (req !== diffReq) return;
     if (!r.ok || d.error) throw new Error(d.error || r.status);
     pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
-  } catch (e) { pre.textContent = "Could not load the diff: " + e.message; }
+  } catch (e) { if (req !== diffReq) return; pre.textContent = "Could not load the diff: " + e.message; }
   pre.scrollIntoView({ block: "nearest" });
 }
 
