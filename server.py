@@ -1694,6 +1694,7 @@ def resume(p, info, message):
 
 
 WORKTREE_ACTIONS = {"run": "Run app from worktree", "merge": "Merge worktree to main"}  # the page matches these labels
+OPEN_URL_CMD = {"darwin": "open", "win32": "start \"\""}.get(sys.platform, "xdg-open")
 
 
 def worktree_steps(p, task_id, wt, action):
@@ -1704,7 +1705,8 @@ def worktree_steps(p, task_id, wt, action):
                 "user can try this task's changes.",
                 "- Work out how from the project: its run skill if it has one, the README, package scripts, a Makefile.",
                 "- A web app: start (or restart) its dev server from the worktree. If the main copy already holds the "
-                "usual port, use a spare one. Give the URL.",
+                "usual port, use a spare one. Wait until the URL answers, then open it in a new tab of the user's "
+                f"browser with `{OPEN_URL_CMD} <url>`, so they land on this task's copy.",
                 "- A game or desktop app: start it from the worktree.",
                 "- A command-line tool or a library: run its most useful demo from the worktree and show what it prints.",
                 "- Files git does not track (.env, local config, installed dependencies) may be missing in the "

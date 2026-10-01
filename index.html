@@ -435,6 +435,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .repo-note { color: var(--muted); overflow-wrap: anywhere; }
 #d-ch-note { overflow-wrap: anywhere; min-width: 0; }
 .repo-note b { color: var(--text); }
+a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywhere; }
 .more-link { display: inline-block; margin-top: 18px; color: var(--accent); cursor: pointer; font-weight: 500; }
 .more-link:hover { text-decoration: underline; }
 /* changes */
@@ -1100,7 +1101,7 @@ function cardEl(t, top, nestedCount) {
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
     ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
-  el.addEventListener("click", () => openDetail(t.id));
+  el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
   const rv = el.querySelector(".review");
@@ -2418,8 +2419,14 @@ const PF = (w) => `<span class="pf ${/^not/i.test(w) ? "no" : /^ref/i.test(w) ? 
 const PF_RE = /\b(not reproduced|reproduced|refuted)\b/gi;
 // Commit shas (hex with a digit and a letter) and file.ext:line read as code even without backticks.
 const AUTO_RE = /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|(?<![\w&#])[\w./~-]*\w\.[a-z]{1,5}:\d+(?:-\d+)?\b/g;
+// Web addresses open in a new tab. The text is already escaped, so stop at an escaped quote or bracket.
+const URL_RE = /(https?:\/\/(?:(?!&(?:quot|#39|lt|gt);)[^\s<>"'`])+?)(?=[.,;:!?)*]*(?:\s|$|&(?:quot|#39|lt|gt);))/g;
+const link = (u) => `<a class="url" href="${u}" target="_blank" rel="noopener">${u}</a>`;
 function inl(x) {
-  return x.split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${p.slice(1, -1)}</code>` : p.replace(AUTO_RE, "<code>$&</code>").replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>")).join("");
+  return x.split(/(`[^`\n]+`)/).map((p, i) => {
+    if (i % 2) { const c = p.slice(1, -1); return `<code>${/^https?:\/\/\S+$/.test(c) ? link(c) : c}</code>`; }
+    return p.split(URL_RE).map((q, j) => j % 2 ? link(q) : q.replace(AUTO_RE, "<code>$&</code>")).join("").replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>");
+  }).join("");
 }
 function fmtItem(x, li) {
   let pre = "", m;
