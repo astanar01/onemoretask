@@ -2,7 +2,7 @@
 
 ## 2026-10-01
 
-- The "Next action" box no longer jumps to "Merge" the moment you press the review button. It now offers two ways: the purple "Review code" button starts a real check of the changes, and "Look at the changes" opens them for you to read. The merge button shows once Claude has posted its review, or once you come back from reading the changes.
+- The "Next action" box no longer jumps to "Merge" the moment you press the review button. It now offers two ways: the purple "Review code" button starts a real check of the changes, and "Look at the changes" opens them for you to read. The merge button shows once Claude has posted its review, or once you come back from reading the changes. If you only read them, "Review code" stays next to the merge button, so you can still ask Claude to check.
 - When you press "Run app" on a website task, Claude now opens it in a new tab for you. Web addresses Claude writes on a card can now be clicked too, and open in a new tab.
 - In the Changes tab, clicking an open change again now closes it. Before, it just opened the same thing again.
 - A card in Done whose changes are not in your project yet now has a "Merge worktree to main" button in its "Next action" box. Before, the button never showed there.
