@@ -47,9 +47,8 @@ header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; bord
 header > * { flex-shrink: 0; }
 header h1 { font-size: calc(17px * var(--ts)); margin: 0 4px 0 0; }
 header .grow { flex: 1; }
-#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); width: 200px; min-width: 90px; flex-shrink: 1; }
+#search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); flex: 10 1 200px; max-width: 520px; min-width: 90px; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
-.toggles { display: flex; flex-direction: column; gap: 2px; }
 label.toggle:has(input:disabled) { opacity: .6; }
 #status { color: var(--muted); font-size: calc(12px * var(--ts)); flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #status.err { color: var(--danger); }
@@ -68,7 +67,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #project-wrap.others #project { padding-right: 38px; }
 #others-waiting { position: absolute; right: 24px; top: 50%; transform: translateY(-45%); color: var(--major); font-weight: 800; font-size: 18px; line-height: 1; pointer-events: none; }
 #project-path { padding: 5px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); min-width: 320px; display: none; }
-#theme { min-width: 32px; padding-left: 6px; padding-right: 6px; }
 #app-copy { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 150px; text-overflow: ellipsis; }
 #app-copy.away { border-color: var(--wait); color: var(--wait); font-weight: 600; }
 #update { color: var(--muted); }
@@ -77,6 +75,30 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #update:disabled { cursor: progress; opacity: .85; }
 #text-size { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: calc(13px * var(--ts)); }
+/* Header menus (View, Project settings): fixed so the header's overflow-x never clips them. */
+.hbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.hbtn svg { flex: none; color: var(--muted); }
+.hbtn.ico { padding-left: 7px; padding-right: 7px; }
+.hbtn::before { content: "\200b"; width: 0; margin-right: -6px; }
+@media (max-width: 560px) { header { gap: 8px; } .hbtn .t { display: none; } .hbtn { padding-left: 7px; padding-right: 7px; } }
+.hbtn[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.hbtn[aria-expanded="true"] svg { color: var(--accent); }
+.pop { position: fixed; z-index: 40; min-width: 250px; max-width: calc(100vw - 16px); background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.08); padding: 6px; font-size: calc(13px * var(--ts)); display: flex; flex-direction: column; gap: 2px; }
+.pop[hidden] { display: none; }
+.pop-head { padding: 6px 10px 8px; font-weight: 600; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.pop-head small { font-weight: 400; color: var(--muted); font-size: calc(12px * var(--ts)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-head small:empty { display: none; }
+.pop-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; user-select: none; min-height: calc(34px * var(--ts)); }
+.pop-row:hover, .pop-row:focus-within, button.pop-row:focus-visible { background: var(--col); }
+.pop-row .v { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.pop-row input[type="checkbox"] { margin: 0; accent-color: var(--accent); flex: none; }
+.pop-row.two { align-items: flex-start; justify-content: flex-start; gap: 10px; }
+.pop-row.two input { margin-top: 3px; }
+.pop-row.two small { display: block; color: var(--muted); font-size: calc(12px * var(--ts)); white-space: normal; max-width: 260px; }
+.pop-row:has(input:disabled) { opacity: .6; cursor: default; }
+.pop-sep { height: 1px; background: var(--line); margin: 4px 2px; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
 .column { background: var(--col); border-radius: 10px; width: 290px; min-width: 290px; display: flex; flex-direction: column; max-height: 100%; }
@@ -486,18 +508,26 @@ label.toggle:has(input:disabled) { opacity: .6; }
   <span id="project-wrap"><select id="project" title="Project"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
-  <span class="toggles"><label class="toggle"><input type="checkbox" id="show-subs" checked> Show subtasks on board</label>
-  <label class="toggle" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"> Use worktrees</label></span>
   <span class="grow"></span>
   <select id="app-copy" hidden></select>
   <button class="btn" id="update" hidden></button>
-  <button class="btn" id="theme"></button>
-  <label class="toggle">Text <select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
-  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
-  <button class="btn" id="cl-btn" title="What changed in the task board app">Changelog</button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
+  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
+  <button class="btn hbtn" id="view-btn" data-pop="view-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-menu" title="View options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="t">View</span></button>
+  <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
 </header>
+<div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
+  <button class="pop-row" id="theme"></button>
+  <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
+  <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
+</div>
+<div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
+  <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
+  <label class="pop-row two" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"><span>Use worktrees<small>Each task gets its own copy of the project, merged back when you say so.</small></span></label>
+  <div class="pop-sep"></div>
+  <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
+</div>
 <div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
 
@@ -2342,7 +2372,7 @@ $("#text-size").addEventListener("change", (e) => {
 const THEMES = { "": ["◐", "System"], light: ["☀", "Light"], dark: ["☾", "Dark"] };
 function showTheme() {
   const [icon, name] = THEMES[document.documentElement.dataset.theme || ""];
-  $("#theme").textContent = icon;
+  $("#theme").innerHTML = `<span>Theme</span><span class="v">${icon} ${name}</span>`;
   $("#theme").title = `Theme: ${name} (click to change)`;
 }
 $("#theme").addEventListener("click", () => {
@@ -2453,6 +2483,46 @@ $("#show-subs").addEventListener("change", () => {
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
 try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
+// Header menus: one open at a time; outside click, Escape, resize or header scroll closes them.
+let popBtn = null;
+function closePop(focusBtn) {
+  if (!popBtn) return;
+  const b = popBtn; popBtn = null;
+  $("#" + b.dataset.pop).hidden = true;
+  b.setAttribute("aria-expanded", "false");
+  if (focusBtn) b.focus();
+}
+function openPop(b, kbd) {
+  closePop();
+  const m = $("#" + b.dataset.pop);
+  if (b.id === "proj-btn") {
+    const p = typeof project === "function" ? project() : null;
+    $("#proj-menu-name").textContent = p ? p.name || p.path || "" : "";
+  }
+  m.hidden = false;
+  const r = b.getBoundingClientRect(), w = m.offsetWidth;
+  m.style.top = r.bottom + 6 + "px";
+  m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+  b.setAttribute("aria-expanded", "true");
+  popBtn = b;
+  const first = m.querySelector("button, select, input:not(:disabled)");
+  if (first && kbd) first.focus({ preventScroll: true });
+}
+document.querySelectorAll("[data-pop]").forEach((b) => b.addEventListener("click", (e) => (popBtn === b ? closePop() : openPop(b, e.detail === 0))));
+document.addEventListener("pointerdown", (e) => {
+  if (popBtn && !popBtn.contains(e.target) && !$("#" + popBtn.dataset.pop).contains(e.target)) closePop();
+}, true);
+// Capture on window runs before the board's own Escape handling, so Escape closes only the menu.
+window.addEventListener("keydown", (e) => {
+  if (popBtn && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePop(true); }
+}, true);
+window.addEventListener("resize", () => closePop());
+$("header").addEventListener("scroll", () => closePop());
+$("#cl-btn").addEventListener("click", () => closePop());
+// Tabbing out of an open menu closes it.
+document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", (e) => {
+  if (popBtn && e.relatedTarget && !m.contains(e.relatedTarget) && e.relatedTarget !== popBtn) closePop();
+}));
 
 load().then(() => {
   render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
