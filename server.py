@@ -42,7 +42,7 @@ worktree to main" (POST /api/agent/worktree): canned replies that have the sessi
 merge the branch into the base branch, then remove the worktree and branch (anything going wrong: abort, ask on the card).
 "Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
 server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
-`force` once the user confirms.
+`force` once the user confirms. A reply after the worktree was deleted or merged makes a fresh one (renew_worktree).
 
 The agent posts progress / question / done onto its card with report.py. A
 watcher thread polls `claude agents --json --all` every few seconds and, for
@@ -183,6 +183,8 @@ SHA_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
 TYPE_RETRY = 15  # seconds before typing a note into a session is tried again (a prompt was on screen)
+ALERT_WAIT = 75  # seconds an alert waits for the board to show the change (a hidden tab polls once a minute)
+PAGE_GONE = 75  # seconds without a board page reading a project's cards: nothing will move them, alert at once
 
 
 # ---------------------------------------------------------------- projects
@@ -646,10 +648,10 @@ def worktree_name(t):
     return f"{slug}-{tid}" if slug else f"task-{tid}"
 
 
-def make_worktree(p, t, made=None):
+def make_worktree(p, t, made=None, name=None):
     """Create the task's worktree, or reuse it (a retry after a failed launch): <repo>/.claude/worktrees/<name> on
     branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}. `made` (a list)
-    gets "worktree" and "branch" for what this call created."""
+    gets "worktree" and "branch" for what this call created. `name` defaults to one made from the task's title."""
     made = [] if made is None else made
     if git_try(p.path, "rev-parse", "--is-inside-work-tree") != "true":
         raise NoRepoError(f"{p.name} has no git repo yet, so its tasks cannot use worktrees")
@@ -657,7 +659,7 @@ def make_worktree(p, t, made=None):
         raise NoRepoError(f"The git repo of {p.name} has no commit yet, so its tasks cannot use worktrees")
     top = os.path.normpath(git_run(p.path, "rev-parse", "--show-toplevel"))
     prefix = git_run(p.path, "rev-parse", "--show-prefix")
-    name = worktree_name(t)
+    name = name or worktree_name(t)
     path = os.path.join(top, *WORKTREES.split("/"), name)
     exclude_local(p)
     base = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD") or git_run(p.path, "rev-parse", "--short", "HEAD")
@@ -679,6 +681,28 @@ def live_worktree(t):
     """The task's worktree record while its folder exists, else None."""
     wt = (t.get("agent") or {}).get("worktree")
     return wt if isinstance(wt, dict) and wt.get("path") and os.path.isdir(wt["path"]) else None
+
+
+def renew_worktree(p, t):
+    """A message to a "use worktrees" task whose worktree was deleted or merged away: make a fresh one, same folder
+    and branch name (the card's record stays valid), from the main checkout's HEAD. Returns it, else None."""
+    wt = (t.get("agent") or {}).get("worktree")
+    if not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or live_worktree(t):
+        return None
+    branch = wt["branch"]
+    # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts at HEAD.
+    # One holding unmerged commits is reused, so that work stays. Prune first: a stale registration blocks -D.
+    git_try(p.path, "worktree", "prune")
+    if (git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None
+            and git_try(p.path, "merge-base", "--is-ancestor", f"refs/heads/{branch}", "HEAD") is not None):
+        git_try(p.path, "branch", "-D", branch)
+    return make_worktree(p, t, name=branch)
+
+
+def renewed_lines(wt, main):
+    return ["The task's earlier worktree was removed (the user deleted it, or it was merged), so the board made a "
+            "fresh one for this message. Anything you said earlier about the old worktree's folder or branch is out "
+            "of date.", *worktree_lines(wt, main)]
 
 
 def commit_ref(p, t):
@@ -816,6 +840,186 @@ def git_info(p):
         branch = git("rev-parse", "--short", "HEAD")
     return {"branch": branch, "tag": git("describe", "--tags", "--abbrev=0") or None,
             "dirty": bool(git("status", "--porcelain")), "repo": repo, "commits": commits}
+
+
+class GitUnavailable(Exception):
+    """Git cannot answer for a task right now (no git, not a repo, timeout, failed command)."""
+
+
+def _git_raw(cwd, *args, ok=(0,), timeout=10):
+    """Unstripped stdout of `git -C cwd args` (porcelain lines start with a space); GitUnavailable on failure.
+    `ok` lists the accepted exit codes (`diff --no-index` exits 1 when the files differ)."""
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}, **TEXT)
+    except OSError:
+        raise GitUnavailable("git is not installed") from None
+    except subprocess.SubprocessError:
+        raise GitUnavailable(f"git {args[0]} timed out") from None
+    if r.returncode not in ok:
+        raise GitUnavailable(f"git {args[0]}: {_git_err(r)}")
+    return r.stdout
+
+
+def _branch_exists(cwd, name):
+    return bool(name) and git_try(cwd, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", timeout=5) is not None
+
+
+def _find_task(p, task_id):
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t:
+        raise LookupError("no such task")
+    return t
+
+
+def _task_git_place(p, t):
+    """Where a task's git state lives: {cwd (folder for uncommitted changes, a work tree top, or None), ref (the
+    task's commits), target_ref, target, branch, wt, live, branch_alive, shared}. GitUnavailable when git can't say."""
+    if git_try(p.path, "rev-parse", "--is-inside-work-tree", timeout=5) != "true":
+        raise GitUnavailable("this project folder is not a git repo")
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", timeout=5) is None:
+        raise GitUnavailable("the git repo has no commits yet")
+    current = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD", timeout=5) or git_try(
+        p.path, "rev-parse", "--short", "HEAD", timeout=5)
+    wt = (t.get("agent") or {}).get("worktree")
+    if isinstance(wt, dict) and wt.get("branch"):
+        branch, base = wt["branch"], wt.get("base")
+        live = bool(live_worktree(t))
+        if _branch_exists(p.path, base):
+            target, target_ref = base, f"refs/heads/{base}"
+        elif base and git_try(p.path, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}", timeout=5):
+            target, target_ref = base, base  # the worktree was made from a detached HEAD
+        else:
+            target, target_ref = current, "HEAD"  # the base branch is gone: compare with the main checkout
+        alive = _branch_exists(p.path, branch)
+        return {"cwd": wt["path"] if live else None, "ref": f"refs/heads/{branch}" if alive else "HEAD",
+                "target_ref": target_ref, "target": target, "branch": branch, "wt": wt, "live": live,
+                "branch_alive": alive, "shared": False}
+    top = git_try(p.path, "rev-parse", "--show-toplevel", timeout=5)
+    if not top:
+        raise GitUnavailable("git could not find the repo's top folder")
+    return {"cwd": os.path.normpath(top), "ref": "HEAD", "target_ref": "HEAD", "target": current, "branch": current,
+            "wt": None, "live": False, "branch_alive": False, "shared": True}
+
+
+TASK_GIT_MAX_FILES = 200
+
+
+def _changed_files(cwd):
+    """(uncommitted changes in the work tree at `cwd`, truncated). Paths are relative to that work tree's top."""
+    raw = _git_raw(cwd, "status", "--porcelain=v1", "-z", "--no-renames")
+    entries = [e for e in raw.split("\0") if e]
+    truncated = len(entries) > TASK_GIT_MAX_FILES
+    counts = {}
+    for line in _git_raw(cwd, "diff", "--numstat", "--no-renames", "HEAD", "--").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            counts[parts[2]] = (None if parts[0] == "-" else int(parts[0]), None if parts[1] == "-" else int(parts[1]))
+    out = []
+    for e in entries[:TASK_GIT_MAX_FILES]:
+        xy, path = e[:2], e[3:]
+        status = "??" if xy == "??" else (xy.replace(" ", "")[:1] or "M")
+        added, deleted = counts.get(path, (None, None))
+        out.append({"status": status, "path": path, "added": added, "deleted": deleted})
+    return out, truncated
+
+
+def task_git(p, task_id):
+    """The real git state of a task's work, so the card can tell whether anything is left to merge. Git trouble
+    gives available=False with an error, never an exception; LookupError only for an unknown task."""
+    t = _find_task(p, task_id)
+    out = {"available": False, "error": None, "repo": False, "shared": False, "target": None, "branch": None,
+           "worktree": None, "changed": [], "ahead": [], "aheadKind": "own", "behind": 0, "merged": False,
+           "answerOnly": bool(t.get("answerOnly")), "sent": bool(t.get("agent"))}
+    if not t.get("agent"):
+        out["error"] = "this task was never sent to Claude"
+        return out
+    try:
+        place = _task_git_place(p, t)
+        out["repo"] = True
+        out.update(shared=place["shared"], target=place["target"], branch=place["branch"])
+        if place["wt"] is not None:
+            wt = place["wt"]
+            out["worktree"] = {"path": wt.get("path"), "branch": wt.get("branch"), "base": wt.get("base"),
+                               "exists": place["live"]}
+            out["aheadKind"] = "branch"
+        if place["cwd"]:
+            out["changed"], truncated = _changed_files(place["cwd"])
+            if truncated:
+                out["truncated"] = True
+        if place["shared"]:
+            log = reports.read(p.board, task_id)
+            own = own_commits(p, log, launched_at(log, t), "HEAD")
+            if own is None:
+                raise GitUnavailable("git log failed")
+            out["ahead"] = [{"sha": sha, "subject": subj} for sha, subj in own]
+        elif place["branch_alive"]:
+            rng = f"{place['target_ref']}..{place['ref']}"
+            out["ahead"] = [{"sha": x.split(" ", 1)[0], "subject": x.split(" ", 1)[1] if " " in x else ""}
+                            for x in _git_raw(p.path, "log", "--format=%h %s", rng, "--").splitlines() if x]
+            out["behind"] = int(_git_raw(p.path, "rev-list", "--count", f"{place['ref']}..{place['target_ref']}",
+                                         "--").strip() or 0)
+            out["merged"] = git_try(p.path, "merge-base", "--is-ancestor", place["ref"], place["target_ref"],
+                                    timeout=5) is not None
+        else:
+            out["merged"] = True  # the branch was merged and deleted
+        out["available"] = True
+    except (GitUnavailable, OSError, ValueError) as e:
+        out.update(available=False, error=str(e) or "git failed", changed=[], ahead=[], behind=0, merged=False)
+        out.pop("truncated", None)
+    return out
+
+
+TASK_DIFF_MAX = 200_000
+
+
+def _cap(text):
+    data = text.encode("utf-8")
+    if len(data) <= TASK_DIFF_MAX:
+        return text, False
+    return data[:TASK_DIFF_MAX].decode("utf-8", "ignore"), True
+
+
+def task_diff(p, task_id, path=None, sha=None):
+    """{diff, truncated, binary}: one uncommitted file's diff in the task's work tree (`path`), or one of the task's
+    commits (`sha`, only a commit reachable from the task's branch / HEAD). Git trouble gives an "error" field."""
+    t = _find_task(p, task_id)
+    out = {"diff": "", "truncated": False, "binary": False}
+    if bool(path) == bool(sha):
+        raise ValueError("pass exactly one of path or sha")
+    if path is not None:
+        norm = path.replace("\\", "/")
+        if norm.startswith("/") or re.match(r"^[A-Za-z]:", norm) or ".." in norm.split("/") or norm.startswith(":"):
+            raise ValueError("bad path")
+    elif not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+        raise ValueError("bad commit id")
+    if not t.get("agent"):
+        out["error"] = "this task was never sent to Claude"
+        return out
+    try:
+        place = _task_git_place(p, t)
+        if path is not None:
+            cwd = place["cwd"]
+            if not cwd:
+                out["error"] = "the task's worktree folder is gone"
+                return out
+            text = _git_raw(cwd, "diff", "--no-color", "--no-renames", "HEAD", "--", norm)
+            if not text and _git_raw(cwd, "ls-files", "--others", "--exclude-standard", "--", norm).strip() \
+                    and os.path.isfile(os.path.join(cwd, *norm.split("/"))):
+                text = _git_raw(cwd, "diff", "--no-color", "--no-index", "--", os.devnull, norm, ok=(0, 1))
+        else:
+            full = git_try(p.path, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", timeout=5)
+            if not full or git_try(p.path, "merge-base", "--is-ancestor", full, place["ref"], timeout=5) is None:
+                raise ValueError("that commit is not part of this task's work")
+            text = _git_raw(p.path, "show", "--no-color", "--format=fuller", "--stat", "-p", full, "--")
+        if re.search(r"^Binary files .* differ$", text, re.M) and not re.search(r"^@@ ", text, re.M):
+            out["binary"] = True
+            if path is not None:
+                text = ""
+        out["diff"], out["truncated"] = _cap(text)
+    except (GitUnavailable, OSError) as e:
+        out["error"] = str(e) or "git failed"
+    return out
 
 
 def phase_of(session, log, launched_at):
@@ -1126,12 +1330,15 @@ class Watcher:
         self.cache = {}       # (project id, task id) -> {id, sessionId, state, phase, reason, log}
         self.launched = {}    # agent id -> launch time, for sessions not listed yet
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
+        self.loaded = False   # a first pass has ended, even with an error: the page stops polling fast
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
         # A card moved to done is marked by reports.close_path (a file, so a server restart keeps it) until it is closed.
         self.closing = set()   # (project id, task id) whose recap is being written
         self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
+        self.alerts = {}  # (project id, task id) -> alert waiting for the board to show the change
+        self.seen = {}    # project id -> last time a board page read its cards
 
     def close_when_idle(self, p, task_id):
         path = reports.close_path(p.board, task_id)
@@ -1206,6 +1413,11 @@ class Watcher:
             done_cols |= {c["id"] for c in state.get("columns", []) if c.get("done")}
         sessions = {s["id"]: s for s in list_sessions(HERE)} if work else {}
         fresh = {}
+        with self.lock:
+            old = dict(self.cache)
+        # Open cards first: each card is published as soon as it is read, so after a restart the board fills in
+        # card by card instead of all at once when the pass ends.
+        work.sort(key=lambda pt: pt[1].get("column") in done_cols)
         for p, t in work:
             log = reports.read(p.board, t["id"])
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
@@ -1291,32 +1503,84 @@ class Watcher:
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs, "skills": used,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t))}
+            with self.lock:
+                self.cache[key] = fresh[key]
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
-            old, self.cache = self.cache, fresh
+            self.cache = fresh
             primed, self.primed = self.primed, True
         if not primed:
             return
         for p, t in work:
             key = (p.id, t["id"])
             was, now_ = (old.get(key) or {}).get("phase"), fresh[key]["phase"]
+            with self.lock:
+                if key in self.alerts and self.alerts[key]["phase"] != now_:
+                    del self.alerts[key]  # it went back to work before the card showed the change
             if now_ == was or (was is None and fresh[key]["id"] not in self.launched):
                 continue
-            if now_ == "needs_you":
-                notify("Claude needs you", f"{p.name}: {t['title']}", fresh[key]["reason"])
-            elif now_ == "finished":
-                notify("Claude finished", f"{p.name}: {t['title']}", fresh[key]["reason"])
+            if now_ in ("needs_you", "finished"):
+                with self.lock:
+                    self.alerts[key] = {"p": p, "id": t["id"], "phase": now_, "at": time.time(),
+                                        "column": t.get("column"), "updated": t.get("updated"),
+                                        "title": "Claude needs you" if now_ == "needs_you" else "Claude finished",
+                                        "sub": f"{p.name}: {t['title']}", "reason": fresh[key]["reason"]}
+        self.flush_alerts()
+
+    def flush_alerts(self):
+        """Alert only once the board shows the change: the page moves a finished card to Review and saves it, and
+        shows "needs you" after its next /api/agents read. With no page open nothing will change, so alert at once."""
+        with self.lock:
+            pending = list(self.alerts.items())
+        now, boards, fire = time.time(), {}, []
+        for key, a in pending:
+            p = a["p"]
+            page = self.seen.get(p.id, 0)
+            ready = now - page > PAGE_GONE or now - a["at"] > ALERT_WAIT
+            if not ready and a["phase"] == "needs_you":
+                ready = page > a["at"]
+            elif not ready:
+                if p.id not in boards:
+                    try:
+                        boards[p.id] = load_tasks(p)
+                    except (OSError, ValueError):
+                        boards[p.id] = None
+                state = boards[p.id]
+                t = state and next((x for x in state["tasks"] if x.get("id") == a["id"]), None)
+                cols = {c["id"]: c for c in (state or {}).get("columns", [])}
+                review = next((c["id"] for c in cols.values() if not c.get("done") and re.search("review", c.get("name", ""), re.I)), None)
+                col = t and cols.get(t.get("column"))
+                # The page puts finished work on top of Review even when it was there, so a move shows as a new
+                # "updated"; a card in a done column or a board with no Review column has nothing to wait for.
+                ready = not t or not review or bool(col and col.get("done")) or (
+                    t.get("column") == review and (a["column"] != review or t.get("updated") != a["updated"]))
+            if ready:
+                fire.append((key, a))
+        for key, a in fire:
+            with self.lock:
+                if self.alerts.get(key) is not a:
+                    continue
+                del self.alerts[key]
+            notify(a["title"], a["sub"], a["reason"])
 
     def run(self):
+        last = 0
         while True:
             try:
-                self.poll()
+                if time.time() - last >= 4:
+                    last = time.time()
+                    self.poll()
+                elif self.alerts:
+                    self.flush_alerts()
             except Exception as e:  # noqa: BLE001 — keep watching through a bad poll
                 print("watcher:", e)
-            time.sleep(4)
+            finally:
+                self.loaded = last > 0  # a first pass that failed still ends the page's fast polling
+            time.sleep(0.5)
 
     def snapshot(self, pid):
         with self.lock:
+            self.seen[pid] = time.time()
             return {tid: v for (p, tid), v in self.cache.items() if p == pid}
 
     def attention(self, pid):
@@ -1369,6 +1633,10 @@ def reply(p, task_id, text, images=(), extra=""):
         return False
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    wt = t and renew_worktree(p, t)
+    if wt:
+        extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
     message = text + extra + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
     message += reports.LANGUAGE_RULE + ")"
@@ -1462,7 +1730,12 @@ def worktree_action(p, task_id, action):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if action == "merge" and board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
+
+
+STILL_RUNNING_HERE = "The board itself runs from this worktree — switch it back to main (the box at the top) first"
 
 
 class UnsavedWorkError(Exception):
@@ -1482,6 +1755,8 @@ def delete_worktree(p, task_id, force=False):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    if board_runs_from(wt["path"]):
+        raise PermissionError(STILL_RUNNING_HERE)
     branch = wt["branch"]
     ref = f"refs/heads/{branch}"
     has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
@@ -1659,7 +1934,9 @@ def reopen(p, task_id, text, images=(), handed=0):
     recap = reports.read_recap(p.board, task_id)
     if not t or not recap:
         raise LookupError("no Claude session for this task")
-    prompt = "\n".join([build_prompt(p, state, t, live_worktree(t)), "",
+    fresh = renew_worktree(p, t)
+    prompt = "\n".join([build_prompt(p, state, t, fresh or live_worktree(t)), "",
+                        *((renewed_lines(fresh, p.path)[0], "") if fresh else ()),
                         "This task was worked on before. Its sessions were closed when the card moved to done, and "
                         "this recap was written from them:", "", recap, "",
                         "The user reopened the card with this message. It is what to do now; where it differs from the "
@@ -1807,7 +2084,65 @@ class Updater:
 UPDATER = Updater()
 
 
+def app_copies():
+    """The checkouts of the app's repo (the main one first, then its worktrees) and which one this server runs
+    from. Empty when the app is not a git checkout."""
+    if _git_out("rev-parse", "--show-toplevel") is None:
+        return {"current": APP, "copies": []}
+    copies = []
+    blocks = (_git_out("worktree", "list", "--porcelain") or "").split("\n\n")
+    for i, block in enumerate(blocks):
+        f = dict((line + " ").split(" ", 1) for line in block.splitlines() if line)
+        path = f.get("worktree", "").strip()
+        if not path or "bare" in f or not os.path.isfile(os.path.join(path, "server.py")):
+            continue
+        branch = f.get("branch", "").strip().removeprefix("refs/heads/")
+        try:
+            with open(os.path.join(path, "server.py"), encoding="utf-8") as fh:
+                # A worktree made before this switch existed would leave the board with no way back (main is home).
+                can_switch = i == 0 or "def app_copies(" in fh.read()
+        except OSError:
+            can_switch = False
+        copies.append({"path": path, "branch": branch or "(no branch) " + f.get("HEAD", "")[:7].strip(),
+                       "main": i == 0, "canSwitch": can_switch})  # git lists the main checkout first
+    # A task's worktree branch is "<slug>-<task id>": the name drops the id only when it is a task on the app's board.
+    home = next((x for x in projects() if copies and copies[0]["main"] and x.path == os.path.realpath(copies[0]["path"])),
+                None)
+    try:
+        ids = {t["id"] for t in load_tasks(home)["tasks"]} if home else set()
+    except (OSError, ValueError, KeyError):
+        ids = set()
+    for c in copies:
+        slug, _, tail = c["branch"].rpartition("-")
+        c["name"] = "main" if c["main"] else slug if slug and tail in ids else c["branch"]
+    current = next((c["path"] for c in copies if os.path.samefile(c["path"], APP)), APP)
+    return {"current": current, "copies": copies}
+
+
+def board_runs_from(path):
+    """True when this server runs from `path` (a worktree it must not remove under itself)."""
+    try:
+        return os.path.samefile(path, APP)
+    except OSError:
+        return False
+
+
 RESTART = threading.Event()
+RESTART_FROM = [APP]  # the app folder whose server.py the restart runs
+
+
+def switch_copy(path):
+    """Run the board from another checkout of the app (main or a worktree): checked against app_copies()."""
+    info = app_copies()
+    target = next((c for c in info["copies"] if c["path"] == path), None)
+    if not target:
+        raise LookupError("not a copy of the app: " + str(path))
+    if target["path"] == info["current"]:
+        raise PermissionError("The board already runs from that copy")
+    if not target["canSwitch"]:
+        raise PermissionError("That copy is older than this switch: the board could not switch back from it")
+    target = target["path"]
+    RESTART_FROM[0] = target
 
 
 def restart(server):
@@ -1820,8 +2155,8 @@ def restart(server):
 
 
 def reexec():
-    """Re-run server.py with the same arguments so pulled code takes effect."""
-    cmd = [sys.executable, os.path.join(APP, "server.py"), *SERVER_ARGS]
+    """Re-run server.py with the same arguments so pulled code takes effect (or another copy's, after a switch)."""
+    cmd = [sys.executable, os.path.join(RESTART_FROM[0], "server.py"), *SERVER_ARGS]
     for stream in (sys.stdout, sys.stderr):
         stream.flush()
     if WINDOWS:  # execv there starts a new process and returns the console to the shell
@@ -1847,16 +2182,18 @@ class Handler(SimpleHTTPRequestHandler):
     def guess_type(self, path):
         return TYPES.get(os.path.splitext(path)[1].lower()) or super().guess_type(path)
 
-    def _send(self, code, body=b"", ctype="application/json"):
+    def _send(self, code, body=b"", ctype="application/json", headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, code, obj):
-        self._send(code, json.dumps(obj).encode())
+    def _json(self, code, obj, headers=None):
+        self._send(code, json.dumps(obj).encode(), headers=headers)
 
     def _host_ok(self):
         # DNS rebinding: a page on evil.example rebound to 127.0.0.1 sends Host: evil.example, with a matching Origin.
@@ -1926,7 +2263,9 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/default-model":
             self._errors(lambda: self._json(200, default_model(project(pid))))
         elif path == "/api/agents":
-            self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id)))
+            # The page polls faster while the first pass after a start still fills in cards.
+            self._errors(lambda: self._json(200, WATCH.snapshot(project(pid).id),
+                                            {} if WATCH.loaded else {"X-Board-Loading": "1"}))
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
         elif path == "/api/observations":
@@ -1936,6 +2275,16 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
+        elif path in ("/api/task-git", "/api/task-diff"):
+            q = parse_qs(urlsplit(self.path).query)
+            tid = q.get("t", [""])[0]
+            if path == "/api/task-git":
+                self._errors(lambda: self._json(200, task_git(project(pid), tid)))
+            else:
+                self._errors(lambda: self._json(200, task_diff(project(pid), tid, q.get("path", [None])[0],
+                                                               q.get("sha", [None])[0])))
+        elif path == "/api/app-copy":
+            self._errors(lambda: self._json(200, app_copies()))
         elif path == "/api/update":
             force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
             self._errors(lambda: self._json(200, UPDATER.status(force)))
@@ -1951,7 +2300,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree",
                   "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update")
+                  "/api/update", "/api/app-copy")
         if not self._host_ok():
             return
         if path not in routes:
@@ -1993,6 +2342,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if old != new:
                     self.wfile.flush()
                     threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+            elif path == "/api/app-copy":
+                switch_copy(body.get("path"))
+                self._json(200, {"ok": True, "restarting": True})
+                self.wfile.flush()
+                threading.Thread(target=restart, args=(self.server,), daemon=True).start()
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
