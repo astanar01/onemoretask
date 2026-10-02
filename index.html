@@ -648,8 +648,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out.</p>
-  <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn primary" id="repo-yes">Create repo</button></div>
+  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn" id="repo-nowt">Send without a worktree</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="wtdel-modal" role="dialog" aria-modal="true" aria-labelledby="wtdel-title"><div class="box">
   <h3 id="wtdel-title">Delete this worktree anyway?</h3>
@@ -1967,6 +1967,19 @@ function askRepo(t) {
   repoFor = t;
   $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || "This folder";
   $("#repo-no").onclick = () => closeRepo(true);
+  $("#repo-nowt").onclick = async () => {
+    if (!t) return closeRepo(true);
+    $("#repo-nowt").disabled = true;
+    try {
+      t = task(t.id) || t;   // the board may have reloaded while the box was open
+      t.worktree = false; touch(t);
+      if (openId === t.id) $("#d-worktree").checked = false;
+      closeRepo(false);
+      await sendToClaude(t);
+    } catch (e) {
+      setStatus("Could not send: " + e.message, true);
+    } finally { $("#repo-nowt").disabled = false; }
+  };
   $("#repo-yes").onclick = async () => {
     $("#repo-yes").disabled = true;
     try {
