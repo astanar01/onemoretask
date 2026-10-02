@@ -2,6 +2,7 @@
 
 ## 2026-10-02
 
+- Claude no longer slips a task into a hidden copy of your project on its own. If your computer was set up that way, your changes seemed to vanish, the Run app button was missing, and the app started without them. Now only the board makes a copy, and only when the card's box is ticked.
 - The "Use worktrees" box left the gear menu. Each card now has its own "Use a worktree" box, ticked for new cards. Untick it and Claude works right in your project folder. The choice is saved on the card, so an older window can no longer send a task the wrong way. If your folder has no git repo, the box that pops up now has a button to send the task without a worktree.
 
 ## 2026-10-01

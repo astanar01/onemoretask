@@ -149,6 +149,13 @@ The board makes the worktree in
 Claude to do all its edits and commits there. Your own checkout stays as it was (the folder is in
 `.git/info/exclude`, so `git status` stays clean). **Answer only** tasks change nothing, so they get none.
 
+Only the board makes worktrees. Every session it starts gets `worktree.bgIsolation: none` through
+`--settings`, which switches off Claude Code's own background-session isolation. Without that, a
+machine whose settings leave it on would put a task in a `worktree-<name>` worktree the board never
+hears of: no Run app or Merge buttons, the Changes tab reading the main folder, and an app launched
+from the main folder without the task's branch. A task sent with the box off is also told in its
+prompt to work in the project folder and not to make a worktree.
+
 A finished card in Review then has two more buttons:
 
 - **Run app from worktree**: Claude starts the app from the worktree (a dev server on a spare port,

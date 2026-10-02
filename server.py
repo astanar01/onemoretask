@@ -370,7 +370,10 @@ def build_prompt(p, state, t, wt=None):
                      " (the board keeps them out of git), and never commit a change it makes to a skill file.")
     work = ("Change no files and make no commits." if answer_only else
             f"Commit your work in the worktree, on branch {wt['branch']}; never push unless the task or the user tells "
-            "you to." if wt else "Commit your work; never push unless the task or the user tells you to.")
+            "you to." if wt else
+            "Work in the project folder itself: do not create a git worktree or a branch for this task (the card has "
+            "\"Use a worktree\" off), and if a harness rule puts you in one anyway, say so on the card. Commit your "
+            "work; never push unless the task or the user tells you to.")
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
     return "\n".join(lines)
@@ -774,7 +777,10 @@ def commit_ref(p, t):
 def inbox_settings(p, task_id):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
-    return json.dumps({"hooks": {"PostToolUse": hook, "Stop": hook}})
+    # bgIsolation none: Claude Code's own background-session isolation would otherwise put the session in a
+    # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
+    # folder). The board makes the worktree itself when the card asks for one.
+    return json.dumps({"hooks": {"PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}})
 
 
 def start_session(p, task_id, name, prompt, model):
