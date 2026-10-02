@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-02
+
+- The "Use worktrees" box left the gear menu. Each card now has its own "Use a worktree" box, ticked for new cards. Untick it and Claude works right in your project folder. The choice is saved on the card, so an older window can no longer send a task the wrong way.
+
 ## 2026-10-01
 
 - The Subagents list is now short: each helper takes one line. Click a helper to see what it did last and the skills it used, and click again to fold it back. A helper that is still working also shows what it is doing now.
