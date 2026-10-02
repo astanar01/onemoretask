@@ -545,8 +545,6 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div>
 <div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
   <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
-  <label class="pop-row two" id="use-worktrees-lbl" title="Each task sent to Claude works in its own git worktree (a separate copy on its own branch), merged when you say so"><input type="checkbox" id="use-worktrees"><span>Use worktrees<small>Each task gets its own copy of the project, merged back when you say so.</small></span></label>
-  <div class="pop-sep"></div>
   <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
 </div>
 <div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
@@ -568,6 +566,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
         <div><label for="d-submodel">Subagent model</label>
           <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
+        <div><label class="check" title="Claude works in its own copy of the project (a git worktree on its own branch) and you merge it when you say so. Off: Claude edits your project folder directly"><input type="checkbox" id="d-worktree"> Use a worktree</label></div>
         <div><label class="check" title="Claude only looks into it and reports back: no file changes, no commits"><input type="checkbox" id="d-answeronly"> Answer only (don't change anything)</label></div>
       </div>
       <div class="next" id="d-next">
@@ -649,8 +648,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out.</p>
-  <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn primary" id="repo-yes">Create repo</button></div>
+  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn" id="repo-nowt">Send without a worktree</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="wtdel-modal" role="dialog" aria-modal="true" aria-labelledby="wtdel-title"><div class="box">
   <h3 id="wtdel-title">Delete this worktree anyway?</h3>
@@ -681,7 +680,7 @@ const $ = (s) => document.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
-let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
+let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,worktree?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
 let rev = null;            // X-Board-Rev of the tasks.json we last loaded or saved; null without a server (or an old one)
 let boardGen = 0;          // bumped when reloadBoard swaps `state`: a task object held across an await may be detached now
 let useServer = true;
@@ -919,7 +918,7 @@ function firstOrder(colId) {
 // New cards go on top of their column; new subtasks go at the end of their parent's list.
 function addTask(title, colId, parent = null) {
   const t = { id: uid(), title: title.trim(), notes: "", priority: "", tags: [], column: colId,
-              parent, order: parent ? nextOrder(colId) : firstOrder(colId), created: now(), updated: now() };
+              parent, worktree: true, order: parent ? nextOrder(colId) : firstOrder(colId), created: now(), updated: now() };
   state.tasks.push(t);
   save();
   return t;
@@ -1242,12 +1241,14 @@ function renderDetail() {
   $("#d-delegate").checked = !!t.delegate;
   $("#d-submodel").value = t.subagentModel || "";
   $("#d-answeronly").checked = !!t.answerOnly;
+  $("#d-worktree").checked = t.worktree !== false;   // missing = on (cards made before the option)
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
   const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
   $("#d-delegate").disabled = sent;
   $("#d-submodel").disabled = sent || !t.delegate;
   $("#d-answeronly").disabled = sent;
+  $("#d-worktree").disabled = sent || !!t.answerOnly;
   $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
@@ -1285,7 +1286,8 @@ $("#d-delegate").addEventListener("change", (e) => {
   $("#d-submodel").disabled = !t.delegate;
 });
 $("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); rememberDelegateChoice(t); });
-$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); });
+$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); $("#d-worktree").disabled = e.target.checked; });
+$("#d-worktree").addEventListener("change", (e) => { const t = task(openId); t.worktree = e.target.checked; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
 $("#d-newsub").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;
@@ -1686,6 +1688,7 @@ function renderTech(t) {
     rows.push(["Started", esc(fmt(t.agent.started))]);
     if (t.delegate) rows.push(["Subagents", "allowed" + (t.subagentModel ? ` (${esc(t.subagentModel)})` : "")]);
     if (t.answerOnly) rows.push(["Mode", "answer only"]);
+    if (t.worktree === false && !t.answerOnly) rows.push(["Worktree", "off (works in the project folder)"]);
   }
   rows.push(["Task id", code(t.id)]);
   const html = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -1953,20 +1956,30 @@ function askTrust(t) {
 }
 $("#trust-modal").addEventListener("mousedown", (e) => { if (e.target.id === "trust-modal") closeTrust(true); });
 
-// Worktrees need a repo with a commit. t = the task whose send hit 409 norepo; null = asked on ticking the box.
+// Worktrees need a repo with a commit. t = the task whose send hit 409 norepo.
 let repoFor = null;
 const repoOpen = () => $("#repo-modal").classList.contains("open");
-function saveWorktrees() { try { localStorage.setItem(LS_KEY + ":worktrees", $("#use-worktrees").checked ? "1" : "0"); } catch (_) {} }
 function closeRepo(cancelled) {
   $("#repo-modal").classList.remove("open");
-  if (!cancelled) return;
-  if (repoFor) setStatus("Not sent: no local repo");
-  else { $("#use-worktrees").checked = false; saveWorktrees(); }
+  if (cancelled && repoFor) setStatus("Not sent: no local repo");
 }
 function askRepo(t) {
   repoFor = t;
   $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || "This folder";
   $("#repo-no").onclick = () => closeRepo(true);
+  $("#repo-nowt").onclick = async () => {
+    if (!t) return closeRepo(true);
+    $("#repo-nowt").disabled = true;
+    try {
+      t = task(t.id) || t;   // the board may have reloaded while the box was open
+      t.worktree = false; touch(t);
+      if (openId === t.id) $("#d-worktree").checked = false;
+      closeRepo(false);
+      await sendToClaude(t);
+    } catch (e) {
+      setStatus("Could not send: " + e.message, true);
+    } finally { $("#repo-nowt").disabled = false; }
+  };
   $("#repo-yes").onclick = async () => {
     $("#repo-yes").disabled = true;
     try {
@@ -1983,14 +1996,6 @@ function askRepo(t) {
   $("#repo-yes").focus();
 }
 $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
-$("#use-worktrees").addEventListener("change", async (e) => {
-  saveWorktrees();
-  if (!e.target.checked || !useServer || !P) return;
-  let g = null;
-  try { const r = await fetch(api("/api/git"), { cache: "no-store" }); if (r.ok) g = await r.json(); } catch (_) {}
-  // An older server has no repo/commits keys (undefined): nothing to ask.
-  if (g && (g.repo === false || g.commits === false) && $("#use-worktrees").checked) askRepo(null);
-});
 
 
 async function sendToClaude(t) {
@@ -2013,7 +2018,7 @@ async function sendToClaude(t) {
   }
   try {
     const model = $("#d-model").value;
-    const res = await post("/api/agent", { p: P, taskId: t.id, model, worktree: $("#use-worktrees").checked && !t.answerOnly });
+    const res = await post("/api/agent", { p: P, taskId: t.id, model });
     const agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }) };
     // A poll may have swapped in another window's board while Claude started: put the session on the live card,
     // and once more if that save is refused, so the watcher never loses a session that is running.
@@ -2629,7 +2634,6 @@ $("#show-subs").addEventListener("change", () => {
   render();
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
-try { $("#use-worktrees").checked = localStorage.getItem(LS_KEY + ":worktrees") === "1"; } catch (_) {}
 // Header menus: one open at a time; outside click, Escape, resize or header scroll closes them.
 let popBtn = null;
 function closePop(focusBtn) {
@@ -2673,7 +2677,6 @@ document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", 
 
 load().then(() => {
   render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
-  if (!useServer) { $("#use-worktrees").disabled = true; $("#use-worktrees-lbl").title = "Needs server.py"; }
 })
   .catch((e) => setStatus("Could not load the board: " + e.message, true));
 </script>

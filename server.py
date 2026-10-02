@@ -37,7 +37,8 @@ resumes such a session repeats the rule (delegate_reminder), since the brief is 
 (task field `answerOnly`) gets a brief to investigate and report back on the card without changing
 files or committing.
 
-"Use worktrees" (header checkbox; POST /api/agent `worktree`) gives each sent task its own git worktree: launch makes
+A task ticked "Use a worktree" (task field `worktree`, on by default: a missing key counts as on; never for "Answer
+only") gets its own git worktree at launch: launch makes
 <repo>/.claude/worktrees/<title-slug>-<task id> on a branch of the same name (make_worktree; the folder is kept out of
 `git status` through info/exclude), stores {path, dir, branch, base} as task.agent.worktree, and the prompt tells the
 session, which still starts in the project folder, to switch into it and do all work and commits there. A folder with no
@@ -579,8 +580,10 @@ def trust_folder(p):
             raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
 
 
-def launch(p, task_id, model="", worktree=False):
-    """Start the task's session; {"id", "worktree"} (the worktree record, or None)."""
+def launch(p, task_id, model=""):
+    """Start the task's session; {"id", "worktree"} (the worktree record, or None).
+
+    The task's own `worktree` field decides the worktree (missing = on); "Answer only" never gets one."""
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -590,7 +593,8 @@ def launch(p, task_id, model="", worktree=False):
     name = "task: " + t["title"][:60]
     exclude_local(p)
     made = []
-    wt = make_worktree(p, t, made) if worktree and not t.get("answerOnly") else None  # an answer changes no files
+    use_wt = t.get("worktree", True) and not t.get("answerOnly")  # an answer changes no files
+    wt = make_worktree(p, t, made) if use_wt else None
     try:
         prompt = build_prompt(p, state, t, wt)
         path = reports.prompt_path(p.board, task_id)
@@ -613,7 +617,7 @@ def launch(p, task_id, model="", worktree=False):
 
 
 OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")   # log, staged skills, project skills
-WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent with "Use worktrees"
+WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent with "Use a worktree"
 
 
 SECRET_FILES = (".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template")  # kept out of init_repo's commit
@@ -2392,8 +2396,7 @@ class Handler(SimpleHTTPRequestHandler):
                 trust_folder(project(body["p"]))
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or "",
-                                       bool(body.get("worktree"))))
+                self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or ""))
             elif path == "/api/agent/worktree":
                 worktree_action(project(body["p"]), body["taskId"], body.get("action"))
                 self._json(200, {"ok": True})

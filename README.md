@@ -138,10 +138,13 @@ the git repo you run it from.
    or High. Every level runs a small test on each finding. The card shows **Code review** while
    it runs. Reply to have it fix the findings.
 
-### Use worktrees
+### Use a worktree
 
-Tick **Use worktrees** in the header and every task you send gets its own git worktree, so tasks
-running side by side never touch each other's files. The board makes it in
+Every card has a **Use a worktree** box, ticked by default. A task sent with it on gets its own git
+worktree, so tasks running side by side never touch each other's files; untick it and Claude edits
+your project folder directly. The choice is saved on the card, so it is the same in every window.
+In a folder with no git repo yet, sending asks whether to create one or to send the task without a worktree.
+The board makes the worktree in
 `.claude/worktrees/<task title>-<task id>` at the repo root, on a branch of the same name, and tells
 Claude to do all its edits and commits there. Your own checkout stays as it was (the folder is in
 `.git/info/exclude`, so `git status` stays clean). **Answer only** tasks change nothing, so they get none.
