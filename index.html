@@ -99,6 +99,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .pop-row.two small { display: block; color: var(--muted); font-size: calc(12px * var(--ts)); white-space: normal; max-width: 260px; }
 .pop-row:has(input:disabled) { opacity: .6; cursor: default; }
 .pop-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+#project-menu { max-height: calc(100vh - 80px); overflow-y: auto; }
+#project-menu .pop-row { justify-content: flex-start; gap: 8px; }
+#project-menu .pop-row .ck { width: 14px; flex: none; color: var(--accent); }
+#project-menu .pop-row[aria-checked="true"] { font-weight: 600; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
 .column { background: var(--col); border-radius: 10px; width: 290px; min-width: 290px; display: flex; flex-direction: column; max-height: 100%; }
@@ -526,7 +530,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 <body>
 <header>
   <h1>Task Board</h1>
-  <span id="project-wrap"><select id="project" title="Project"></select><span id="others-waiting" hidden>*</span></span>
+  <span id="project-wrap"><select id="project" title="Project" data-pop="project-menu" aria-haspopup="menu" aria-expanded="false"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
   <span class="grow"></span>
@@ -538,6 +542,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
 </header>
+<div class="pop" id="project-menu" role="menu" aria-label="Project" hidden></div>
 <div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
   <button class="pop-row" id="theme"></button>
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
@@ -789,6 +794,7 @@ function renderProjects() {
   // The closed picker shows only this project, so a star inside it says another project needs you.
   $("#others-waiting").hidden = !others.length || !useServer;
   $("#project-wrap").classList.toggle("others", others.length > 0);
+  if (popBtn === sel) buildProjectMenu();
 }
 
 async function switchProject(id) {
@@ -819,6 +825,27 @@ $("#project-path").addEventListener("keydown", (e) => {
   else if (e.key === "Enter" && i.value.trim()) { openFolder("path", i.value.trim()); i.value = ""; i.style.display = "none"; }
 });
 
+// The native popup on macOS opens on top of the field, hiding it; a mouse press opens our own menu below instead.
+// The keyboard still gets the native list.
+function buildProjectMenu() {
+  const sel = $("#project");
+  $("#project-menu").innerHTML = [...sel.options].map((o) => {
+    if (o.disabled) return o.textContent.startsWith("─") ? `<div class="pop-sep"></div>` : "";
+    const on = o.value === sel.value;
+    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}">`
+      + `<span class="ck">${on ? "✓" : ""}</span>${esc(o.textContent)}</button>`;
+  }).join("");
+}
+$("#project").addEventListener("mousedown", (e) => { if (e.button === 0) e.preventDefault(); });
+$("#project-menu").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-v]");
+  if (!b) return;
+  closePop();
+  const sel = $("#project");
+  if (b.dataset.v === sel.value) return;
+  sel.value = b.dataset.v;
+  sel.dispatchEvent(new Event("change"));
+});
 $("#project").addEventListener("change", async (e) => {
   const v = e.target.value;
   renderProjects();   // the action options are not places to stay on
@@ -2650,10 +2677,13 @@ function openPop(b, kbd) {
     const p = typeof project === "function" ? project() : null;
     $("#proj-menu-name").textContent = p ? p.name || p.path || "" : "";
   }
+  if (b.id === "project") buildProjectMenu();
   m.hidden = false;
   const r = b.getBoundingClientRect(), w = m.offsetWidth;
   m.style.top = r.bottom + 6 + "px";
-  m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+  // The project picker sits at the left, so its menu lines up with the field's left edge.
+  const x = b.id === "project" ? r.left : r.right - w;
+  m.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px";
   b.setAttribute("aria-expanded", "true");
   popBtn = b;
   const first = m.querySelector("button, select, input:not(:disabled)");
