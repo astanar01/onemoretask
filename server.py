@@ -888,7 +888,7 @@ def task_prompt(p, task_id):
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
         raise LookupError("no such task")
-    return {"prompt": build_prompt(p, state, t), "saved": False}
+    return {"prompt": build_prompt(p, state, t, live_worktree(t)), "saved": False}
 
 
 def git_info(p):
