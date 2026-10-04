@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-04
+
+- When Claude stops to ask if it may do something, the card now says "Claude asks permission" and shows what it wants to do, with a button to copy the command that lets you answer. An old question you already answered no longer shows as a new one.
+
 ## 2026-10-02
 
 - Claude no longer slips a task into a hidden copy of your project on its own. If your computer was set up that way, your changes seemed to vanish, the Run app button was missing, and the app started without them. Now only the board makes a copy, and only when the card's box is ticked.

@@ -1105,6 +1105,10 @@ def phase_of(session, log, launched_at):
         return "finished", "Moved to done: sessions closed, recap saved. A reply starts a new session from the recap."
     if session is None:
         return "gone", "Session was removed"
+    # A live permission prompt is what blocks it now, even when an older, answered question ends the log.
+    ask = permission_ask(session)
+    if ask:
+        return "needs_you", ask
     # An explicit report beats the CLI's own guess (it marks some finished sessions "blocked").
     if last.get("status") == "question":
         return "needs_you", last["message"]
@@ -1122,14 +1126,23 @@ def phase_of(session, log, launched_at):
     return "needs_you", "Stopped without reporting — attach or reply to check on it"
 
 
-def job_detail(job_id):
+def job_detail(job_id, field="detail"):
     """The CLI's one-line summary of where a background session stopped ('' if unknown)."""
     try:
         path = os.path.join(os.path.expanduser("~/.claude/jobs"), job_id or "", "state.json")
         with open(path, encoding="utf-8") as f:
-            return (json.load(f).get("detail") or "").strip()
+            return (json.load(f).get(field) or "").strip()
     except (OSError, ValueError, AttributeError):
         return ""
+
+
+def permission_ask(session):
+    """What a session sitting on a permission prompt asks to do ('' if it is not on one). `claude agents` gives
+    waitingFor "permission prompt"; the job's state.json has the request ("approve Bash: rm -f …")."""
+    if not session or "permission" not in (session.get("waitingFor") or ""):
+        return ""
+    need = re.sub(r"^approve\s+", "", job_detail(session.get("id"), "needs"), flags=re.I)
+    return "Claude asks permission: " + (need or "a tool call (attach to see it)")
 
 
 def list_sessions(cwd):
@@ -1568,7 +1581,8 @@ class Watcher:
                 threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
-                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason, "log": log, "cache": cache, "subagents": subs, "skills": used,
+                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t))}
             with self.lock:
@@ -1585,13 +1599,15 @@ class Watcher:
             with self.lock:
                 if key in self.alerts and self.alerts[key]["phase"] != now_:
                     del self.alerts[key]  # it went back to work before the card showed the change
-            if now_ == was or (was is None and fresh[key]["id"] not in self.launched):
+            # A permission prompt can come while the card already reads "needs you" (an older question).
+            asks = fresh[key]["permission"] and fresh[key]["permission"] != (old.get(key) or {}).get("permission")
+            if (now_ == was and not asks) or (was is None and fresh[key]["id"] not in self.launched):
                 continue
             if now_ in ("needs_you", "finished"):
                 with self.lock:
                     self.alerts[key] = {"p": p, "id": t["id"], "phase": now_, "at": time.time(),
                                         "column": t.get("column"), "updated": t.get("updated"),
-                                        "title": "Claude needs you" if now_ == "needs_you" else "Claude finished",
+                                        "title": "Claude asks permission" if asks else "Claude needs you" if now_ == "needs_you" else "Claude finished",
                                         "sub": f"{p.name}: {t['title']}", "reason": fresh[key]["reason"]}
         self.flush_alerts()
 

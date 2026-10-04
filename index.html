@@ -1498,8 +1498,10 @@ function renderAgent(t) {
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
-  // A blocked session with no question in the log is sitting on a prompt only `claude attach` can show.
-  if (ag && ag.phase === "needs_you" && !log.some((e) => e.status === "question"))
+  // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
+  // from the CLI's record) or on something only `claude attach` can show.
+  const said = log.filter((e) => e.status !== "note").pop();
+  if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
   const busy = ag && ag.phase === "working";
   $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
@@ -1599,7 +1601,6 @@ const claudeReviewed = (ag) => { const log = (ag && ag.log) || []; return review
 // What to do next, from the task's column, the agent's phase and the real git state (loadTaskGit), never from the
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
 function nextAction(t, ag, g) {
-  const last = ((ag && ag.log) || []).filter((e) => e.from !== "you").pop();
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
   const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
   const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { title: `A fresh Claude session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
@@ -1627,7 +1628,12 @@ function nextAction(t, ag, g) {
     return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
   }
   if (ag.phase === "needs_you") {
-    const q = last && last.status === "question";
+    if (ag.permission) return { title: "Claude asks permission", text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ")
+      + ". Allow or deny it in the session: paste the attach command in a terminal.",
+      actions: [act("Copy attach command", "primary", () => $("#d-copy-attach").onclick(), { icon: "copy" })] };
+    // Only an unanswered question counts: a reply after it means Claude stopped on something else.
+    const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
+    const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
     return { title: q ? "Claude has a question" : stopped ? "Run stopped" : "Claude needs you",
       text: q ? "Answer it in Conversation to let Claude continue." : (ag.reason || "Claude is waiting on you.").replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
