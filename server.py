@@ -1095,8 +1095,9 @@ def phase_of(session, log, launched_at):
     live = session and session.get("status")
     busy = live == "busy" and st != "blocked" or not live and st == "working"
     # "done" is the agent's last action, so it wins over "busy": a background shell that never exits (a headless
-    # Chrome screenshot) keeps the session "busy" forever.
-    if session is not None and last.get("from") == "claude" and last.get("status") in ("done", "answer"):
+    # Chrome screenshot) keeps the session "busy" forever. A permission prompt after the report still needs you.
+    ask = permission_ask(session)
+    if session is not None and not ask and last.get("from") == "claude" and last.get("status") in ("done", "answer"):
         return "finished", last["message"]
     # Just after a launch or reply the session is still starting (absent, or stopped from the reply's stop).
     if busy or (last.get("from") == "you" and time.time() - launched_at < 45):
@@ -1106,7 +1107,6 @@ def phase_of(session, log, launched_at):
     if session is None:
         return "gone", "Session was removed"
     # A live permission prompt is what blocks it now, even when an older, answered question ends the log.
-    ask = permission_ask(session)
     if ask:
         return "needs_you", ask
     # An explicit report beats the CLI's own guess (it marks some finished sessions "blocked").
