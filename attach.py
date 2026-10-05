@@ -1,4 +1,5 @@
-"""Type a message into a running Claude Code session, the way someone at its terminal would.
+"""Type a message into a running Claude Code session, or answer its permission prompt, the way someone at its
+terminal would.
 
     python3 attach.py <session short id> <text>      (manual test; prints whether it was typed)
 
@@ -9,6 +10,7 @@ message is then pushed in at once with Claude Code's "send now" key, so it does 
 
 The board drives that terminal through a pseudo-terminal, so it needs a POSIX system (not Windows).
 """
+import contextlib
 import os
 import re
 import sys
@@ -30,6 +32,7 @@ DIALOG = re.compile(r"Esc to cancel|Do you want to|❯\s*1\.")
 # background (not killed; Claude is told when it ends) and a reply being written stops where it is.
 SEND_NOW = re.compile(r"to send now")
 PASTE_START, PASTE_END = b"\x1b[200~", b"\x1b[201~"
+ASK = "Do you want to"
 
 
 def available():
@@ -56,10 +59,9 @@ def screen_text(raw):
     return SCREEN.sub(" ", raw.decode("utf-8", "replace"))
 
 
-def type_into(session_id, text, cmd=("claude",)):
-    """Paste `text` into the session's input box and press Enter. Returns (typed, why-not)."""
-    if not pty:
-        return False, "needs a POSIX terminal"
+@contextlib.contextmanager
+def _terminal(session_id, cmd):
+    """`claude attach <id>` in a pseudo-terminal; yields its fd."""
     pid, fd = pty.fork()
     if pid == 0:
         try:
@@ -68,6 +70,26 @@ def type_into(session_id, text, cmd=("claude",)):
             os._exit(127)
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 200, 0, 0))
+        yield fd
+    finally:
+        # Leaving the terminal only closes this view; the session keeps running.
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        _read(fd, 0.5)
+        try:
+            os.waitpid(pid, 0)
+        except OSError:
+            pass
+        os.close(fd)
+
+
+def type_into(session_id, text, cmd=("claude",)):
+    """Paste `text` into the session's input box and press Enter. Returns (typed, why-not)."""
+    if not pty:
+        return False, "needs a POSIX terminal"
+    with _terminal(session_id, cmd) as fd:
         shown = screen_text(_read(fd, 4))
         if "❯" not in shown:
             return False, "no input box on screen: " + " ".join(shown.split())[-200:]
@@ -85,18 +107,54 @@ def type_into(session_id, text, cmd=("claude",)):
             os.write(fd, b"\x18\x13")
             _read(fd, 2)
         return True, ""
-    finally:
-        # Leaving the terminal only closes this view; the session keeps running.
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-        _read(fd, 0.5)
-        try:
-            os.waitpid(pid, 0)
-        except OSError:
-            pass
-        os.close(fd)
+
+
+def _squash(s):
+    """Text without spaces or box lines, so a command the terminal wrapped still matches its one-line form."""
+    return re.sub(r"[\s│─╌]+", "", s)
+
+
+def menu_options(shown):
+    """The numbered choices of the last permission menu on screen: [(key, label)]."""
+    at = shown.rfind(ASK)
+    if at < 0:
+        return []
+    menu = shown[at:].split("Esc to cancel")[0]
+    return [(k, " ".join(v.split())) for k, v in
+            re.findall(r"(\d)\.\s+(.*?)(?=\s+(?:❯\s*)?\d\.\s|\s*$)", menu, re.S)]
+
+
+def pick(options, choice):
+    """The menu key for allow / always / deny, or None when the menu has no such choice."""
+    for key, label in options:
+        if (choice == "allow" and label == "Yes"
+                or choice == "always" and label.startswith("Yes, and") and "auto mode" not in label
+                or choice == "deny" and label.startswith("No")):
+            return key
+    return None
+
+
+def answer_prompt(session_id, choice, expect, cmd=("claude",)):
+    """Press the menu key for `choice` (allow / always / deny) on the permission prompt on screen, only when the
+    prompt is about `expect` (the request the card showed): a key pressed on another menu would approve something
+    nobody saw. Returns (answered, why-not)."""
+    if not pty:
+        return False, "needs a POSIX terminal"
+    with _terminal(session_id, cmd) as fd:
+        shown = screen_text(_read(fd, 4))
+        options = menu_options(shown)
+        if not options:
+            return False, "no permission prompt on screen"
+        if not _squash(expect) or _squash(expect) not in _squash(shown[:shown.rfind(ASK)]):
+            return False, "the prompt on screen asks about something else"
+        key = pick(options, choice)
+        if not key:
+            return False, "the prompt has no such choice (it offers: " + "; ".join(label for _, label in options) + ")"
+        os.write(fd, key.encode())
+        shown = screen_text(_read(fd, 2))
+        if ASK in shown:
+            return False, "the prompt is still on screen"
+        return True, ""
 
 
 if __name__ == "__main__":

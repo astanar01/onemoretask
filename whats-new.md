@@ -2,6 +2,7 @@
 
 ## 2026-10-05
 
+- When Claude asks if it may do something, you can now answer right on the card: Allow, Allow always or Deny. No need to open a terminal anymore.
 - Helpers that Claude sent off and that already came back now show as finished. Before, they all looked "running" again each time you sent Claude a new message, even though they were doing nothing.
 
 ## 2026-10-04

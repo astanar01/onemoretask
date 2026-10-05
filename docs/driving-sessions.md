@@ -15,6 +15,16 @@ Never probe with a hand-made pty script. One once pasted a note while a Bash
 permission prompt was showing, and the paste + Enter approved the command. Any new
 probe must check the screen for a dialog before every keypress.
 
+## Answering a permission prompt
+
+`attach.answer_prompt()` (the card's Allow / Allow always / Deny) presses a menu key only
+when the screen shows a permission menu AND the command the card showed (compared with
+spaces and box lines removed, so a wrapped command still matches). It picks the key by the
+option's label, not its number: the menu varies (measured on a Bash prompt: `1. Yes`,
+`2. Yes, and always allow access to <dir> from this project`, `3. Yes, and switch to auto
+mode`, `4. No`). Allow always never picks the auto-mode option. Number keys answer at once,
+no Enter needed.
+
 ## The keys (measured)
 
 - **Ctrl+B** sent through `claude attach` does nothing.

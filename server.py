@@ -1869,6 +1869,23 @@ def delete_worktree(p, task_id, force=False):
         git_run(p.path, "branch", "-D", branch)  # its commits are on another branch, or the user confirmed losing them
 
 
+def answer_permission(p, task_id, choice, shown):
+    """Allow / always / deny the session's permission prompt from the card. `shown` is the request the card showed:
+    the key is pressed only while the session still asks exactly that."""
+    if choice not in ("allow", "always", "deny"):
+        raise ValueError("unknown choice")
+    info = WATCH.snapshot(p.id).get(task_id)
+    session = info and next((s for s in list_sessions(p.path) if s["id"] == info["id"]), None)
+    ask = permission_ask(session)
+    if not ask or ask != shown:
+        raise LookupError("the session is no longer asking that; the card will update")
+    # "Bash: <command>" -> "<command>": the prompt shows the command under a "Bash command" title.
+    need = re.sub(r"^\w+:\s*", "", ask.removeprefix("Claude asks permission: "))
+    answered, why = attach.answer_prompt(info["id"], choice, need, CLAUDE_CMD)
+    if not answered:
+        raise LookupError(why)
+
+
 def type_notes(p, task_id, aid):
     """Type the notes not handed over yet into the live session (`claude attach`). False if it could not, e.g. a
     permission prompt was on screen; the notes then stay for the inbox hook or a later try."""
@@ -2400,7 +2417,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = self._route()
-        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/worktree",
+        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/permission", "/api/agent/worktree",
                   "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy")
@@ -2428,6 +2445,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
                 self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or ""))
+            elif path == "/api/agent/permission":
+                answer_permission(project(body["p"]), body["taskId"], body.get("choice"), body.get("ask") or "")
+                self._json(200, {"ok": True})
             elif path == "/api/agent/worktree":
                 worktree_action(project(body["p"]), body["taskId"], body.get("action"))
                 self._json(200, {"ok": True})

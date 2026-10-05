@@ -1598,6 +1598,7 @@ $("#d-sum-conv").onclick = () => showTab("conversation");
 // "Claude reviewed" = a code-review session (server: review()) posted its findings and nothing was sent since.
 const claudeReviewed = (ag) => { const log = (ag && ag.log) || []; return reviewing(ag || {}) && log.slice(log.findLastIndex((x) => x.status === "review") + 1).some((x) => x.from !== "you" && x.status === "done"); };
 
+const answering = {};  // task id -> a permission answer is on its way (answerPermission)
 // What to do next, from the task's column, the agent's phase and the real git state (loadTaskGit), never from the
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
 function nextAction(t, ag, g) {
@@ -1628,9 +1629,13 @@ function nextAction(t, ag, g) {
     return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
   }
   if (ag.phase === "needs_you") {
-    if (ag.permission) return { title: "Claude asks permission", text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ")
-      + ". Allow or deny it in the session: paste the attach command in a terminal.",
-      actions: [act("Copy attach command", "primary", () => $("#d-copy-attach").onclick(), { icon: "copy" })] };
+    if (ag.permission) {
+      const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
+      return { title: "Claude asks permission", text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + ".",
+        actions: answering[t.id] ? [] : [answer("Allow", "allow", "primary", "Let it run this once"),
+          answer("Allow always", "always", "sec", "Let it run this, and stop asking about this kind of request in this session"),
+          answer("Deny", "deny", "ghost", "Do not let it run this")], busy: !!answering[t.id] };
+    }
     // Only an unanswered question counts: a reply after it means Claude stopped on something else.
     const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
     const q = said && said.from === "claude" && said.status === "question";
@@ -2093,6 +2098,21 @@ async function startReview(t) {
   await pollAgents();
 }
 $("#d-review").onclick = () => { const t = task(openId); if (t) startReview(t); };
+// The server presses the menu key in the session only while it still asks what the card showed (`ask`).
+async function answerPermission(t, choice, ask) {
+  answering[t.id] = true;
+  setStatus(choice === "deny" ? "Saying no…" : "Allowing…");
+  refreshAgent(t);
+  try {
+    await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
+    setStatus(choice === "deny" ? "Told Claude no" : "Allowed");
+  } catch (e) {
+    setStatus("Could not answer the prompt: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.", true);
+  }
+  delete answering[t.id];
+  await pollAgents();
+  refreshAgent(t);
+}
 // The server types a canned message into the card's session; its logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
   const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
