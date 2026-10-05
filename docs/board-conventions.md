@@ -31,8 +31,27 @@ card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
 - HTML5 drag-and-drop (card reorder, column moves) needs synthetic `DragEvent`s
   (`dragstart` → `dragover` → `drop` → `dragend`) sharing ONE `DataTransfer`,
   dispatched to `document.elementFromPoint(x, y)` at the target point.
+- **Card states that need a finished session** (buttons shown only in phase "finished")
+  without a paid run: a ~50-line script that sets `HOME=<tmp>/home`, imports the real
+  `server`, replaces `start_session`, `resume`, `list_sessions` (returns every started
+  fake id as idle), `run_claude` (raises) and `notify`, then runs the REAL
+  `WATCH.poll()` in a 1 s loop and serves `server.Handler` on a spare port. With every
+  session call faked and its own HOME, this poll cannot touch live sessions (unlike the
+  overview script above). Play Claude's side from the shell with the real `report.py`
+  (`done "... <sha>"`) and real commits. The default-model probe hits the `run_claude`
+  guard; that error is harmless.
+- **What the CLI shows for a session state** (e.g. a permission prompt): recreate the
+  state with a throwaway `claude --bg --permission-mode default` session (from a
+  trusted folder — a scratch dir fails with "Workspace not trusted"), then read
+  `claude agents --json --all` and `~/.claude/jobs/<id>/state.json`. Then `claude stop`
+  and `claude rm` it. The field is often already there.
 
 ## Screenshots of the running board
+
+To check a page change from a worktree on REAL data without a second server: a tiny
+Python proxy serves the worktree's `index.html` at `/` and forwards only `GET`s to the
+running board on :8765 (any other method gets 403, so the page cannot write). Point the
+headless browser at the proxy.
 
 Use the `run-extras` skill (`scripts/cdp-shot.mjs`) when the Chrome extension is
 offline. Two board-specific traps:

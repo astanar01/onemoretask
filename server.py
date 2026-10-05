@@ -468,6 +468,8 @@ def delegate_lines(model, report, answer_only=False):
             use,
             f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching subagents, '
             "then check and integrate their results yourself before reporting done.",
+            "- When a subagent writes a test, ask that it makes a fresh temp folder on every run (mkdtemp), so you can "
+            "rerun it; rerun it once yourself before you trust its pass count.",
             "- This holds for the whole task, not just this first turn: when a reply from the card (an answer to your "
             "question, a follow-up change) asks for more work, split and delegate that work the same way."]
 
