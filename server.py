@@ -1290,7 +1290,7 @@ def _action(block):
 def subagents(session_id):
     """The session's Agent-tool subagents from <session>/subagents/agent-<id>.{meta.json,jsonl}:
     [{id, name, type, started, updated, finished, action, skills}], oldest first. finished = its last entry is an
-    end_turn reply; a subagent cut off mid-run stays unfinished (the board shows it as stopped)."""
+    end_turn reply or a successful SubagentHandback result; a subagent cut off mid-run stays unfinished (the board shows it as stopped)."""
     path = transcript_path(session_id)
     folder = path and os.path.join(path[:-len(".jsonl")], "subagents")
     if not folder or not os.path.isdir(folder):
@@ -1328,6 +1328,13 @@ def subagents(session_id):
             started = st.st_mtime
         last = entries[-1] if entries else {}
         msg = last.get("message") or {}
+        # Newer subagents end on a SubagentHandback call and its result, never an end_turn reply.
+        prev = (entries[-2].get("message") or {}).get("content") if len(entries) > 1 else None
+        handback = {b.get("id") for b in (prev if isinstance(prev, list) else [])
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "SubagentHandback"}
+        handed = last.get("type") == "user" and isinstance(msg.get("content"), list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id") in handback
+            and not b.get("is_error") for b in msg["content"])
         action = next((_action(b) for e in reversed(entries) for b in reversed((e.get("message") or {}).get("content") or [])
                        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") != "SubagentHandback"), "")
         calls, failed = _skill_calls(f)
@@ -1338,7 +1345,7 @@ def subagents(session_id):
         row = {"id": name[len("agent-"):-len(".jsonl")], "name": meta.get("description") or "Subagent",
                "type": meta.get("agentType") or "", "started": started,
                "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
-               "finished": last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
+               "finished": handed or last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
                "action": action, "skills": used}
         _sub_memo[f] = ((st.st_mtime, st.st_size), row)
         rows.append(row)

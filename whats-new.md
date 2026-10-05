@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-05
+
+- Helpers that Claude sent off and that already came back now show as finished. Before, they all looked "running" again each time you sent Claude a new message, even though they were doing nothing.
+
 ## 2026-10-04
 
 - When Claude stops to ask if it may do something, the card now says "Claude asks permission" and shows what it wants to do (even right after Claude said it was done), with a button to copy the command that lets you answer. An old question you already answered no longer shows as a new one.
