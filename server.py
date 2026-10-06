@@ -189,6 +189,8 @@ SHA_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
 TYPE_RETRY = 15  # seconds before typing a note into a session is tried again (a prompt was on screen)
+STALL_RETRY = 60  # seconds after auto mode's safety check stopped a session before the board resumes it
+STALL_TRIES = 3   # such resumes in a row (no report from Claude in between) before it waits for the user
 ALERT_WAIT = 75  # seconds an alert waits for the board to show the change (a hidden tab polls once a minute)
 PAGE_GONE = 75  # seconds without a board page reading a project's cards: nothing will move them, alert at once
 
@@ -1236,6 +1238,32 @@ def turn_ended_at(session_id):
     return ended
 
 
+AUTO_MODE_STALL = "Auto mode is unavailable"  # the CLI's note when auto mode's safety check gave no verdict
+_stall_memo = {}  # transcript path -> ((mtime, size), stalled at)
+
+
+def auto_mode_stall(session_id):
+    """When the CLI ended the session's last turn because auto mode's safety check kept giving no verdict (epoch s),
+    else None. The CLI then waits for a message, which nobody sends to a background session."""
+    path = transcript_path(session_id)
+    if not path:
+        return None
+    st = os.stat(path)
+    memo = _stall_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    at = None
+    for e in reversed(transcript_tail(path)):
+        kind = e.get("type")
+        if kind == "system" and str(e.get("content") or "").startswith(AUTO_MODE_STALL):
+            at = _ts(e["timestamp"])
+            break
+        if kind in ("user", "assistant") or kind == "attachment" and (e.get("attachment") or {}).get("type") == "queued_command":
+            break
+    _stall_memo[path] = ((st.st_mtime, st.st_size), at)
+    return at
+
+
 def cache_info(session_id):
     """Prompt-cache state of a session's LAST API call, from its transcript:
     {"at": call start (epoch s), "ttl": seconds, "expires": epoch s, "tokens": context size}, or None.
@@ -1423,6 +1451,7 @@ class Watcher:
         self.loaded = False   # a first pass has ended, even with an error: the page stops polling fast
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
+        self.unstall_fail = {}  # (project id, task id) -> the auto-mode stall (epoch s) a resume failed on
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
         # A card moved to done is marked by reports.close_path (a file, so a server restart keeps it) until it is closed.
         self.closing = set()   # (project id, task id) whose recap is being written
@@ -1482,6 +1511,15 @@ class Watcher:
         try:
             if not type_notes(p, task_id, aid):
                 self.typed_fail[(p.id, task_id)] = time.time()
+        finally:
+            self.delivering.discard((p.id, task_id))
+
+    def _unstall(self, p, task_id, info, stalled):
+        try:
+            unstall(p, task_id, info)
+        except Exception as e:  # noqa: BLE001 — the card asks the user to reply instead
+            self.unstall_fail[(p.id, task_id)] = stalled
+            print("auto mode retry:", e)
         finally:
             self.delivering.discard((p.id, task_id))
 
@@ -1548,6 +1586,22 @@ class Watcher:
                 self.delivering.add((p.id, t["id"]))
                 threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
                                                              waiting), daemon=True).start()
+            key, closed = (p.id, t["id"]), t.get("column") in done_cols
+            # The CLI ends the turn when auto mode's safety check keeps failing, then waits for a message: resume it.
+            try:
+                stalled = (phase == "needs_you" and not busy and not closed and not reason.startswith("Claude asks permission")
+                           and not (said and said[-1].get("status") == "question") and auto_mode_stall(s.get("sessionId")))
+            except OSError:
+                stalled = None
+            unstalling = bool(stalled) and stall_retries(said) < STALL_TRIES and self.unstall_fail.get(key) != stalled
+            if stalled:
+                reason = "Claude Code's safety check kept failing, so Claude stopped. " + (
+                    "The board tries again in a minute." if unstalling else "Reply to try again.")
+            if (unstalling and not pending and key not in self.delivering and key not in self.closing
+                    and time.time() - stalled > STALL_RETRY):
+                self.delivering.add(key)
+                threading.Thread(target=self._unstall, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
+                                                             stalled), daemon=True).start()
             try:
                 cache = cache_info(s and s.get("sessionId"))
             except OSError:
@@ -1568,7 +1622,6 @@ class Watcher:
                 done = (len(log), bool(found)) if found is not None else None
                 if done:
                     self.committed[(p.id, t["id"])] = done
-            key, closed = (p.id, t["id"]), t.get("column") in done_cols
             recapped = any(e.get("status") == "recap" for e in log)
             marker = reports.close_path(p.board, t["id"])
             if not closed:
@@ -1593,7 +1646,7 @@ class Watcher:
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
                                       "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
-                                      "worktree": bool(live_worktree(t))}
+                                      "worktree": bool(live_worktree(t)), "unstalling": unstalling}
             with self.lock:
                 self.cache[key] = fresh[key]
         with self.lock:
@@ -1610,7 +1663,10 @@ class Watcher:
                     del self.alerts[key]  # it went back to work before the card showed the change
             # A permission prompt can come while the card already reads "needs you" (an older question).
             asks = fresh[key]["permission"] and fresh[key]["permission"] != (old.get(key) or {}).get("permission")
-            if (now_ == was and not asks) or (was is None and fresh[key]["id"] not in self.launched):
+            # A stall the board resumes itself needs no alert; one it gave up on does, even with no phase change.
+            gave_up = (old.get(key) or {}).get("unstalling") and not fresh[key]["unstalling"] and now_ == "needs_you"
+            if ((now_ == was and not asks and not gave_up) or (was is None and fresh[key]["id"] not in self.launched)
+                    or fresh[key]["unstalling"] and not asks):
                 continue
             if now_ in ("needs_you", "finished"):
                 with self.lock:
@@ -1726,14 +1782,7 @@ def reply(p, task_id, text, images=(), extra=""):
         return False
     if not info.get("sessionId"):
         raise LookupError("no Claude session for this task")
-    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
-    wt = t and renew_worktree(p, t)
-    if wt:
-        extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
-    extra += delegate_reminder(t)
-    # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
-    message = text + extra + f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
-    message += reports.LANGUAGE_RULE + ")"
+    message = text + extra + board_tail(p, task_id)
     if images:
         message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
@@ -1741,6 +1790,42 @@ def reply(p, task_id, text, images=(), extra=""):
     reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
     WATCH.expect(p, task_id, aid)
     return False
+
+
+def board_tail(p, task_id):
+    """What follows a card message that resumes a session: a renewed worktree, the delegate brief, the card duty."""
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    extra = ""
+    wt = t and renew_worktree(p, t)
+    if wt:
+        extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
+    extra += delegate_reminder(t)
+    # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
+    extra += f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
+    return extra + reports.LANGUAGE_RULE + ")"
+
+
+STALL_NOTE = "Claude Code's safety check failed for a moment and stopped Claude, so the board told it to carry on"
+STALL_MESSAGE = ("Your last turn was ended by Claude Code, not by you: auto mode's safety check returned no verdict "
+                 "several times in a row. That was a passing server problem, not a refusal. Carry on where you left "
+                 "off, starting with the step that was cut off.")
+
+
+def stall_retries(said):
+    """The board's auto-mode resumes at the end of the card log, with no report from Claude after them."""
+    n = 0
+    for e in reversed(said):
+        if e.get("status") != "resume" or e.get("message") != STALL_NOTE:
+            break
+        n += 1
+    return n
+
+
+def unstall(p, task_id, info):
+    """Resume a session whose turn the CLI ended because auto mode's safety check kept failing."""
+    aid = resume(p, info, STALL_MESSAGE + board_tail(p, task_id))
+    reports.append(p.board, task_id, "resume", STALL_NOTE, "you", session=aid)
+    WATCH.expect(p, task_id, aid)
 
 
 def resume(p, info, message):
