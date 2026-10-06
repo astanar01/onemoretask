@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-06
+
+- When Claude stops because its safety check keeps failing, the card now says so and the board gets Claude going again by itself after a minute. Before, the card just said "stopped" and waited for you.
+
 ## 2026-10-05
 
 - When Claude asks if it may do something, you can now answer right on the card: Allow, Allow always or Deny. No need to open a terminal anymore.
