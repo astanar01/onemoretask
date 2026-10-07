@@ -149,3 +149,107 @@ with open(os.path.join(os.environ["HOME"], ".codex", "models_cache.json"), "w", 
                           {"slug": "gpt-a", "display_name": "A", "visibility": "list"}]}, f)
 assert codex.models() == [{"id": "gpt-b", "name": "B"}, {"id": "gpt-a", "name": "A"}], codex.models()
 print("ok  is_model and models (fallback, then the cache file)")
+
+# --- two threads writing one meta at once: no clash on the temp file
+import subprocess  # noqa: E402
+import threading  # noqa: E402
+
+errors = []
+
+
+def hammer(n):
+    for i in range(300):
+        try:
+            codex._write_meta(BOARD, {"id": "race", "writer": n, "i": i})
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+
+threads = [threading.Thread(target=hammer, args=(n,)) for n in (1, 2)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+assert not errors, errors[:3]
+assert json.load(open(os.path.join(codex.folder(BOARD), "race.json"), encoding="utf-8"))["i"] == 299
+assert not [n for n in os.listdir(codex.folder(BOARD)) if n.endswith(".tmp")]
+print("ok  two threads x 300 meta writes: no error, valid JSON, no temp left")
+
+
+# --- after a restart a pid is only trusted with its start time
+def sleeper_meta(tid, started):
+    p = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    threading.Thread(target=p.wait, daemon=True).start()  # reap it so a killed sleep is gone, not a zombie
+    m = dict(m2, id=tid, pid=p.pid, pid_start=started(p.pid), exit=None, removed=False)
+    codex._write_meta(BOARD, m)
+    return p
+
+
+right = sleeper_meta("pid-right", codex._pid_start)
+wrong = sleeper_meta("pid-wrong", lambda pid: "Thu Jan  1 00:00:00 1970")
+try:
+    assert codex.PROCS.get("pid-right") is None and codex._pid_start(right.pid)
+    assert codex.session(BOARD, "pid-right")["state"] == "working"
+    codex.remove(BOARD, "pid-right")
+    time.sleep(0.3)
+    assert right.poll() is not None, "remove left the right pid running"
+    s = codex.session(BOARD, "pid-wrong")
+    assert s["state"] == "idle", s
+    assert json.load(open(os.path.join(codex.folder(BOARD), "pid-wrong.json"), encoding="utf-8"))["exit"] == 0
+    m = json.load(open(os.path.join(codex.folder(BOARD), "pid-wrong.json"), encoding="utf-8"))
+    m["exit"] = None  # remove() must not signal it even while the meta still says the turn runs
+    codex._write_meta(BOARD, m)
+    codex.remove(BOARD, "pid-wrong")
+    time.sleep(0.3)
+    assert wrong.poll() is None, "remove killed a pid that another process reused"
+finally:
+    for p in (right, wrong):
+        if p.poll() is None:
+            p.kill()
+print("ok  a saved pid with its start time is working and removed; a reused pid reads idle and is left alone")
+
+# --- workers (spawn_agent / wait): rows and tokens from the event log and each worker's rollout
+import shutil  # noqa: E402
+
+FIX = os.path.join(HERE, "fixtures", "codex")
+RAMA, AQUI = "01a116f3-9e5c-7aa1-9a07-c7eb4c4d7a65", "01a116f3-9f2d-7513-b971-34c6d235dbd4"
+RUN = os.path.join(codex.folder(BOARD), "w1-1.jsonl")
+shutil.copy(os.path.join(FIX, "run1.jsonl"), RUN)
+
+os.environ["CODEX_HOME"] = os.path.join(TMP, "codex-home-empty")  # no rollouts: only the event log
+rows = codex.subagents(RUN)
+assert [r["id"] for r in rows] == [RAMA, AQUI], rows
+assert all(r["finished"] and r["tokens"] == 0 and r["name"] == "Worker" and r["type"] == "codex" and r["skills"] == []
+           for r in rows), rows
+assert codex.subagent_usage(RUN) == ([0, 0, 0, 0], 2), codex.subagent_usage(RUN)
+print("ok  no rollouts: 2 worker rows from the event log, finished by the wait items, 0 tokens")
+
+HOME_C = os.path.join(TMP, "codex-home")
+day = os.path.join(HOME_C, "sessions", "2026", "10", "07")
+os.makedirs(day)
+for n in os.listdir(FIX):
+    if n.startswith("rollout-"):
+        shutil.copy(os.path.join(FIX, n), day)
+os.environ["CODEX_HOME"] = HOME_C
+rows = {r["id"]: r for r in codex.subagents(RUN)}
+assert set(rows) == {RAMA, AQUI}, rows
+assert rows[RAMA]["name"] == "Ramanujan" and rows[AQUI]["name"] == "Aquinas", rows
+assert rows[RAMA]["tokens"] == 114147 and rows[AQUI]["tokens"] == 114407, rows
+assert all(r["finished"] and r["action"] and r["type"] == "gpt-5.6-luna" and r["skills"] == [] for r in rows.values()), rows
+assert rows[RAMA]["started"] < rows[RAMA]["updated"], rows[RAMA]
+assert [r["id"] for r in codex.subagents(RUN)] == sorted(rows, key=lambda k: rows[k]["started"])
+used, count = codex.subagent_usage(RUN)
+assert count == 2 and used == [16117 + 13111, 0, 97280 + 100352, 750 + 944], used
+print("ok  with rollouts: Ramanujan / Aquinas, model, action, tokens 114147 + 114407, usage split", used)
+
+d = codex.digest(RUN)
+assert "  · spawn worker: Create hello.txt" in d and "  · spawn worker: Create world.txt" in d, d
+assert d.count("  · wait for workers") == 2, d
+print("ok  digest names each spawn and wait")
+
+import server  # noqa: E402
+
+tk = server.tokens([RUN])
+assert tk["count"] == 2 and tk["subagents"] == used and tk["main"] == codex.usage(RUN), tk
+print("ok  server.tokens([codex log]) counts the 2 workers and their tokens")
+print("PASS")
