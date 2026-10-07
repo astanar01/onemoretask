@@ -1431,7 +1431,7 @@ def cache_info(session_id):
     for i in range(len(entries) - 1, -1, -1):
         m = entries[i].get("message") or {}
         usage = entries[i].get("type") == "assistant" and m.get("usage")
-        if not usage:
+        if not usage or m.get("model") == "<synthetic>":  # Claude Code's own error notes: no API call, zero usage
             continue
         split = usage.get("cache_creation") or {}
         if ttl is None and split.get("ephemeral_1h_input_tokens"):
@@ -1445,7 +1445,7 @@ def cache_info(session_id):
             at = _ts(entries[j - 1]["timestamp"] if j > 0 else entries[j]["timestamp"])
             tokens = sum(usage.get(k) or 0 for k in
                          ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-            info = {"at": at, "tokens": tokens}
+            info = {"at": at, "tokens": tokens, "model": m.get("model") or ""}
         if ttl is not None:
             break
     if info:
@@ -1453,6 +1453,27 @@ def cache_info(session_id):
         info["expires"] = info["at"] + info["ttl"]
     _cache_memo[path] = ((st.st_mtime, st.st_size), info)
     return info
+
+
+# Models with a 1M-token context window (Anthropic model table, 2026-10); other Claude models have 200k.
+WIDE_CONTEXT = re.compile(r"fable|mythos|opus-(5|4-[78])|sonnet-5|haiku-5")
+
+
+def context_window(model):
+    """The context window of a Claude model id, in tokens (None for an unknown, non-Claude id)."""
+    model = str(model or "")
+    return 1_000_000 if WIDE_CONTEXT.search(model) else 200_000 if model.startswith("claude-") else None
+
+
+def context(session_id):
+    """How full a Claude session's context is: {"tokens": size at its last API call, "peak": largest size so far,
+    "model", "max": the model's window or None}, or None. Subagents have their own context and are left out."""
+    info = cache_info(session_id)
+    if not info:
+        return None
+    peak = max((u[0] + u[1] + u[2] for u in _usage(transcript_path(session_id)).values()), default=0)
+    return {"tokens": info["tokens"], "peak": max(peak, info["tokens"]), "model": info["model"],
+            "max": context_window(info["model"])}
 
 
 SUB_TAIL = 256 << 10
@@ -1678,6 +1699,7 @@ class Watcher:
         self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
         self.alerts = {}  # (project id, task id) -> alert waiting for the board to show the change
         self.seen = {}    # project id -> last time a board page read its cards
+        self.expected = {}  # (project id, task id) -> count of expect() calls, so a poll keeps a newer start
 
     def close_when_idle(self, p, task_id):
         path = reports.close_path(p.board, task_id)
@@ -1746,10 +1768,13 @@ class Watcher:
     def expect(self, p, task_id, agent_id):
         with self.lock:
             self.launched[agent_id] = time.time()
+            self.expected[(p.id, task_id)] = self.expected.get((p.id, task_id), 0) + 1
             self.cache[(p.id, task_id)] = {"id": agent_id, "sessionId": None, "state": "starting", "phase": "working",
                                            "reason": "", "log": reports.read(p.board, task_id)}
 
     def poll(self):
+        with self.lock:
+            expected = dict(self.expected)
         work, done_cols, unread = [], set(), set()
         for p in projects():
             try:
@@ -1837,7 +1862,11 @@ class Watcher:
             except OSError:
                 cache = None
             try:
-                subs = codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
+                ctx = codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
+            except OSError:
+                ctx = None
+            try:
+                subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
             except OSError:
                 subs = []
             ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
@@ -1882,12 +1911,14 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used, "tokens": spent,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "context": ctx, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                       "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
                                       else "claude"}
             with self.lock:
+                if self.expected.get(key) != expected.get(key) and key in self.cache:
+                    fresh[key] = {**fresh[key], **self.cache[key]}  # a resume started during this pass: newer
                 self.cache[key] = fresh[key]
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})

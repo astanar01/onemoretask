@@ -203,6 +203,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .ttl { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); white-space: nowrap; }
 .ttl.low { border-color: var(--wait); color: var(--wait); }
 .ttl.cold { border-color: #c0392b; background: #c0392b; color: #fff; }
+.ctx { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.ctx.high, .ctx-bar.high i { border-color: var(--wait); color: var(--wait); background-color: var(--wait); }
+.ctx.full, .ctx-bar.full i { border-color: #c0392b; color: #c0392b; background-color: #c0392b; }
+.ctx.high, .ctx.full { background-color: transparent; }
 .card.needs-you { outline: 2px solid var(--wait); }
 .card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .card.unread .title { font-weight: 600; }
@@ -369,6 +373,9 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .fold dd .dirty { color: var(--wait); }
 .crit-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 2px 0 8px; }
 .crit-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.ctx-bar { position: relative; height: 6px; background: var(--line); border-radius: 3px; margin: 2px 0 8px; }
+.ctx-bar i { display: block; height: 100%; background-color: var(--accent); border-radius: 3px; }
+.ctx-bar b { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--muted); }
 #d-crit .sub-list { margin: 0; }
 #d-crit .sub-list li { padding: 5px 0; }
 #d-crit .sub-list li:hover { background: transparent; }
@@ -593,6 +600,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       <details class="fold" id="d-tech"><summary><span data-ico="code" data-s="16"></span>Technical details</summary><dl id="d-tech-list"></dl></details>
       <details class="fold" id="d-subagents"><summary><span data-ico="users" data-s="16"></span>Subagents<span class="badge" id="d-sa-n"></span></summary><ul class="sa-list" id="d-sa-list"></ul></details>
       <details class="fold" id="d-skills"><summary><span data-ico="cap" data-s="16"></span>Skills used<span class="badge" id="d-sk-n"></span></summary><ul class="sk-list" id="d-sk-list"></ul></details>
+      <details class="fold" id="d-context"><summary><span data-ico="doc" data-s="16"></span>Context<span class="badge" id="d-ctx-n"></span></summary>
+        <div class="ctx-bar" id="d-ctx-bar"><i></i><b></b></div><dl id="d-ctx-list"></dl></details>
       <details class="fold" id="d-tokens"><summary><span data-ico="bolt" data-s="16"></span>Tokens used<span class="badge" id="d-tok-n"></span></summary><dl id="d-tok-list"></dl></details>
       <details class="fold" id="d-prompt"><summary><span data-ico="doc" data-s="16"></span>Original prompt</summary>
         <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></details>
@@ -1146,7 +1155,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${who(t)} session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${who(t)} session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1798,6 +1807,35 @@ function renderTokens(ag) {
   if ($("#d-tok-list").innerHTML !== html) $("#d-tok-list").innerHTML = html;
 }
 
+// How full the main session's context is (server: context()): size at the last API call, the peak, and
+// the model's window. Claude Code compacts the conversation near the window, which loses detail.
+const fmtWindow = (n) => fmtTokens(n).replace(/\.0([kMB])$/, "$1");
+const ctxShare = (c) => c && c.max ? c.tokens / c.max : null;
+const ctxLevel = (f) => f >= 0.9 ? " full" : f >= 0.7 ? " high" : "";
+function contextChip(ag) {
+  const c = ag && ag.context, f = ctxShare(c);
+  if (f === null || ag.phase === "gone") return "";
+  return `<span class="ctx${ctxLevel(f)}" title="Context: ${c.tokens.toLocaleString()} of ${c.max.toLocaleString()} tokens (${esc(c.model)})">${Math.round(100 * f)}% ctx</span>`;
+}
+function renderContext(ag) {
+  const c = ag && ag.context, f = ctxShare(c);
+  $("#d-context").hidden = !c;
+  if (!c) return;
+  $("#d-ctx-n").textContent = fmtTokens(c.tokens) + (c.max ? " / " + fmtWindow(c.max) : "");
+  $("#d-ctx-bar").hidden = f === null;
+  if (f !== null) {
+    $("#d-ctx-bar").className = "ctx-bar" + ctxLevel(f);
+    $("#d-ctx-bar i").style.width = Math.min(100, 100 * f).toFixed(1) + "%";
+    $("#d-ctx-bar b").style.left = Math.min(100, 100 * c.peak / c.max).toFixed(1) + "%";
+    $("#d-ctx-bar").title = `Now ${Math.round(100 * f)}% full · peak ${Math.round(100 * c.peak / c.max)}% (the mark)`;
+  }
+  const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}${c.max ? ` (${Math.round(100 * n / c.max)}%)` : ""}</dd>`;
+  const html = row("Now", c.tokens, "What the agent holds in mind at its last step")
+    + row("Most so far", c.peak, "It drops when the conversation is shortened (compacted)")
+    + (c.max ? `<dt>Model limit</dt><dd title="${c.max.toLocaleString()}">${fmtWindow(c.max)} · ${esc(c.model)}</dd>` : `<dt>Model</dt><dd>${esc(c.model) || "unknown"}</dd>`);
+  if ($("#d-ctx-list").innerHTML !== html) $("#d-ctx-list").innerHTML = html;
+}
+
 // Technical details: branch, release, worktree, session — long names wrap; <code> copies on click.
 function renderTech(t) {
   const g = (gitInfo.pid === P && gitInfo.data) || {}, tg = taskGitFor(t), ag = agents[t.id], wt = t.agent && t.agent.worktree;
@@ -1839,7 +1877,7 @@ function renderOverview(t) {
   if (!sent) {
     place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
     place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
-    $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-tokens").hidden = $("#d-prompt").hidden = true;
+    $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-tokens").hidden = $("#d-context").hidden = $("#d-prompt").hidden = true;
     $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = true));
     $("#d-reply-wrap").classList.remove("on");
     renderNext(t);
@@ -1862,6 +1900,7 @@ function renderOverview(t) {
   renderNext(t);
   renderSubagents(ag);
   renderSkills(ag);
+  renderContext(ag);
   renderTokens(ag);
   renderTech(t);
   renderSummary(t);

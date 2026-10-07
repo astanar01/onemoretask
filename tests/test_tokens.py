@@ -74,4 +74,23 @@ with open(reports.recap_path(board, "t1"), "w", encoding="utf-8") as f:
 paths = server.task_transcripts(p, "t1", ["aaaa", None, "missing"])
 assert paths == [A, B], paths
 print("ok  task_transcripts: live sessions + recap list, deduped, missing dropped")
+
+# Context: size at the last real API call, the largest so far, the model's window. A compaction shrinks it; Claude
+# Code's own <synthetic> error note after it (zero usage) is not an API call.
+def on(model, e):
+    e["message"]["model"] = model
+    return e
+
+
+C = os.path.join(tdir, "cccc.jsonl")
+write(C, [user, on("claude-opus-5-5", reply("m1", 5, 1000, 0, 9)), on("claude-opus-5-5", reply("m2", 5, 300, 400000, 9)),
+          on("claude-opus-5-5", reply("m3", 5, 20000, 0, 9)), on("<synthetic>", reply("m4", 0, 0, 0, 0))])
+c = server.context("cccc")
+assert c == {"tokens": 20005, "peak": 400305, "model": "claude-opus-5-5", "max": 1_000_000}, c
+assert server.context("missing") is None
+windows = {m: server.context_window(m) for m in ("claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5",
+                                                  "claude-haiku-5-5", "claude-haiku-4-5-20251001", "gpt-5.5", "")}
+assert windows == {"claude-fable-5-1": 1_000_000, "claude-opus-5-5": 1_000_000, "claude-sonnet-5-5": 1_000_000,
+                   "claude-haiku-5-5": 1_000_000, "claude-haiku-4-5-20251001": 200_000, "gpt-5.5": None, "": None}, windows
+print("ok  context: last call, peak, model window; synthetic note skipped")
 print("PASS")
