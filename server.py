@@ -72,6 +72,8 @@ by the watcher resuming the idle session.
 the task's commits from `git log --since=<launch>` (other sessions share the branch, so it matches them to the
 card's report), runs the commit-review skill (skills/commit-review/SKILL.md; one cheap pass, not /code-review) on them at the
 chosen budget (low / medium / high), and posts the findings on the card. The card then follows the reviewer, so a reply asking for fixes goes to it.
+A reviewer on the other CLI (Codex reviewing Claude's work, or the reverse) can hand back: POST /api/agent/handback
+(handback) resumes the session that did the work with the findings, and the card follows it again.
 
 A card moved into a done column is closed by the watcher once its session is idle (archive): a one-shot `claude -p` (RECAP_MODEL) writes a recap
 (goal, decisions and why, how, results) from the card log and the sessions' transcripts to
@@ -972,6 +974,48 @@ def review(p, task_id, level, model=None):
     return aid
 
 
+def review_worker(log, t):
+    """The session whose work the card's last code review looked at (the card's session before that review), or None
+    when the card had no review."""
+    i = next((i for i in range(len(log) - 1, -1, -1) if log[i].get("status") == "review"), None)
+    if i is None:
+        return None
+    return next((e["session"] for e in reversed(log[:i]) if e.get("session")), t["agent"]["id"])
+
+
+def handback(p, task_id, text=""):
+    """Send the last code review's findings to the session that did the work, e.g. a Codex review back to the Claude
+    session. The card follows that session again. `text` is the user's word on which findings to fix."""
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    if not t or not t.get("agent"):
+        raise LookupError("this task was never sent to an agent")
+    info = WATCH.snapshot(p.id).get(task_id)
+    if info and info["phase"] == "working":
+        raise PermissionError("The reviewer is still working — wait until it stops")
+    log = reports.read(p.board, task_id)
+    worker = review_worker(log, t)
+    if not worker or info and worker == info["id"]:
+        raise LookupError("no code review to hand back")
+    i = max(i for i, e in enumerate(log) if e.get("status") == "review")
+    findings = [e["message"] for e in log[i + 1:] if e.get("from") == "claude" and e.get("status") in ("done", "answer", "question")]
+    if not findings:
+        raise LookupError("the code review has not posted its findings yet")
+    s = next((x for x in all_sessions(p) if x["id"] == worker), None)
+    if not s:
+        raise LookupError("the session that did the work no longer exists")
+    rev = "Codex" if info and info.get("cli") == "codex" else "Claude"
+    ask = text.strip() or "Fix the findings you agree with; say which ones you skip and why."
+    message = "\n\n".join([f"A {rev} code review looked at your commits on this task. Its report:", findings[-1],
+                           "The user says: " + ask,
+                           "Make the fixes, verify them, commit (never push unless the user tells you to), and report done."])
+    aid = resume(p, {"id": worker, "sessionId": s.get("sessionId")}, message + board_tail(p, task_id))
+    reports.append(p.board, task_id, "reply", f"Sent the review findings back to {'Codex' if is_codex(s) else 'Claude'}: {ask}",
+                   "you", session=aid)
+    WATCH.expect(p, task_id, aid)
+    return aid
+
+
 def task_prompt(p, task_id):
     path = reports.prompt_path(p.board, task_id)
     try:
@@ -1831,12 +1875,16 @@ class Watcher:
                 recapping = closed and key not in self.close_failed and (key in self.closing or os.path.exists(marker))
             if close:
                 threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
+            # A review by the other CLI (Codex on Claude's work, or the reverse) can hand its findings back.
+            worker = review_worker(log, t)
+            ws = worker != aid and sessions.get(worker)
+            handback_to = ("Codex" if is_codex(ws) else "Claude") if ws and s and is_codex(ws) != is_codex(s) else ""
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
                                       "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
-                                      "worktree": bool(live_worktree(t)), "unstalling": unstalling,
+                                      "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                       "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
                                       else "claude"}
             with self.lock:
@@ -2711,8 +2759,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = self._route()
-        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/permission", "/api/agent/worktree",
-                  "/api/agent/worktree/delete", "/api/git/init",
+        routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
+                  "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy")
         if not self._host_ok():
@@ -2753,6 +2801,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/agent/review":
                 self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium",
                                               body.get("model") or "")})
+            elif path == "/api/agent/handback":
+                self._json(200, {"id": handback(project(body["p"]), body["taskId"], body.get("text") or "")})
             elif path == "/api/update":
                 old, new = UPDATER.pull()
                 self._json(200, {"ok": True, "from": old, "to": new, "restarting": old != new})

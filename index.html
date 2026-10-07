@@ -339,6 +339,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .nx-actions .btn.ghost { border-color: transparent; color: var(--muted); background: transparent; }
 .nx-actions .btn.ghost:hover { color: var(--text); border-color: var(--line); }
 .btn:disabled { opacity: .55; cursor: default; }
+.nx-review { display: flex; flex-direction: column; gap: 6px; }
+.nx-pick { display: flex; gap: 6px; }
+.nx-pick select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; min-width: 0; }
+.nx-pick .nx-rmodel { flex: 1; text-overflow: ellipsis; }
 .nx-send { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
 #panel:not(.sent) .nx-send { display: flex; }
 #panel:not(.sent) .next { border-left-color: var(--line); }
@@ -1653,7 +1657,9 @@ const answering = {};  // task id -> a permission answer is on its way (answerPe
 function nextAction(t, ag, g) {
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
   const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
-  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { title: `A fresh ${reviewer(t)} session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
+  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { pick: true, title: `A fresh ${reviewer(t)} session code-reviews this task's commits (${reviewLevel()} budget) and posts its findings here` });
+  // A finished review by the other agent (Codex on Claude's work, or the reverse): its findings can go back to the worker.
+  const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(`Send findings to ${ag.handback}`, "primary", () => sendFindingsBack(t), { icon: "back", title: `The ${ag.handback} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with` })] : [];
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
@@ -1708,9 +1714,10 @@ function nextAction(t, ag, g) {
     return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
   }
   const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
-  const by = claudeReviewed(ag) ? ", Claude reviewed them" : "";
-  if (wt) return { title: "Ready to merge", text: `${what}${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [merge(), ...review(), ...extra, markDone("ghost")] };
-  return { title: "Ready to complete", text: (g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge` : `${what}${where}`) + `${by}.`, actions: [markDone(), ...review(), ...extra] };
+  const by = claudeReviewed(ag) ? `, ${ag.cli === "codex" ? "Codex" : "Claude"} reviewed them` : "";
+  const hb = handBack(), first = hb.length ? "sec" : "primary";
+  if (wt) return { title: "Ready to merge", text: `${what}${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
+  return { title: "Ready to complete", text: (g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge` : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
 }
 function renderNext(t) {
   const ag = t.agent && agents[t.id];
@@ -1718,8 +1725,13 @@ function renderNext(t) {
   $("#d-next-title").innerHTML = (n.busy ? turning(16) : "") + esc(n.title);
   $("#d-next-text").textContent = n.text;
   const box = $("#d-next-actions");
-  box.innerHTML = n.actions.map((a, i) => `<button class="btn ${a.cls}" data-i="${i}"${a.title ? ` title="${esc(a.title)}"` : ""}>${a.icon ? icon(a.icon, 16) : ""}${esc(a.label)}</button>`).join("");
+  const btn = (a, i) => `<button class="btn ${a.cls}" data-i="${i}"${a.title ? ` title="${esc(a.title)}"` : ""}>${a.icon ? icon(a.icon, 16) : ""}${esc(a.label)}</button>`;
+  const html = n.actions.map((a, i) => a.pick ? `<div class="nx-review"><div class="nx-pick"><select class="nx-rmodel" title="${esc($("#d-review-model").title)}">${$("#d-review-model").innerHTML}</select><select class="nx-rlevel" title="${esc($("#d-review-level").title)}">${$("#d-review-level").innerHTML}</select></div>${btn(a, i)}</div>` : btn(a, i)).join("");
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
   box.querySelectorAll("button").forEach((b) => (b.onclick = n.actions[+b.dataset.i].onclick));
+  const rm = box.querySelector(".nx-rmodel"), rl = box.querySelector(".nx-rlevel");
+  if (rm) { rm.value = reviewModel(); rm.onchange = () => pickReview("taskboard.reviewModel", rm.value); }
+  if (rl) { rl.value = reviewLevel(); rl.onchange = () => pickReview("taskboard.reviewLevel", rl.value); }
 }
 
 // Rows start as one line (plus "Now:" while running); a click shows the rest. Kept across re-renders.
@@ -2172,6 +2184,27 @@ async function startReview(t) {
   await pollAgents();
 }
 $("#d-review").onclick = () => { const t = task(openId); if (t) startReview(t); };
+// The reply box text (if any) says which findings to fix; the server logs the same line, which clears the pending one.
+async function sendFindingsBack(t) {
+  const ag = agents[t.id], to = ag && ag.handback;
+  if (!to) return;
+  const typed = $("#d-reply").value.trim(), text = typed || "Fix the findings you agree with; say which ones you skip and why.";
+  const pm = addPending(t, "reply", `Sent the review findings back to ${to}: ${text}`, []);
+  $("#d-reply").value = "";
+  setStatus(`Sending the findings to ${to}…`);
+  refreshAgent(t); render();
+  try {
+    await post("/api/agent/handback", { p: P, taskId: t.id, text });
+    pm.state = "sent";
+    setStatus(`${to} is fixing the review findings`);
+  } catch (e) {
+    dropPending(t, pm);
+    if (typed && openId === t.id && !$("#d-reply").value) $("#d-reply").value = typed;
+    setStatus("Could not send the findings back: " + e.message, true);
+  }
+  refreshAgent(t); render();
+  await pollAgents();
+}
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {
   answering[t.id] = true;
@@ -2247,8 +2280,15 @@ async function deleteWorktreeNow(t, force) {
 }
 $("#d-wt-del").onclick = () => { toggleMenu(false); const t = task(openId); if (t) deleteWorktree(t, false); };
 $("#wtdel-modal").addEventListener("mousedown", (e) => { if (e.target.id === "wtdel-modal") closeWtdel(); });
-$("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.reviewLevel", e.target.value); } catch (_) {} render(); };
-$("#d-review-model").onchange = (e) => { try { localStorage.setItem("taskboard.reviewModel", e.target.value); } catch (_) {} render(); const t = openId && task(openId); if (t) renderAgent(t); };
+// The reviewer picks show twice (Next action and Changes) and share one saved value.
+function pickReview(key, v) {
+  try { localStorage.setItem(key, v); } catch (_) {}
+  render();
+  const t = openId && task(openId);
+  if (t) { renderAgent(t); renderNext(t); }
+}
+$("#d-review-level").onchange = (e) => pickReview("taskboard.reviewLevel", e.target.value);
+$("#d-review-model").onchange = (e) => pickReview("taskboard.reviewModel", e.target.value);
 
 async function sendReply() {
   const t = task(openId), text = $("#d-reply").value.trim();
