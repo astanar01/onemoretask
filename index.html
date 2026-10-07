@@ -2167,8 +2167,11 @@ async function answerPermission(t, choice, ask) {
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = (choice === "deny" ? "Told Claude no." : "Allowed.") + (res.next && res.next !== ask ? " It now asks about something else." : "");
-    permissionNote[t.id] = { ask, note: msg + " The card updates in a moment." };
+    const msg = (choice === "deny" ? "Told Claude no." : "Allowed.") + (res.again
+      ? " It asks the same thing again (a second identical request): answer that one too."
+      : res.next && res.next !== ask ? " It now asks about something else." : "");
+    // With `again` the card keeps the same prompt, so it will not update.
+    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " The card updates in a moment." };
     setStatus(msg);
   } catch (e) {
     const msg = "Could not answer: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.";

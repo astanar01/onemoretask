@@ -4,7 +4,7 @@
 
 - Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count. The big number only counts new words, not the old chat Claude reads again at every step.
 - You can now pick an OpenAI model for a card, and Codex does the work instead of Claude. You can also pick who checks the work. When Codex splits the work between helpers, the card shows each helper and counts their tokens too.
-- The Allow, Allow always and Deny buttons now work for long commands too, and when Claude asks about two things in a row. Before, the card just came back and Claude kept asking. If an answer still cannot be given, the card now says why.
+- The Allow, Allow always and Deny buttons now work for long commands too, and when Claude asks about two things in a row. Before, the card just came back and Claude kept asking. If an answer still cannot be given, the card now says why. When Claude asks the very same thing twice, the card no longer says your answer failed: it tells you the second one is waiting.
 
 ## 2026-10-06
 

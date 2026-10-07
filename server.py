@@ -2130,8 +2130,9 @@ def delete_worktree(p, task_id, force=False):
 
 def answer_permission(p, task_id, choice, shown):
     """Allow / always / deny the session's permission prompt from the card. `shown` is the request the card showed:
-    the key is pressed only while the session still asks exactly that. Returns what the session asks right after
-    ('' if nothing or the lookup failed), read fresh because the watcher's cache lags a poll behind."""
+    the key is pressed only while the session still asks exactly that. Returns {"next": what the session asks right
+    after ('' if nothing or the lookup failed), read fresh because the watcher's cache lags a poll behind, "again":
+    the same request came straight back (a second identical tool call)}."""
     if choice not in ("allow", "always", "deny"):
         raise ValueError("unknown choice")
     info = WATCH.snapshot(p.id).get(task_id)
@@ -2147,9 +2148,10 @@ def answer_permission(p, task_id, choice, shown):
     if not answered:
         raise LookupError(why)
     try:
-        return permission_ask(next((s for s in all_sessions(p) if s["id"] == info["id"]), None))
+        after = permission_ask(next((s for s in all_sessions(p) if s["id"] == info["id"]), None))
     except Exception:  # noqa: BLE001 — the answer went through; only the follow-up read failed
-        return ""
+        after = ""
+    return {"next": after, "again": bool(why)}
 
 
 def type_notes(p, task_id, aid):
@@ -2725,8 +2727,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/agent":
                 self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or ""))
             elif path == "/api/agent/permission":
-                after = answer_permission(project(body["p"]), body["taskId"], body.get("choice"), body.get("ask") or "")
-                self._json(200, {"ok": True, "next": after})
+                r = answer_permission(project(body["p"]), body["taskId"], body.get("choice"), body.get("ask") or "")
+                self._json(200, {"ok": True, "next": r["next"], "again": r["again"]})
             elif path == "/api/agent/worktree":
                 worktree_action(project(body["p"]), body["taskId"], body.get("action"))
                 self._json(200, {"ok": True})
