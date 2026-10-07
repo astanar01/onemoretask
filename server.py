@@ -1169,6 +1169,12 @@ def task_diff(p, task_id, path=None, sha=None):
 def phase_of(session, log, launched_at):
     """(phase, reason) from the CLI's session record and the card's message log."""
     log = [e for e in log if e.get("status") != "note"]  # a note sent mid-work changes nothing about the turn
+    # A progress note sent after the done report (a quick correction) does not undo the done.
+    end = len(log)
+    while end and log[end - 1].get("from") == "claude" and log[end - 1].get("status") == "progress":
+        end -= 1
+    if end < len(log) and end and log[end - 1].get("from") == "claude" and log[end - 1].get("status") in ("done", "answer"):
+        log = log[:end]
     last = log[-1] if log else {}
     st = session and session.get("state")
     # "status" is the live turn (busy / idle; absent once the process exits). "state" is the CLI's summary and
