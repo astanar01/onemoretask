@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-07
+
+- Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count.
+
 ## 2026-10-06
 
 - When Claude stops because its safety check keeps failing, the card now says so and the board gets Claude going again by itself after a minute. Before, the card just said "stopped" and waited for you.

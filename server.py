@@ -1319,7 +1319,7 @@ def _action(block):
 
 def subagents(session_id):
     """The session's Agent-tool subagents from <session>/subagents/agent-<id>.{meta.json,jsonl}:
-    [{id, name, type, started, updated, finished, action, skills}], oldest first. finished = its last entry is an
+    [{id, name, type, started, updated, finished, action, skills, tokens}], oldest first. finished = its last entry is an
     end_turn reply or a successful SubagentHandback result; a subagent cut off mid-run stays unfinished (the board shows it as stopped)."""
     path = transcript_path(session_id)
     folder = path and os.path.join(path[:-len(".jsonl")], "subagents")
@@ -1376,7 +1376,7 @@ def subagents(session_id):
                "type": meta.get("agentType") or "", "started": started,
                "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
                "finished": handed or last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
-               "action": action, "skills": used}
+               "action": action, "skills": used, "tokens": sum(map(sum, _usage(f).values()))}
         _sub_memo[f] = ((st.st_mtime, st.st_size), row)
         rows.append(row)
     return sorted(rows, key=lambda r: r["started"])
@@ -1438,6 +1438,66 @@ def skills(session_ids):
                 if at and (not row["first"] or at < row["first"]):
                     row["first"] = at
     return sorted(found.values(), key=lambda r: r["first"])
+
+
+USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+_usage_memo = {}  # transcript path -> [bytes read, {message id: (input, cache write, cache read, output)}]
+
+
+def _usage(path):
+    """Token usage of each API reply in one transcript as {message id: (input, cache write, cache read, output)}.
+    A reply split over several entries repeats its usage while its output count grows: the largest counts win.
+    Reads only the bytes added since the last call."""
+    size = os.path.getsize(path)
+    memo = _usage_memo.get(path)
+    if not memo or size < memo[0]:
+        memo = _usage_memo[path] = [0, {}]
+    if size > memo[0]:
+        with open(path, "rb") as f:
+            f.seek(memo[0])
+            chunk = f.read(size - memo[0])
+        end = chunk.rfind(b"\n") + 1
+        for line in chunk[:end].splitlines():
+            if b'"usage"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            m = isinstance(e, dict) and e.get("type") == "assistant" and e.get("message")
+            u = isinstance(m, dict) and m.get("usage")
+            if not isinstance(u, dict) or not m.get("id"):
+                continue
+            new = tuple(int(u.get(k) or 0) for k in USAGE_KEYS)
+            old = memo[1].get(m["id"])
+            memo[1][m["id"]] = tuple(map(max, old, new)) if old else new
+        memo[0] += end
+    return memo[1]
+
+
+def task_transcripts(p, task_id, session_ids):
+    """Main transcripts of a card: its listed sessions, plus those a recap names (removed sessions keep theirs)."""
+    paths = [transcript_path(s) for s in session_ids]
+    _, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
+    paths += [os.path.normpath(x) for x in re.findall(r"^- (.+\.jsonl)$", listing, re.M)]
+    return [x for x in dict.fromkeys(paths) if x and os.path.exists(x)]
+
+
+def tokens(paths):
+    """Tokens used by the given main transcripts and their subagents:
+    {"main": [input, cache write, cache read, output], "subagents": [...], "count": subagent count}.
+    A reply copied into a second transcript (a forked resume carries the history over) counts once, by message id."""
+    out, seen = {"main": [0] * 4, "subagents": [0] * 4, "count": 0}, set()
+    for path in paths:
+        folder = os.path.join(path[:-len(".jsonl")], "subagents")
+        subs = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")] if os.path.isdir(folder) else []
+        out["count"] += len(subs)
+        for f, side in [(path, "main")] + [(x, "subagents") for x in subs]:
+            for mid, u in _usage(f).items():
+                if mid not in seen:
+                    seen.add(mid)
+                    out[side] = [a + b for a, b in zip(out[side], u)]
+    return out
 
 
 class Watcher:
@@ -1615,6 +1675,10 @@ class Watcher:
                 used = skills(sessions[i].get("sessionId") for i in ids if i in sessions)
             except OSError:
                 used = []
+            try:
+                spent = tokens(task_transcripts(p, t["id"], [sessions[i].get("sessionId") for i in ids if i in sessions]))
+            except OSError:
+                spent = None
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.
             done = self.committed.get((p.id, t["id"]))
             if phase != "working" and (not done or done[0] != len(log)):
@@ -1644,7 +1708,7 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t)), "unstalling": unstalling}
             with self.lock:

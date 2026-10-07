@@ -586,6 +586,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       <details class="fold" id="d-tech"><summary><span data-ico="code" data-s="16"></span>Technical details</summary><dl id="d-tech-list"></dl></details>
       <details class="fold" id="d-subagents"><summary><span data-ico="users" data-s="16"></span>Subagents<span class="badge" id="d-sa-n"></span></summary><ul class="sa-list" id="d-sa-list"></ul></details>
       <details class="fold" id="d-skills"><summary><span data-ico="cap" data-s="16"></span>Skills used<span class="badge" id="d-sk-n"></span></summary><ul class="sk-list" id="d-sk-list"></ul></details>
+      <details class="fold" id="d-tokens"><summary><span data-ico="bolt" data-s="16"></span>Tokens used<span class="badge" id="d-tok-n"></span></summary><dl id="d-tok-list"></dl></details>
       <details class="fold" id="d-prompt"><summary><span data-ico="doc" data-s="16"></span>Original prompt</summary>
         <div class="pr-body"><div class="hint" id="d-prompt-note"></div><pre id="d-prompt-text"></pre><div id="d-prompt-imgs"></div></div></details>
       <div class="dates" id="d-dates"></div>
@@ -1693,7 +1694,7 @@ function renderSubagents(ag) {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
-      <span class="meta"><span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
+      <span class="meta">${s.tokens ? `<span title="${s.tokens.toLocaleString()} tokens">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
       ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
       <span class="sks">Skills: ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : "none"}</span></li>`;
   }).join("");
@@ -1707,6 +1708,25 @@ function renderSkills(ag) {
   $("#d-sk-n").textContent = used.length || "";
   const html = used.map((s) => `<li title="First used ${esc(fmt(s.first))}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
   if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
+}
+
+const fmtTokens = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
+
+// Tokens of every API call in this card's sessions and their subagents (server: tokens()); counts are
+// [input, cache write, cache read, output].
+function renderTokens(ag) {
+  const tk = ag && ag.tokens, sum = (a) => a.reduce((x, y) => x + y, 0);
+  const all = tk ? tk.main.map((v, i) => v + tk.subagents[i]) : [0, 0, 0, 0], total = sum(all);
+  $("#d-tokens").hidden = !total;
+  $("#d-tok-n").textContent = total ? fmtTokens(total) : "";
+  $("#d-tok-n").title = total.toLocaleString() + " tokens";
+  if (!total) return;
+  const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}</dd>`;
+  const html = row("Main agent", sum(tk.main)) + row(`Subagents (${tk.count})`, sum(tk.subagents))
+    + row("Read again from cache", all[2], "The context Claude re-reads at each step: cheap")
+    + row("New input", all[0] + all[1], "Text Claude read for the first time (incl. writing it to the cache)")
+    + row("Written by Claude", all[3]);
+  if ($("#d-tok-list").innerHTML !== html) $("#d-tok-list").innerHTML = html;
 }
 
 // Technical details: branch, release, worktree, session — long names wrap; <code> copies on click.
@@ -1750,7 +1770,7 @@ function renderOverview(t) {
   if (!sent) {
     place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
     place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
-    $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-prompt").hidden = true;
+    $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-tokens").hidden = $("#d-prompt").hidden = true;
     $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = true));
     $("#d-reply-wrap").classList.remove("on");
     renderNext(t);
@@ -1773,6 +1793,7 @@ function renderOverview(t) {
   renderNext(t);
   renderSubagents(ag);
   renderSkills(ag);
+  renderTokens(ag);
   renderTech(t);
   renderSummary(t);
   renderChanges(t);
