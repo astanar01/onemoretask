@@ -262,6 +262,29 @@ assert "the Agent tool" in server.build_prompt(p, state, td, None, "opus")
 assert "spawn_agent" in server.codex_note(p)
 print("ok  delegate wording: Codex gets spawn_agent / SKILL.md paths, Claude keeps the Agent tool / Skill('…')")
 
+# ---- (e3) the card's subagent model on Codex workers: only an OpenAI model, with fork_turns "none"
+for m in ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.5"):
+    assert server.MODEL.fullmatch(m), m
+cx = "\n".join(server.delegate_lines("gpt-5.6-sol", "R", False, codex=True))
+assert 'model: "gpt-5.6-sol"' in cx and 'fork_turns: "none"' in cx and "picked this model" in cx, cx
+assert "does not apply" not in cx, cx
+cx = "\n".join(server.delegate_lines("", "R", False, codex=True))
+assert 'model: "' not in cx and "fork_turns" not in cx and "your own model" in cx, cx
+cl = "\n".join(server.delegate_lines("gpt-5.5", "R", False))
+assert 'model: "' not in cl and "this session's model" in cl, cl
+rem = server.delegate_reminder({"delegate": True, "subagentModel": "gpt-6-astra", "agent": {"model": "gpt-5.5"}})
+assert 'model: "gpt-6-astra"' in rem and 'fork_turns: "none"' in rem and "spawn_agent" in rem, rem
+rem = server.delegate_reminder({"delegate": True, "subagentModel": "opus", "agent": {"cli": "codex"}})
+assert 'model: "' not in rem and "fork_turns" not in rem, rem
+rem = server.delegate_reminder({"delegate": True, "subagentModel": "gpt-5.5", "agent": {"model": "opus"}})
+assert 'model: "' not in rem and "Agent call" not in rem, rem
+assert 'model: "sonnet"' in server.delegate_reminder({"delegate": True, "subagentModel": "sonnet", "agent": {}})
+td = dict(state["tasks"][0], delegate=True, subagentModel="gpt-5.6-sol")
+assert 'model: "gpt-5.6-sol"' in server.build_prompt(p, state, td, None, "gpt-5.5")
+assert 'model: "gpt-5.6-sol"' not in server.build_prompt(p, state, td, None, "opus")
+assert "does not apply" not in server.codex_note(p)
+print("ok  subagent model: an OpenAI one goes on Codex workers (model + fork_turns none); a mismatched CLI counts as none")
+
 # ---- (f) the model list route
 assert server.codex_models() == {"models": codex.MODELS}, server.codex_models()
 print("ok  codex_models (GET /api/codex-models) returns codex.models()")

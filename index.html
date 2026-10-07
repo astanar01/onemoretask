@@ -164,7 +164,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #obs-modal .box, #cl-modal .box { position: relative; background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; height: 100%; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
 #obs-modal h3, #cl-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
 #obs-note { margin: 0 0 10px; color: var(--muted); }
-#obs-note:empty { display: none; }
+#obs-note:empty, #obs-due-line:empty { display: none; }
+#obs-due-line { margin: 0 0 10px; color: var(--muted); }
 #obs-list, #cl-body { flex: 1; min-height: 0; overflow-y: auto; margin: 8px 0 14px; }
 .obs-group + .obs-group { margin-top: 14px; }
 .obs-group h4 { margin: 0; font-size: calc(13px * var(--ts)); }
@@ -538,7 +539,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <select id="app-copy" hidden></select>
   <button class="btn" id="update" hidden></button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
-  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span></button>
+  <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span><span class="badge warn" id="obs-due"></span></button>
   <button class="btn hbtn" id="view-btn" data-pop="view-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-menu" title="View options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="t">View</span></button>
   <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
@@ -671,6 +672,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <p id="obs-note"></p>
   <label class="toggle"><input type="checkbox" id="obs-all"> Select all</label>
   <div id="obs-list"></div>
+  <p id="obs-due-line"></p>
   <div class="actions"><select id="obs-model" title="Model for the Claude session"></select><span class="grow"></span><button class="btn" id="obs-close">Close</button><button class="btn" id="obs-review" title="Claude checks every open observation against every skill and asks you on the card which changes to make">Run full review</button><button class="btn primary" id="obs-apply">Apply</button></div>
 </div></div>
 <div id="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-title"><div class="box">
@@ -1268,7 +1270,7 @@ function renderDetail() {
   $("#d-tags").value = t.tags.join(", ");
   $("#d-notes").value = t.notes;
   $("#d-delegate").checked = !!t.delegate;
-  $("#d-submodel").value = t.subagentModel || "";
+  renderSubmodel(t);
   $("#d-answeronly").checked = !!t.answerOnly;
   $("#d-worktree").checked = t.worktree !== false;   // missing = on (cards made before the option)
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
@@ -1464,6 +1466,18 @@ const who = (t) => (t.agent && t.agent.cli === "codex") || (agents[t.id] && agen
 const reviewer = (t) => { const m = reviewModel(); return m ? (isCodexModel(m) ? "Codex" : "Claude") : who(t); };
 // OpenAI models for the model pickers; an older server has no /api/codex-models.
 const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
+let codexList = CODEX_MODELS;
+const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
+// The session's family: the card's agent once sent, else the session model picker.
+const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
+// The subagent pick only counts when it matches the session's family (the server ignores a mismatched one).
+const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === runsCodex(t) ? t.subagentModel : "";
+const subModelName = (t) => { const m = subModel(t); return ((runsCodex(t) ? codexList : CLAUDE_SUBMODELS).find((x) => x.id === m) || { name: m }).name; };
+function renderSubmodel(t) {
+  const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
+  $("#d-submodel").innerHTML = `<option value="">Same as session</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  $("#d-submodel").value = subModel(t);
+}
 async function loadCodexModels() {
   let list = CODEX_MODELS;
   try {
@@ -1471,6 +1485,7 @@ async function loadCodexModels() {
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
   } catch (e) { /* built-in list */ }
+  codexList = list;
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
   // The saved picks may be OpenAI models that had no option until now.
@@ -1482,7 +1497,8 @@ function sendLabel() {
   const cx = isCodexModel($("#d-model").value), send = $("#d-send");
   send.textContent = cx ? "Send to Codex" : "Send to Claude";
   send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
-  $("#d-submodel").title = cx ? "Claude only: Codex workers run on the session's own model" : "";
+  const t = openId && state && task(openId);
+  if (t) renderSubmodel(t);
 }
 loadCodexModels();
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
@@ -1779,7 +1795,7 @@ function renderTech(t) {
     rows.push(["Session", code("claude attach " + ((ag && ag.id) || t.agent.id))]);
     rows.push(["Model", esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? prettyModel(defaultModel.model) + " (default)" : "default"))]);
     rows.push(["Started", esc(fmt(t.agent.started))]);
-    if (t.delegate) rows.push(["Subagents", "allowed" + (t.subagentModel ? ` (${esc(t.subagentModel)})` : "")]);
+    if (t.delegate) rows.push(["Subagents", "allowed" + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
     if (t.answerOnly) rows.push(["Mode", "answer only"]);
     if (t.worktree === false && !t.answerOnly) rows.push(["Worktree", "off (works in the project folder)"]);
   }
@@ -2364,6 +2380,12 @@ function renderObsButton() {
   const d = obs.pid === P && obs.data, n = d ? obsList().length : 0;
   $("#obs-btn").style.display = d && (d.installed || n) ? "inline-flex" : "none";
   $("#obs-n").textContent = n || "";
+  $("#obs-due").textContent = d && reviewDue() ? "review due" : "";
+}
+// The source whose full review is most overdue, or null when none is due.
+function reviewDue() {
+  const due = ((obs.data && obs.data.sources) || []).filter((s) => s.reviewDue);
+  return due.find((s) => s.reviewDays == null) || due.sort((a, b) => b.reviewDays - a.reviewDays)[0] || null;
 }
 
 function openObs() {
@@ -2415,6 +2437,10 @@ function renderObsFoot() {
   $("#obs-apply").textContent = `Apply (${n})`;
   $("#obs-apply").disabled = !n;
   $("#obs-review").disabled = !(obs.data && obs.data.installed);
+  const due = reviewDue();
+  $("#obs-due-line").textContent = !due ? "" : due.reviewDays != null
+    ? `Skill review due: last run ${due.lastReview} (${due.reviewDays} days ago)`
+    : !due.lastReview || due.lastReview === "never" ? "Skill review due: never run" : "Skill review due";
 }
 
 // The card's notes are the prompt: they name each observation and its file so the session edits the right ones.

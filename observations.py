@@ -5,6 +5,7 @@ legacy single file log.md (`### Observation <N>: <title>` entries with bold-labe
 observation-log/ folder (one NNNN-slug.md per observation with a small frontmatter block). Only open
 entries are listed; a missing status counts as open.
 """
+import datetime
 import os
 import re
 
@@ -184,6 +185,24 @@ def same_dir(a, b):
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
+REVIEW_EVERY_DAYS = 7
+
+
+def review_state(folder, today=None):
+    """Last full-review date in folder/last-review-date.txt; due when missing, `never`, unreadable or 7+ days old."""
+    today = today or datetime.date.today()
+    try:
+        last = read_text(os.path.join(folder, "last-review-date.txt")).strip()
+    except OSError:
+        last = ""
+    try:
+        days = (today - datetime.date.fromisoformat(last)).days
+    except ValueError:
+        days = None
+    return {"lastReview": last or None, "reviewDays": days,
+            "reviewDue": days is None or days >= REVIEW_EVERY_DAYS}
+
+
 def list_observations(project_path):
     """Open observations of the project and the user, for GET /api/observations."""
     proj = os.path.abspath(os.path.join(project_path, "skill-observations"))
@@ -197,5 +216,5 @@ def list_observations(project_path):
         entries = [e for e in read_source(folder) if e["status"] in ("", "open")]
         for e in sorted(entries, key=lambda x: -x["id"]):
             obs.append({"key": f"{scope}:{e['id']}", **e, "status": "open", "scope": scope})
-    return {"installed": installed(), "sources": [{"scope": s, "dir": d} for s, d in sources],
+    return {"installed": installed(), "sources": [{"scope": s, "dir": d, **review_state(d)} for s, d in sources],
             "observations": obs, "open": len(obs)}
