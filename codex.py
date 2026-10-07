@@ -31,6 +31,7 @@ _usage_memo = {}  # log path -> ((mtime, size), [input, cache write, cache read,
 _spawn_memo = {}  # log path -> ((mtime, size), (worker ids, ids a wait saw completed))
 _rollout_memo = {}  # rollout path -> ((mtime, size), info)
 _rollout_paths = {}  # worker thread id -> its rollout path, once found
+_parent_memo = {}  # rollout path -> (parent thread id, thread id) from its line 1, which never changes
 
 
 def is_model(model):
@@ -396,6 +397,8 @@ def usage(log_path):
 # ---------------------------------------------------------------- workers (multi-agent sub-agents)
 # The exec stream only names a worker (spawn_agent / wait collab_tool_call items); its nickname, model, actions and
 # tokens are in its own rollout, $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl.
+# Codex 0.155 no longer logs those items in the exec stream: there a worker is found by the parent_thread_id in
+# its rollout's first line (session_meta).
 def _ts(s):
     try:
         return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
@@ -404,16 +407,18 @@ def _ts(s):
 
 
 def _spawned(log_path):
-    """(worker ids in spawn order, ids a wait reported completed) from the session's event log."""
+    """(worker ids in spawn order, ids a wait reported completed, the session's thread id) from its event log."""
     try:
         st = os.stat(log_path)
     except OSError:
-        return [], set()
+        return [], set(), ""
     memo = _spawn_memo.get(log_path)
     if memo and memo[0] == (st.st_mtime, st.st_size):
         return memo[1]
-    ids, done = [], set()
+    ids, done, thread = [], set(), ""
     for e in _events(log_path):
+        if e.get("type") == "thread.started" and not thread:
+            thread = e.get("thread_id") or ""
         item = e.get("item")
         if e.get("type") != "item.completed" or not isinstance(item, dict) or item.get("type") != "collab_tool_call":
             continue
@@ -421,8 +426,48 @@ def _spawned(log_path):
             ids += [x for x in item.get("receiver_thread_ids") or [] if x not in ids]
         done |= {k for k, v in (item.get("agents_states") or {}).items()
                  if isinstance(v, dict) and v.get("status") == "completed"}
-    _spawn_memo[log_path] = ((st.st_mtime, st.st_size), (ids, done))
-    return ids, done
+    _spawn_memo[log_path] = ((st.st_mtime, st.st_size), (ids, done, thread))
+    return ids, done, thread
+
+
+def _start_of(log_path):
+    """When the session started: the epoch ms in its log name (<task>-<ms>.jsonl), else the log's mtime."""
+    try:
+        return int(os.path.basename(log_path).rsplit(".", 1)[0].rsplit("-", 1)[1]) / 1000
+    except (IndexError, ValueError):
+        pass
+    try:
+        return os.path.getmtime(log_path)
+    except OSError:
+        return time.time()
+
+
+def _children(since):
+    """{parent thread id: [child thread ids, oldest first]} from line 1 of each rollout in the date folders from
+    `since`'s local day on."""
+    home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+    first = time.strftime("%Y/%m/%d", time.localtime(since))
+    out = {}
+    for day in sorted(glob.glob(os.path.join(home, "sessions", "*", "*", "*"))):
+        if "/".join(day.split(os.sep)[-3:]) < first:
+            continue
+        for n in sorted(os.listdir(day)):
+            path = os.path.join(day, n)
+            if not (n.startswith("rollout-") and n.endswith(".jsonl")):
+                continue
+            if path not in _parent_memo:
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        e = json.loads(f.readline())
+                except (OSError, ValueError):
+                    continue  # line 1 still being written: read it again next time
+                p = e.get("payload") if isinstance(e, dict) and isinstance(e.get("payload"), dict) else {}
+                _parent_memo[path] = (p.get("parent_thread_id") or "", p.get("id") or "")
+            parent, tid = _parent_memo[path]
+            if parent and tid:
+                out.setdefault(parent, []).append(tid)
+                _rollout_paths.setdefault(tid, path)
+    return out
 
 
 def _rollout(thread_id):
@@ -488,8 +533,9 @@ def _rollout_info(path):
 
 def _workers(log_path):
     """[(thread id, rollout info or None, finished)] for every worker of the session, workers' workers included."""
-    ids, done = _spawned(log_path)
-    queue, out, seen = list(ids), [], set()
+    ids, done, thread = _spawned(log_path)
+    kids = _children(_start_of(log_path)) if thread else {}
+    queue, out, seen = list(ids) + kids.get(thread, []), [], set()
     done = set(done)
     while queue:
         tid = queue.pop(0)
@@ -504,6 +550,7 @@ def _workers(log_path):
         if info:
             queue += info["children"]
             done |= info["done"]
+        queue += kids.get(tid, [])
         out.append((tid, info))
     return [(tid, info, bool(info and info["finished"]) or tid in done) for tid, info in out]
 
