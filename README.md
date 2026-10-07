@@ -134,9 +134,13 @@ the git repo you run it from.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
    skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it
    from there if it is not installed in `~/.claude/skills/`), and
-   posts the findings on the card. Pick the budget in the task panel: Low, Medium (default)
-   or High. Every level runs a small test on each finding. The card shows **Code review** while
-   it runs. Reply to have it fix the findings.
+   posts the findings on the card. Pick the reviewer and the budget next to the button (in Next
+   action or Changes): the task's own model, another Claude model, or an OpenAI model, which runs
+   the review in Codex. Budget: Low, Medium (default) or High. Every level runs a small test on
+   each finding. The card shows **Code review** while it runs. Reply to have the reviewer fix the
+   findings. When the other agent reviewed (Codex on Claude's work, or the reverse),
+   **Send findings to Claude** (or Codex) hands them back to the session that did the work, with
+   your reply box text as the word on which to fix.
 
 ### Use a worktree
 

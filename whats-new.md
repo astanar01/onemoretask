@@ -2,6 +2,7 @@
 
 ## 2026-10-07
 
+- You can now pick who checks the work right next to the "Review code" button. When Codex checks Claude's work (or Claude checks Codex's), a "Send findings to Claude" button gives the list of problems back to the one who did the work, so it can fix them.
 - Cards stop telling you about the weekly skill check. The Observations button now shows a "review due" mark when that check is due.
 - Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count. The big number only counts new words, not the old chat Claude reads again at every step.
 - You can now pick an OpenAI model for a card, and Codex does the work instead of Claude. You can also pick who checks the work. When Codex splits the work between helpers, the card shows each helper and counts their tokens too. You can pick an OpenAI model for Codex's helpers too, like you can for Claude's.
