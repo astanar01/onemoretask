@@ -1710,7 +1710,8 @@ function renderSkills(ag) {
   if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
 }
 
-const fmtTokens = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
+// Thresholds sit where rounding reaches the next unit, so 999,500 reads "1.0M", not "1000k".
+const fmtTokens = (n) => n >= 999.95e6 ? (n / 1e9).toFixed(1) + "B" : n >= 999.5e3 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
 
 // Tokens of every API call in this card's sessions and their subagents (server: tokens()); counts are
 // [input, cache write, cache read, output].
