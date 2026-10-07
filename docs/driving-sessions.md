@@ -19,7 +19,13 @@ probe must check the screen for a dialog before every keypress.
 
 `attach.answer_prompt()` (the card's Allow / Allow always / Deny) presses a menu key only
 when the screen shows a permission menu AND the command the card showed (compared with
-spaces and box lines removed, so a wrapped command still matches). It picks the key by the
+spaces and box lines removed, so a wrapped command still matches). It looks only inside the
+prompt box (below its top `────` line): the chat above can show other queued commands.
+The card's command comes from the job's `state.json` `needs`, which the CLI cuts at 800
+characters with a trailing `…` and with newlines turned into spaces; the `…` is dropped and
+the rest must appear in the box. After the key, a prompt on screen does not mean "not
+answered": with parallel tool calls the next queued prompt appears at once. It counts as
+not answered only while the box still shows the same command. It picks the key by the
 option's label, not its number: the menu varies (measured on a Bash prompt: `1. Yes`,
 `2. Yes, and always allow access to <dir> from this project`, `3. Yes, and switch to auto
 mode`, `4. No`). Allow always never picks the auto-mode option. Number keys answer at once,

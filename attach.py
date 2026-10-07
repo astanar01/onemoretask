@@ -114,6 +114,17 @@ def _squash(s):
     return re.sub(r"[\s│─╌]+", "", s)
 
 
+def request_shown(expect, shown):
+    """Whether the last permission prompt on screen asks about `expect`."""
+    at = shown.rfind(ASK)
+    if at < 0:
+        return False
+    box = re.split(r"─{20,}", shown[:at])[-1]  # the prompt box; commands above it in the chat must not count
+    # state.json `needs` is cut at 800 characters and ends with "…".
+    want = _squash(re.sub(r"(…|\.\.\.)\s*$", "", expect))
+    return bool(want) and want in _squash(box)
+
+
 def menu_options(shown):
     """The numbered choices of the last permission menu on screen: [(key, label)]."""
     at = shown.rfind(ASK)
@@ -145,14 +156,15 @@ def answer_prompt(session_id, choice, expect, cmd=("claude",)):
         options = menu_options(shown)
         if not options:
             return False, "no permission prompt on screen"
-        if not _squash(expect) or _squash(expect) not in _squash(shown[:shown.rfind(ASK)]):
+        if not request_shown(expect, shown):
             return False, "the prompt on screen asks about something else"
         key = pick(options, choice)
         if not key:
             return False, "the prompt has no such choice (it offers: " + "; ".join(label for _, label in options) + ")"
         os.write(fd, key.encode())
         shown = screen_text(_read(fd, 2))
-        if ASK in shown:
+        # A queued second tool call shows its own prompt right after the key, so a prompt alone is not "still asking".
+        if request_shown(expect, shown):
             return False, "the prompt is still on screen"
         return True, ""
 
