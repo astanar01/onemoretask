@@ -385,7 +385,9 @@ def build_prompt(p, state, t, wt=None, model=""):
         lines.append("Invoke the task-observer skill at the start and log its observations to "
                      f"{os.path.join(os.path.abspath(p.path), 'skill-observations')}. Skills it creates or "
                      "updates stay local: never commit " + ", ".join(d + "/" for d in OBSERVER_DIRS) +
-                     " (the board keeps them out of git), and never commit a change it makes to a skill file.")
+                     " (the board keeps them out of git), and never commit a change it makes to a skill file. "
+                     "Unless this card's task is the review itself, do not mention the weekly skill review on the "
+                     "card (not due, due, or skipped): the board shows when it is due.")
     work = ("Change no files and make no commits." if answer_only else
             f"Commit your work in the worktree, on branch {wt['branch']}; never push unless the task or the user tells "
             "you to." if wt else
