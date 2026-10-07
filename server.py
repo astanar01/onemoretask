@@ -1974,17 +1974,20 @@ class Watcher:
 
     def attention(self, pid):
         """Tasks in a project that wait on the user: a question/stop, or finished work (with the time of
-        Claude's last message, so the board can tell whether it was opened since). Done cards don't count."""
-        waiting, finished = [], {}
+        Claude's last message, so the board can tell whether it was opened since), plus the tasks running now.
+        Done cards don't count."""
+        waiting, finished, working = [], {}, []
         with self.lock:
             for (p, tid), v in self.cache.items():
                 if p != pid or v.get("closed"):
                     continue
-                if v["phase"] == "needs_you":
+                if v["phase"] == "working":
+                    working.append(tid)
+                elif v["phase"] == "needs_you":
                     waiting.append(tid)
                 elif v["phase"] == "finished":
                     finished[tid] = next((e.get("at") for e in reversed(v["log"]) if e.get("from") != "you"), None)
-        return {"waiting": waiting, "finished": finished}
+        return {"waiting": waiting, "finished": finished, "working": working}
 
 
 WATCH = Watcher()

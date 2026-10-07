@@ -103,6 +103,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #project-menu .pop-row { justify-content: flex-start; gap: 8px; }
 #project-menu .pop-row .ck { width: 14px; flex: none; color: var(--accent); }
 #project-menu .pop-row[aria-checked="true"] { font-weight: 600; }
+#project-menu .pop-row .turning { color: var(--accent); }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; }
 .column { background: var(--col); border-radius: 10px; width: 290px; min-width: 290px; display: flex; flex-direction: column; max-height: 100%; }
@@ -839,9 +840,10 @@ function buildProjectMenu() {
   const sel = $("#project");
   $("#project-menu").innerHTML = [...sel.options].map((o) => {
     if (o.disabled) return o.textContent.startsWith("─") ? `<div class="pop-sep"></div>` : "";
-    const on = o.value === sel.value;
-    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}">`
-      + `<span class="ck">${on ? "✓" : ""}</span>${esc(o.textContent)}</button>`;
+    const on = o.value === sel.value, p = projects.find((x) => x.id === o.value);
+    const busy = p && ((p.attention || {}).working || []).length;
+    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}${busy ? "\nClaude is working here" : ""}">`
+      + `<span class="ck">${on ? "✓" : ""}</span>${esc(o.textContent)}${busy ? turning(14) : ""}</button>`;
   }).join("");
 }
 $("#project").addEventListener("mousedown", (e) => { if (e.button === 0) e.preventDefault(); });
