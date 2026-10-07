@@ -8,13 +8,16 @@ Each Codex session (a "thread") lives in <board>/agent_reports/codex/:
 A turn is one process: it runs while the session works and exits when the turn ends, so the state comes from
 the process (alive: working; exited non-zero: blocked; else idle). A reply is `codex exec resume`.
 """
+import glob
 import json
 import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import threading
 import time
+from datetime import datetime
 
 POSIX = os.name == "posix"
 CODEX_CMD = [shutil.which("codex") or os.path.expanduser("~/.local/bin/codex")]
@@ -25,6 +28,9 @@ START_WAIT = 30  # seconds to wait for the first event of a turn
 DIGEST_HEAD, DIGEST_TAIL, DIGEST_BLOCK = 30_000, 150_000, 4_000  # same as server.py
 PROCS = {}  # thread id -> Popen of its running (or not yet reaped) turn
 _usage_memo = {}  # log path -> ((mtime, size), [input, cache write, cache read, output])
+_spawn_memo = {}  # log path -> ((mtime, size), (worker ids, ids a wait saw completed))
+_rollout_memo = {}  # rollout path -> ((mtime, size), info)
+_rollout_paths = {}  # worker thread id -> its rollout path, once found
 
 
 def is_model(model):
@@ -70,13 +76,32 @@ def _read_meta(board, thread_id):
 
 def _write_meta(board, meta):
     path = _meta_path(board, meta["id"])
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=1)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=meta["id"] + ".", suffix=".tmp")
+    try:  # a temp per write: the watcher and a request thread may write the same meta at once
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=1)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
-def _pid_alive(pid):
+def _pid_start(pid):
+    """The process's start time as ps prints it, '' when there is no such process."""
+    if not pid or not POSIX:
+        return ""
+    try:
+        return subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True,
+                              timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _pid_alive(pid, started=None):
+    """`started` (_pid_start at spawn) tells a reused pid apart; a meta without it trusts the pid."""
     if not pid or not POSIX:  # os.kill(pid, 0) terminates the process on Windows
         return False
     try:
@@ -84,10 +109,10 @@ def _pid_alive(pid):
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        pass
     except OSError:
         return False
-    return True
+    return not started or _pid_start(pid) == started
 
 
 def _alive(meta):
@@ -96,7 +121,7 @@ def _alive(meta):
     if proc is not None:
         code = proc.poll()
         return code is None, code
-    return _pid_alive(meta.get("pid")) if meta.get("exit") is None else False, None
+    return _pid_alive(meta.get("pid"), meta.get("pid_start")) if meta.get("exit") is None else False, None
 
 
 def _reap(board, meta):
@@ -278,8 +303,8 @@ def start(board, task_id, name, prompt, model, cwd):
         raise _fail(proc, err)
     PROCS[thread_id] = proc
     _write_meta(board, {"id": thread_id, "task": task_id, "name": name, "model": model, "cwd": cwd, "log": log,
-                        "err": err, "started": time.time(), "pid": proc.pid, "turns": 1, "exit": None,
-                        "removed": False})
+                        "err": err, "started": time.time(), "pid": proc.pid, "pid_start": _pid_start(proc.pid), "turns": 1,
+                        "exit": None, "removed": False})
     return thread_id
 
 
@@ -299,7 +324,8 @@ def resume(board, thread_id, message):
     argv += [thread_id, "-"]  # resume takes no -C: the cwd goes to Popen
     proc = _spawn(argv, meta.get("cwd") or None, message, log, err)
     PROCS[thread_id] = proc
-    meta.update(pid=proc.pid, turns=int(meta.get("turns") or 0) + 1, exit=None, started_turn=time.time())
+    meta.update(pid=proc.pid, pid_start=_pid_start(proc.pid), turns=int(meta.get("turns") or 0) + 1, exit=None,
+                started_turn=time.time())
     _write_meta(board, meta)
     if not _wait_event(proc, log, offset, False) and proc.poll() not in (None, 0):
         _reap(board, meta)
@@ -318,17 +344,17 @@ def remove(board, thread_id):
         if proc.poll() is None:
             _kill(proc)
         meta["exit"] = proc.returncode
-    elif meta.get("exit") is None and _pid_alive(meta.get("pid")):
-        pid = meta["pid"]
+    elif meta.get("exit") is None and _pid_alive(meta.get("pid"), meta.get("pid_start")):
+        pid, started = meta["pid"], meta.get("pid_start")
         for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 0)):
             try:
                 os.killpg(pid, sig)  # started in its own session: the group holds codex and its commands
             except OSError:
                 break
             end = time.time() + wait
-            while time.time() < end and _pid_alive(pid):
+            while time.time() < end and _pid_alive(pid, started):
                 time.sleep(0.1)
-            if not _pid_alive(pid):
+            if not _pid_alive(pid, started):
                 break
     meta["removed"] = True
     _write_meta(board, meta)
@@ -367,6 +393,154 @@ def usage(log_path):
     return list(total)
 
 
+# ---------------------------------------------------------------- workers (multi-agent sub-agents)
+# The exec stream only names a worker (spawn_agent / wait collab_tool_call items); its nickname, model, actions and
+# tokens are in its own rollout, $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl.
+def _ts(s):
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _spawned(log_path):
+    """(worker ids in spawn order, ids a wait reported completed) from the session's event log."""
+    try:
+        st = os.stat(log_path)
+    except OSError:
+        return [], set()
+    memo = _spawn_memo.get(log_path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    ids, done = [], set()
+    for e in _events(log_path):
+        item = e.get("item")
+        if e.get("type") != "item.completed" or not isinstance(item, dict) or item.get("type") != "collab_tool_call":
+            continue
+        if item.get("tool") == "spawn_agent":
+            ids += [x for x in item.get("receiver_thread_ids") or [] if x not in ids]
+        done |= {k for k, v in (item.get("agents_states") or {}).items()
+                 if isinstance(v, dict) and v.get("status") == "completed"}
+    _spawn_memo[log_path] = ((st.st_mtime, st.st_size), (ids, done))
+    return ids, done
+
+
+def _rollout(thread_id):
+    path = _rollout_paths.get(thread_id)
+    if path and os.path.exists(path):
+        return path
+    home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+    found = glob.glob(os.path.join(home, "sessions", "*", "*", "*", f"rollout-*-{thread_id}.jsonl"))
+    if found:
+        _rollout_paths[thread_id] = found[0]
+        return found[0]
+    return None
+
+
+def _rollout_info(path):
+    """What a worker's rollout says: name, model, started, updated, finished, action, usage, its own workers."""
+    st = os.stat(path)
+    memo = _rollout_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    info = {"name": "", "model": "", "started": None, "updated": None, "finished": False, "action": "",
+            "usage": None, "children": [], "done": set()}
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for n, line in enumerate(f):
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(e, dict):
+                continue
+            info["updated"] = _ts(e.get("timestamp")) or info["updated"]
+            p = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+            if n == 0 and e.get("type") == "session_meta":
+                info["name"] = p.get("agent_nickname") or ""
+                info["started"] = _ts(p.get("timestamp") or e.get("timestamp"))
+            elif e.get("type") == "turn_context" and p.get("model"):
+                info["model"] = p["model"]
+            elif e.get("type") != "event_msg":
+                continue
+            kind = p.get("type")
+            if kind == "task_started":
+                info["finished"] = False
+            elif kind == "task_complete":
+                info["finished"] = True
+            elif kind == "token_count" and isinstance(p.get("info"), dict):
+                info["usage"] = p["info"].get("total_token_usage") or info["usage"]
+            elif kind == "item_completed" and isinstance(p.get("item"), dict):
+                item = p["item"]
+                if item.get("type") == "CommandExecution":
+                    cmd = item.get("command")
+                    cmd = " ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd or "")
+                    info["action"] = (cmd.strip().splitlines() or [""])[0][:80]
+                elif item.get("type") == "FileChange" and item.get("changes"):
+                    info["action"] = "edit " + os.path.basename(str(next(iter(item["changes"]))))
+                elif item.get("type") == "CollabAgentToolCall":
+                    if item.get("tool") == "spawn_agent":
+                        info["children"] += item.get("receiver_thread_ids") or []
+                    info["done"] |= {k for k, v in (item.get("agents_states") or {}).items()
+                                     if isinstance(v, dict) and v.get("status") == "completed"}
+    _rollout_memo[path] = ((st.st_mtime, st.st_size), info)
+    return info
+
+
+def _workers(log_path):
+    """[(thread id, rollout info or None, finished)] for every worker of the session, workers' workers included."""
+    ids, done = _spawned(log_path)
+    queue, out, seen = list(ids), [], set()
+    done = set(done)
+    while queue:
+        tid = queue.pop(0)
+        if tid in seen:
+            continue
+        seen.add(tid)
+        path = _rollout(tid)
+        try:
+            info = _rollout_info(path) if path else None
+        except OSError:
+            info = None
+        if info:
+            queue += info["children"]
+            done |= info["done"]
+        out.append((tid, info))
+    return [(tid, info, bool(info and info["finished"]) or tid in done) for tid, info in out]
+
+
+def subagents(log_path):
+    """The session's workers as server.subagents rows: [{id, name, type, started, updated, finished, action, skills,
+    tokens}], oldest first. A worker whose rollout is missing still shows, with what the event log says."""
+    try:
+        fallback = os.path.getmtime(log_path)
+    except OSError:
+        fallback = time.time()
+    rows = []
+    for tid, info, finished in _workers(log_path):
+        info = info or {}
+        usage = info.get("usage") or {}
+        rows.append({"id": tid, "name": info.get("name") or "Worker", "type": info.get("model") or "codex",
+                     "started": info.get("started") or fallback, "updated": info.get("updated") or fallback,
+                     "finished": finished, "action": info.get("action") or "", "skills": [],
+                     "tokens": int(usage.get("total_tokens") or 0)})
+    rows.sort(key=lambda r: r["started"])
+    return rows
+
+
+def subagent_usage(log_path):
+    """([input, cache write, cache read, output] summed over the session's workers, worker count); same split as
+    usage()."""
+    total, workers = [0, 0, 0, 0], _workers(log_path)
+    for _, info, _ in workers:
+        u = (info or {}).get("usage") or {}
+        cached = int(u.get("cached_input_tokens") or 0)
+        total[0] += max(0, int(u.get("input_tokens") or 0) - cached)
+        total[1] += int(u.get("cache_write_input_tokens") or 0)
+        total[2] += cached
+        total[3] += int(u.get("output_tokens") or 0)
+    return total, len(workers)
+
+
 def digest(log_path):
     """The session for a recap: one 'TURN n' per turn, Codex's messages, one line per action."""
     out, turn = [], 0
@@ -391,6 +565,10 @@ def digest(log_path):
         elif kind == "mcp_tool_call":
             what = "/".join(str(item[k]) for k in ("server", "tool") if item.get(k))
             out.append("  · mcp" + (f": {what}" if what else ""))
+        elif kind == "collab_tool_call" and item.get("tool") == "spawn_agent":
+            out.append("  · spawn worker: " + (str(item.get("prompt") or "").strip().splitlines() or [""])[0][:80])
+        elif kind == "collab_tool_call" and item.get("tool") == "wait":
+            out.append("  · wait for workers")
     text = "\n\n".join(out)
     if len(text) > DIGEST_HEAD + DIGEST_TAIL:
         text = text[:DIGEST_HEAD] + "\n\n[… middle of the session left out …]\n\n" + text[-DIGEST_TAIL:]

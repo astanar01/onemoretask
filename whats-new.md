@@ -2,7 +2,7 @@
 
 ## 2026-10-07
 
-- You can now pick an OpenAI model for a card, and Codex does the work instead of Claude. You can also pick who checks the work.
+- You can now pick an OpenAI model for a card, and Codex does the work instead of Claude. You can also pick who checks the work. When Codex splits the work between helpers, the card shows each helper and counts their tokens too.
 - Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count.
 
 ## 2026-10-06

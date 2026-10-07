@@ -569,7 +569,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       </div>
       <div class="fields">
         <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
-        <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
+        <div><label class="check" title="The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
         <div><label for="d-submodel">Subagent model</label>
           <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
         <div><label class="check" title="Claude works in its own copy of the project (a git worktree on its own branch) and you merge it when you say so. Off: Claude edits your project folder directly"><input type="checkbox" id="d-worktree"> Use a worktree</label></div>
@@ -1482,7 +1482,7 @@ function sendLabel() {
   const cx = isCodexModel($("#d-model").value), send = $("#d-send");
   send.textContent = cx ? "Send to Codex" : "Send to Claude";
   send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
-  $("#d-submodel").title = cx ? "Claude only" : "";
+  $("#d-submodel").title = cx ? "Claude only: Codex workers run on the session's own model" : "";
 }
 loadCodexModels();
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }

@@ -72,6 +72,14 @@ def is_log(path):
 
 def turn_ended_at(session):
     return None
+
+SUBS, SUB_USAGE = [[]], [([0, 0, 0, 0], 0)]
+
+def subagents(log_path):
+    return SUBS[0]
+
+def subagent_usage(log_path):
+    return SUB_USAGE[0]
 ''')
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, FAKE)
@@ -168,6 +176,13 @@ poll()
 assert card()["phase"] == "working" and card()["cli"] == "codex", card()
 assert card()["tokens"]["main"] == [1, 2, 3, 4] and card()["subagents"] == [] and card()["cache"] is None, card()
 print("ok  busy Codex session: phase working, cli codex, tokens from its log")
+row = {"id": "w1", "name": "Ramanujan", "type": "gpt-5.5", "started": 1.0, "updated": 2.0, "finished": True,
+       "action": "ls", "skills": [], "tokens": 9}
+codex.SUBS[0] = [row]
+poll()
+assert card()["subagents"] == [row], card()["subagents"]
+codex.SUBS[0] = []
+print("ok  the card lists the Codex session's workers (codex.subagents) as its subagent rows")
 
 s = codex.SESSIONS["cdx-1"]
 s.update(state="idle")
@@ -226,6 +241,26 @@ print("ok  review(low, gpt-5.5): codex.start with a commit-review / SKILL.md ste
 # ---- (e) tokens of a Codex log
 assert server.tokens([LOG]) == {"main": [1, 2, 3, 4], "subagents": [0] * 4, "count": 0}, server.tokens([LOG])
 print("ok  tokens([codex log]) uses codex.usage")
+codex.SUB_USAGE[0] = ([5, 6, 7, 8], 2)
+assert server.tokens([LOG]) == {"main": [1, 2, 3, 4], "subagents": [5, 6, 7, 8], "count": 2}, server.tokens([LOG])
+codex.SUB_USAGE[0] = ([0, 0, 0, 0], 0)
+print("ok  a Codex session's workers: tokens add codex.subagent_usage")
+
+# ---- (e2) "divide in subtasks" wording for a Codex session
+cx = "\n".join(server.delegate_lines("sonnet", "R", False, codex=True))
+assert "spawn_agent" in cx and "Agent tool" not in cx and "Skill('" not in cx and 'model: "' not in cx, cx
+assert "SKILL.md" in cx and "plan mode" not in cx, cx
+cl = "\n".join(server.delegate_lines("sonnet", "R", False))
+assert "Agent tool" in cl and "Skill('" in cl and 'model: "sonnet"' in cl and "spawn_agent" not in cl, cl
+rem = server.delegate_reminder({"delegate": True, "agent": {"model": "gpt-5.5", "cli": "codex"}})
+assert "spawn_agent" in rem and "Agent call" not in rem and "Skill('" not in rem, rem
+assert "Skill('" in server.delegate_reminder({"delegate": True, "agent": {"model": "opus"}})
+state = server.load_tasks(p)
+td = dict(state["tasks"][0], delegate=True)
+assert "spawn_agent" in server.build_prompt(p, state, td, None, "gpt-5.5")
+assert "the Agent tool" in server.build_prompt(p, state, td, None, "opus")
+assert "spawn_agent" in server.codex_note(p)
+print("ok  delegate wording: Codex gets spawn_agent / SKILL.md paths, Claude keeps the Agent tool / Skill('…')")
 
 # ---- (f) the model list route
 assert server.codex_models() == {"models": codex.MODELS}, server.codex_models()
