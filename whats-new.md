@@ -2,7 +2,7 @@
 
 ## 2026-10-07
 
-- Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count.
+- Each card now shows how many tokens Claude used on it, its helpers included, under "Tokens used". Each helper also shows its own count. The big number only counts new words, not the old chat Claude reads again at every step.
 
 ## 2026-10-06
 

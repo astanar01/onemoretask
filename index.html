@@ -1714,19 +1714,20 @@ function renderSkills(ag) {
 const fmtTokens = (n) => n >= 999.95e6 ? (n / 1e9).toFixed(1) + "B" : n >= 999.5e3 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
 
 // Tokens of every API call in this card's sessions and their subagents (server: tokens()); counts are
-// [input, cache write, cache read, output].
+// [input, cache write, cache read, output]. Totals leave out cache reads: every step re-reads the whole
+// context, so their sum grows with steps × context size (37M on a 140-step task) and swamps the new tokens.
 function renderTokens(ag) {
-  const tk = ag && ag.tokens, sum = (a) => a.reduce((x, y) => x + y, 0);
-  const all = tk ? tk.main.map((v, i) => v + tk.subagents[i]) : [0, 0, 0, 0], total = sum(all);
+  const tk = ag && ag.tokens, fresh = (a) => a[0] + a[1] + a[3];
+  const all = tk ? tk.main.map((v, i) => v + tk.subagents[i]) : [0, 0, 0, 0], total = fresh(all);
   $("#d-tokens").hidden = !total;
   $("#d-tok-n").textContent = total ? fmtTokens(total) : "";
-  $("#d-tok-n").title = total.toLocaleString() + " tokens";
+  $("#d-tok-n").title = total.toLocaleString() + " new tokens (cache re-reads not counted)";
   if (!total) return;
   const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}</dd>`;
-  const html = row("Main agent", sum(tk.main)) + row(`Subagents (${tk.count})`, sum(tk.subagents))
-    + row("Read again from cache", all[2], "The context Claude re-reads at each step: cheap")
+  const html = row("Main agent", fresh(tk.main)) + row(`Subagents (${tk.count})`, fresh(tk.subagents))
     + row("New input", all[0] + all[1], "Text Claude read for the first time (incl. writing it to the cache)")
-    + row("Written by Claude", all[3]);
+    + row("Written by Claude", all[3])
+    + row("Re-read from cache (not in total)", all[2], "Claude re-reads the whole conversation at every step, so this adds the same text again and again. It is cheap and not counted above.");
   if ($("#d-tok-list").innerHTML !== html) $("#d-tok-list").innerHTML = html;
 }
 

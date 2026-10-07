@@ -1376,7 +1376,7 @@ def subagents(session_id):
                "type": meta.get("agentType") or "", "started": started,
                "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
                "finished": handed or last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
-               "action": action, "skills": used, "tokens": sum(map(sum, _usage(f).values()))}
+               "action": action, "skills": used, "tokens": sum(u[0] + u[1] + u[3] for u in _usage(f).values())}
         _sub_memo[f] = ((st.st_mtime, st.st_size), row)
         rows.append(row)
     return sorted(rows, key=lambda r: r["started"])
