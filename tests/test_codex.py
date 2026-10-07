@@ -247,6 +247,48 @@ assert "  · spawn worker: Create hello.txt" in d and "  · spawn worker: Create
 assert d.count("  · wait for workers") == 2, d
 print("ok  digest names each spawn and wait")
 
+# --- Codex 0.155: no spawn items in the exec log; workers found by parent_thread_id on each rollout's line 1
+MAIN, KID, GRAND, OTHER = "01a11705-main", "01a11706-kid", "01a11707-grand", "01a11708-other"
+HOME_N = os.path.join(TMP, "codex-home-new")
+started = time.time()
+RUN2 = os.path.join(codex.folder(BOARD), "w2-%d.jsonl" % int(started * 1000))
+with open(RUN2, "w", encoding="utf-8") as f:
+    for e in ({"type": "thread.started", "thread_id": MAIN}, {"type": "turn.started"},
+              {"type": "item.completed", "item": {"type": "collab_tool_call", "tool": "wait", "receiver_thread_ids": []}},
+              {"type": "turn.completed", "usage": {}}):
+        f.write(json.dumps(e) + "\n")
+
+
+def rollout(day, tid, parent, name, model, tokens):
+    os.makedirs(day, exist_ok=True)
+    meta = {"id": tid, "agent_nickname": name, "timestamp": "2026-10-07T15:40:36.285Z"}
+    if parent:
+        meta["parent_thread_id"] = parent
+    lines = [{"timestamp": "2026-10-07T15:40:36.285Z", "type": "session_meta", "payload": meta},
+             {"timestamp": "2026-10-07T15:40:37.000Z", "type": "turn_context", "payload": {"model": model}},
+             {"timestamp": "2026-10-07T15:40:40.000Z", "type": "event_msg", "payload": {
+                 "type": "token_count", "info": {"total_token_usage": {"input_tokens": tokens, "cached_input_tokens": 0,
+                                                                       "output_tokens": 1, "total_tokens": tokens + 1}}}},
+             {"timestamp": "2026-10-07T15:40:41.000Z", "type": "event_msg", "payload": {"type": "task_complete"}}]
+    with open(os.path.join(day, "rollout-2026-10-07T11-40-36-%s.jsonl" % tid), "w", encoding="utf-8") as f:
+        f.write("\n".join(json.dumps(x) for x in lines) + "\n")
+
+
+today = os.path.join(HOME_N, "sessions", *time.strftime("%Y/%m/%d", time.localtime(started)).split("/"))
+rollout(today, MAIN, None, "", "gpt-6-astra", 50)
+rollout(today, KID, MAIN, "Newton", "gpt-5.5", 10)
+rollout(today, GRAND, KID, "Banach", "gpt-5.5", 20)
+rollout(today, OTHER, "someone-else", "Other", "gpt-5.5", 30)
+rollout(os.path.join(HOME_N, "sessions", "2000", "01", "01"), "01a10000-old", MAIN, "Old", "gpt-5.5", 40)
+os.environ["CODEX_HOME"] = HOME_N
+rows = {r["id"]: r for r in codex.subagents(RUN2)}
+assert set(rows) == {KID, GRAND}, rows  # not the parent itself, not another session's, not before the session's day
+assert rows[KID]["name"] == "Newton" and rows[KID]["type"] == "gpt-5.5" and rows[KID]["tokens"] == 11, rows
+assert rows[GRAND]["name"] == "Banach" and all(r["finished"] for r in rows.values()), rows
+assert codex.subagent_usage(RUN2) == ([30, 0, 0, 2], 2), codex.subagent_usage(RUN2)
+assert {r["id"] for r in codex.subagents(RUN)} == {RAMA, AQUI}  # the old exec-log path still works
+print("ok  no spawn items: workers found by parent_thread_id (and their own workers), from the session's day on")
+
 import server  # noqa: E402
 
 tk = server.tokens([RUN])
