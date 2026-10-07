@@ -462,6 +462,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 .ch-bar .grow { flex: 1; }
 #d-review-wrap { display: flex; align-items: center; gap: 8px; }
 #d-review-wrap[hidden] { display: none; }
+#d-review-model { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 140px; }
 #d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .ch-group { margin-bottom: 18px; }
 .ch-group h4 { margin: 0 0 6px; font-size: calc(13px * var(--ts)); color: var(--muted); font-weight: 600; }
@@ -568,7 +569,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       </div>
       <div class="fields">
         <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
-        <div><label class="check" title="Claude first plans how to split the work, then hands the parts to subagents"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
+        <div><label class="check" title="The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
         <div><label for="d-submodel">Subagent model</label>
           <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
         <div><label class="check" title="Claude works in its own copy of the project (a git worktree on its own branch) and you merge it when you say so. Off: Claude edits your project folder directly"><input type="checkbox" id="d-worktree"> Use a worktree</label></div>
@@ -579,7 +580,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <b id="d-next-title"></b>
         <div class="nx-text" id="d-next-text"></div>
         <div class="nx-actions" id="d-next-actions"></div>
-        <div class="nx-send" id="d-send-row"><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option></select><button class="btn primary" id="d-send">Send to Claude</button></div>
+        <div class="nx-send" id="d-send-row"><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><button class="btn primary" id="d-send">Send to Claude</button></div>
       </div>
       <details class="fold" id="d-crit"><summary><span data-ico="check" data-s="16"></span>Subtasks<span class="badge" id="d-crit-n"></span></summary>
         <div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></details>
@@ -629,7 +630,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
           <a class="more-link" id="d-sum-conv">View full conversation →</a>
         </div>
         <div class="tabpane" id="d-tab-changes" role="tabpanel">
-          <div class="ch-bar"><span id="d-ch-note"></span><span class="grow"></span><span id="d-review-wrap"><select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button class="btn" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button></span></div>
+          <div class="ch-bar"><span id="d-ch-note"></span><span class="grow"></span><span id="d-review-wrap"><select id="d-review-model" title="Who reviews: the task's own model, or another one (an OpenAI model runs the review in Codex)"><option value="">Task's model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button class="btn" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button></span></div>
           <div id="d-ch-list"></div>
           <pre class="diff" id="d-diff" hidden></pre>
         </div>
@@ -1137,12 +1138,12 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="Has notes">≡</span>` : ""}
       ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="Claude session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `Claude: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${who(t)} session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="Code-review this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
+    ${canReview(t) ? `<button class="btn review" title="A fresh ${reviewer(t)} session code-reviews this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1456,6 +1457,34 @@ const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFi
 // "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.
 const canDeleteWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && !!agents[t.id] && !!agents[t.id].worktree && agents[t.id].phase !== "working" && !(pending[t.id] || []).length;
 function reviewLevel() { try { return localStorage.getItem("taskboard.reviewLevel") || "medium"; } catch (e) { return "medium"; } }
+function reviewModel() { try { return localStorage.getItem("taskboard.reviewModel") || ""; } catch (e) { return ""; } }
+// An OpenAI model makes the server run Codex instead of Claude Code.
+const isCodexModel = (m) => /^(gpt-|o1|o3|o4|codex)/i.test(m || "");
+const who = (t) => (t.agent && t.agent.cli === "codex") || (agents[t.id] && agents[t.id].cli === "codex") ? "Codex" : "Claude";
+const reviewer = (t) => { const m = reviewModel(); return m ? (isCodexModel(m) ? "Codex" : "Claude") : who(t); };
+// OpenAI models for the model pickers; an older server has no /api/codex-models.
+const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
+async function loadCodexModels() {
+  let list = CODEX_MODELS;
+  try {
+    const r = await fetch("/api/codex-models", { cache: "no-store" });
+    const res = r.ok && await r.json();
+    if (res && res.models && res.models.length) list = res.models;
+  } catch (e) { /* built-in list */ }
+  const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
+  // The saved picks may be OpenAI models that had no option until now.
+  try { $("#d-model").value = localStorage.getItem("taskboard.model") || ""; } catch (e) {}
+  $("#d-review-model").value = reviewModel();
+  sendLabel();
+}
+function sendLabel() {
+  const cx = isCodexModel($("#d-model").value), send = $("#d-send");
+  send.textContent = cx ? "Send to Codex" : "Send to Claude";
+  send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
+  $("#d-submodel").title = cx ? "Claude only: Codex workers run on the session's own model" : "";
+}
+loadCodexModels();
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
 function renderAgent(t) {
@@ -1464,18 +1493,18 @@ function renderAgent(t) {
   // Send is one-shot: it lives in the next-action card until the task has a session.
   const send = $("#d-send");
   send.disabled = !useServer;
-  send.title = useServer ? "Start a background Claude session on this task" : "Needs server.py";
   send.onclick = () => sendToClaude(t);
   const model = $("#d-model");
   model.disabled = !useServer;
   try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
-  model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} };
+  model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} sendLabel(); };
+  sendLabel();
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];
   $("#d-send-row").style.display = t.agent || pend.length ? "none" : "";
   // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
   const mdl = (t.agent && t.agent.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
-  $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>Claude${mdl ? ` · ${esc(mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
+  $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
       <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
@@ -1494,19 +1523,22 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : "Claude"} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
+  $("#d-review-model").value = reviewModel();
+  $("#d-review").title = `Start a fresh ${reviewer(t)} session that code-reviews this task's commits and posts the findings here`;
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
   // from the CLI's record) or on something only `claude attach` can show.
   const said = log.filter((e) => e.status !== "note").pop();
   if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
   const busy = ag && ag.phase === "working";
-  $("#d-reply").placeholder = busy ? "Add to what Claude is doing — it goes in right away and Claude reads it as soon as it can. Cmd+Enter to send, paste images to attach"
-    : "Answer Claude — Cmd+Enter to send, paste images to attach";
+  const nm = who(t);
+  $("#d-reply").placeholder = busy ? `Add to what ${nm} is doing — it goes in right away and ${nm} reads it as soon as it can. Cmd+Enter to send, paste images to attach`
+    : `Answer ${nm} — Cmd+Enter to send, paste images to attach`;
   $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
@@ -1605,12 +1637,13 @@ const answering = {};  // task id -> a permission answer is on its way (answerPe
 function nextAction(t, ag, g) {
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
   const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
-  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { title: `A fresh Claude session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
+  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { title: `A fresh ${reviewer(t)} session code-reviews this task's commits (${reviewLevel()} budget, set in Changes) and posts its findings here` });
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
   const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
   const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
+  const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [], busy: true }
     : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
   if (isDone(t)) {
@@ -1623,16 +1656,16 @@ function nextAction(t, ag, g) {
   if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [], busy: true };
   if (ag.phase === "working") {
     const subs = (ag.subagents || []).filter((s) => !s.finished).length;
-    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `Claude is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : "Claude is working. You can add a note in Conversation; it reads it as soon as it can.", actions: [], busy: true };
+    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `${nm} is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : `${nm} is working. You can add a note in Conversation; it reads it as soon as it can.`, actions: [], busy: true };
   }
   if (ag.phase === "gone") {
     const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
-    return { title: "Session removed", text: "The Claude session for this task no longer exists, so nothing more can be sent to it." + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
+    return { title: "Session removed", text: `The ${nm} session for this task no longer exists, so nothing more can be sent to it.` + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
   }
   if (ag.phase === "needs_you") {
     if (ag.permission) {
       const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
-      return { title: "Claude asks permission", text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + ".",
+      return { title: `${nm} asks permission`, text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + ".",
         actions: answering[t.id] ? [] : [answer("Allow", "allow", "primary", "Let it run this once"),
           answer("Allow always", "always", "sec", "Let it run this, and stop asking about this kind of request in this session"),
           answer("Deny", "deny", "ghost", "Do not let it run this")], busy: !!answering[t.id] };
@@ -1641,13 +1674,13 @@ function nextAction(t, ag, g) {
     const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
-    return { title: q ? "Claude has a question" : stopped ? "Run stopped" : "Claude needs you",
-      text: q ? "Answer it in Conversation to let Claude continue." : (ag.reason || "Claude is waiting on you.").replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
+    return { title: q ? `${nm} has a question` : stopped ? "Run stopped" : `${nm} needs you`,
+      text: q ? `Answer it in Conversation to let ${nm} continue.` : (ag.reason || `${nm} is waiting on you.`).replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
   // Finished (or last message is a done report): what is there to review, merge, or complete?
   if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
-  if (!canFinish(t)) return { title: "Waiting for Claude", text: "Your last message has not been answered yet.", actions: [] };
+  if (!canFinish(t)) return { title: `Waiting for ${nm}`, text: "Your last message has not been answered yet.", actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
   if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [...review("primary"), ...extra] };
   if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [...review("primary"), ...extra, markDone("ghost")] };
@@ -1817,7 +1850,7 @@ function renderSummary(t) {
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
-  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? "Recap" : rep.status === "answer" ? "Answer" : "Result"} · Claude · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
+  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? "Recap" : rep.status === "answer" ? "Answer" : "Result"} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
   else if (latest) html = `<div class="sum-label">No final report yet · latest ${esc(latest.status)} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
   else html = `<div class="sum-empty">${ag && ag.phase === "working" ? "Claude has not reported anything yet." : "No report from Claude on this task."}</div>`;
   if (box.innerHTML !== html) box.innerHTML = html;
@@ -1957,6 +1990,7 @@ async function loadPrompt(t) {
 // Names the model a launch with no --model gets. The server may still be probing the account default (null).
 let defaultModel = { pid: null, model: null, at: 0 };
 const prettyModel = (m) => {
+  if (isCodexModel(m)) return m;
   const x = /^(?:claude-)?([a-z]+)((?:-\d+)*)(?:-\d{8})?(\[1m\])?$/i.exec(m);
   if (!x) return m;
   const v = x[2].replace(/-\d{8}$/, "").split("-").filter(Boolean).join(".");
@@ -2061,8 +2095,9 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
-  setStatus("Starting Claude…");
-  const pm = addPending(t, "launch", "Sending to Claude" + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  const nm = isCodexModel($("#d-model").value) ? "Codex" : "Claude";
+  setStatus(`Starting ${nm}…`);
+  const pm = addPending(t, "launch", `Sending to ${nm}` + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
@@ -2074,13 +2109,13 @@ async function sendToClaude(t) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.
     dropPending(t, pm); t = task(t.id) || t;
     render(); if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
-    setStatus("The board changed in another window, so Claude was not started. Please send again.", true);
+    setStatus(`The board changed in another window, so ${nm} was not started. Please send again.`, true);
     return;
   }
   try {
     const model = $("#d-model").value;
     const res = await post("/api/agent", { p: P, taskId: t.id, model });
-    const agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }) };
+    const agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
     // A poll may have swapped in another window's board while Claude started: put the session on the live card,
     // and once more if that save is refused, so the watcher never loses a session that is running.
     for (let i = 0; i < 2; i++) {
@@ -2090,14 +2125,14 @@ async function sendToClaude(t) {
       if (boardGen === g) break;
     }
     pm.state = "sent";
-    setStatus("Claude session " + res.id + " started");
+    setStatus(`${nm} session ${res.id} started`);
   } catch (e) {
     dropPending(t, pm); t = task(t.id) || t;
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     await settled();   // else its "Saved" would replace the error
     if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
     else if (e.norepo) { askRepo(t); setStatus("Worktrees need a local repo first", true); }
-    else setStatus("Send to Claude failed: " + e.message, true);
+    else setStatus(`Send to ${nm} failed: ` + e.message, true);
   }
   t = task(t.id) || t;
   render();
@@ -2106,11 +2141,11 @@ async function sendToClaude(t) {
 }
 
 async function startReview(t) {
-  const level = reviewLevel(), pm = addPending(t, "review", `Starting a code review (${level})`, []);
+  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", `Starting a code review (${level}${model ? ", " + model : ""})`, []);
   setStatus("Starting code review…");
   refreshAgent(t); render();
   try {
-    const res = await post("/api/agent/review", { p: P, taskId: t.id, level });
+    const res = await post("/api/agent/review", { p: P, taskId: t.id, level, model });
     pm.state = "sent";
     setStatus("Code review session " + res.id + " started");
   } catch (e) {
@@ -2197,6 +2232,7 @@ async function deleteWorktreeNow(t, force) {
 $("#d-wt-del").onclick = () => { toggleMenu(false); const t = task(openId); if (t) deleteWorktree(t, false); };
 $("#wtdel-modal").addEventListener("mousedown", (e) => { if (e.target.id === "wtdel-modal") closeWtdel(); });
 $("#d-review-level").onchange = (e) => { try { localStorage.setItem("taskboard.reviewLevel", e.target.value); } catch (_) {} render(); };
+$("#d-review-model").onchange = (e) => { try { localStorage.setItem("taskboard.reviewModel", e.target.value); } catch (_) {} render(); const t = openId && task(openId); if (t) renderAgent(t); };
 
 async function sendReply() {
   const t = task(openId), text = $("#d-reply").value.trim();
@@ -2333,6 +2369,7 @@ function renderObsButton() {
 function openObs() {
   closeChangelog();
   $("#obs-model").innerHTML = $("#d-model").innerHTML;
+  $("#obs-model .codex-models").remove();   // the observation review runs in Claude only
   try { $("#obs-model").value = localStorage.getItem("taskboard.model") || ""; } catch (e) { $("#obs-model").value = ""; }
   $("#obs-modal").classList.add("open");
   renderObs();
@@ -2397,6 +2434,7 @@ async function applyObservations() {
   t.notes = obsNotes(list); t.tags = ["observations"]; touch(t);
   obsSel.clear(); closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
+  $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
   await sendToClaude(t);
   loadObservations(true);
 }
@@ -2416,6 +2454,7 @@ async function runFullReview() {
   t.notes = reviewNotes(); t.tags = ["observations"]; touch(t);
   closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
+  $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
   await sendToClaude(t);
   loadObservations(true);
 }
