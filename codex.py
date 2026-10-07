@@ -489,7 +489,7 @@ def _rollout_info(path):
     if memo and memo[0] == (st.st_mtime, st.st_size):
         return memo[1]
     info = {"name": "", "model": "", "started": None, "updated": None, "finished": False, "action": "",
-            "usage": None, "children": [], "done": set()}
+            "usage": None, "context": 0, "peak": 0, "window": None, "children": [], "done": set()}
     with open(path, encoding="utf-8", errors="replace") as f:
         for n, line in enumerate(f):
             try:
@@ -514,6 +514,11 @@ def _rollout_info(path):
                 info["finished"] = True
             elif kind == "token_count" and isinstance(p.get("info"), dict):
                 info["usage"] = p["info"].get("total_token_usage") or info["usage"]
+                last = p["info"].get("last_token_usage")
+                if isinstance(last, dict):  # its input count includes the cached part: the whole context
+                    info["context"] = int(last.get("input_tokens") or 0)
+                    info["peak"] = max(info["peak"], info["context"])
+                info["window"] = p["info"].get("model_context_window") or info["window"]
             elif kind == "item_completed" and isinstance(p.get("item"), dict):
                 item = p["item"]
                 if item.get("type") == "CommandExecution":
@@ -586,6 +591,17 @@ def subagent_usage(log_path):
         total[2] += cached
         total[3] += int(u.get("output_tokens") or 0)
     return total, len(workers)
+
+
+def context(log_path):
+    """How full the session's context is, from its own rollout: {"tokens", "peak", "model", "max"} like
+    server.context, or None before its first reply."""
+    thread = _spawned(log_path)[2]
+    path = thread and _rollout(thread)
+    info = path and _rollout_info(path)
+    if not info or not info["context"]:
+        return None
+    return {"tokens": info["context"], "peak": info["peak"], "model": info["model"], "max": info["window"]}
 
 
 def digest(log_path):

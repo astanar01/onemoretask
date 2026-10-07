@@ -289,6 +289,16 @@ assert codex.subagent_usage(RUN2) == ([30, 0, 0, 2], 2), codex.subagent_usage(RU
 assert {r["id"] for r in codex.subagents(RUN)} == {RAMA, AQUI}  # the old exec-log path still works
 print("ok  no spawn items: workers found by parent_thread_id (and their own workers), from the session's day on")
 
+# Context: the session's own rollout, last_token_usage (input includes the cached part) and model_context_window.
+assert codex.context(RUN2) is None  # no last_token_usage yet
+with open(os.path.join(today, "rollout-2026-10-07T11-40-36-%s.jsonl" % MAIN), "a", encoding="utf-8") as f:
+    for n in (90000, 60000):
+        f.write(json.dumps({"timestamp": "2026-10-07T15:41:00.000Z", "type": "event_msg", "payload": {
+            "type": "token_count", "info": {"last_token_usage": {"input_tokens": n, "cached_input_tokens": n - 100},
+                                            "model_context_window": 258400}}}) + "\n")
+assert codex.context(RUN2) == {"tokens": 60000, "peak": 90000, "model": "gpt-6-astra", "max": 258400}, codex.context(RUN2)
+print("ok  context from the session's rollout: last call, peak, window")
+
 import server  # noqa: E402
 
 tk = server.tokens([RUN])

@@ -80,6 +80,9 @@ def subagents(log_path):
 
 def subagent_usage(log_path):
     return SUB_USAGE[0]
+
+def context(log_path):
+    return {"tokens": 5, "peak": 9, "model": "gpt-5.5", "max": 258400}
 ''')
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, FAKE)
@@ -175,6 +178,7 @@ def poll():
 poll()
 assert card()["phase"] == "working" and card()["cli"] == "codex", card()
 assert card()["tokens"]["main"] == [1, 2, 3, 4] and card()["subagents"] == [] and card()["cache"] is None, card()
+assert card()["context"] == {"tokens": 5, "peak": 9, "model": "gpt-5.5", "max": 258400}, card()
 print("ok  busy Codex session: phase working, cli codex, tokens from its log")
 row = {"id": "w1", "name": "Ramanujan", "type": "gpt-5.5", "started": 1.0, "updated": 2.0, "finished": True,
        "action": "ls", "skills": [], "tokens": 9}
