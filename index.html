@@ -1268,7 +1268,7 @@ function renderDetail() {
   $("#d-tags").value = t.tags.join(", ");
   $("#d-notes").value = t.notes;
   $("#d-delegate").checked = !!t.delegate;
-  $("#d-submodel").value = t.subagentModel || "";
+  renderSubmodel(t);
   $("#d-answeronly").checked = !!t.answerOnly;
   $("#d-worktree").checked = t.worktree !== false;   // missing = on (cards made before the option)
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
@@ -1464,6 +1464,18 @@ const who = (t) => (t.agent && t.agent.cli === "codex") || (agents[t.id] && agen
 const reviewer = (t) => { const m = reviewModel(); return m ? (isCodexModel(m) ? "Codex" : "Claude") : who(t); };
 // OpenAI models for the model pickers; an older server has no /api/codex-models.
 const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
+let codexList = CODEX_MODELS;
+const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
+// The session's family: the card's agent once sent, else the session model picker.
+const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
+// The subagent pick only counts when it matches the session's family (the server ignores a mismatched one).
+const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === runsCodex(t) ? t.subagentModel : "";
+const subModelName = (t) => { const m = subModel(t); return ((runsCodex(t) ? codexList : CLAUDE_SUBMODELS).find((x) => x.id === m) || { name: m }).name; };
+function renderSubmodel(t) {
+  const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
+  $("#d-submodel").innerHTML = `<option value="">Same as session</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  $("#d-submodel").value = subModel(t);
+}
 async function loadCodexModels() {
   let list = CODEX_MODELS;
   try {
@@ -1471,6 +1483,7 @@ async function loadCodexModels() {
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
   } catch (e) { /* built-in list */ }
+  codexList = list;
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
   // The saved picks may be OpenAI models that had no option until now.
@@ -1482,7 +1495,8 @@ function sendLabel() {
   const cx = isCodexModel($("#d-model").value), send = $("#d-send");
   send.textContent = cx ? "Send to Codex" : "Send to Claude";
   send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
-  $("#d-submodel").title = cx ? "Claude only: Codex workers run on the session's own model" : "";
+  const t = openId && state && task(openId);
+  if (t) renderSubmodel(t);
 }
 loadCodexModels();
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
@@ -1779,7 +1793,7 @@ function renderTech(t) {
     rows.push(["Session", code("claude attach " + ((ag && ag.id) || t.agent.id))]);
     rows.push(["Model", esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? prettyModel(defaultModel.model) + " (default)" : "default"))]);
     rows.push(["Started", esc(fmt(t.agent.started))]);
-    if (t.delegate) rows.push(["Subagents", "allowed" + (t.subagentModel ? ` (${esc(t.subagentModel)})` : "")]);
+    if (t.delegate) rows.push(["Subagents", "allowed" + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
     if (t.answerOnly) rows.push(["Mode", "answer only"]);
     if (t.worktree === false && !t.answerOnly) rows.push(["Worktree", "off (works in the project folder)"]);
   }

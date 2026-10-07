@@ -105,8 +105,11 @@ Codex CLI instead: `codex exec --json` runs as a subprocess the board owns, in t
 lives in <board>/agent_reports/codex/. Its sessions (cli "codex") come from codex.sessions(board) in the same shape as
 `claude agents --json`, so the watcher, phases, replies, review and close treat both alike. What differs: the prompt
 gets a note that it runs without Claude Code's Skill / Agent tools (codex_note), and a "divide in subtasks" brief
-names Codex's spawn_agent / wait tools instead (delegate_lines(codex=True)); its workers are the card's subagent rows
-(codex.subagents, read from each worker's own rollout under $CODEX_HOME/sessions); there is no attach and no
+names Codex's spawn_agent / wait tools instead (delegate_lines(codex=True)) and runs the workers on the card's subagent
+model when it is an OpenAI one (spawn_agent `model` + `fork_turns: "none"`; a Claude alias there, or an OpenAI model on
+a Claude session, counts as none: worker_model); its workers are the card's subagent rows
+(codex.subagents, read from each worker's own rollout under $CODEX_HOME/sessions, found by the parent_thread_id on its
+first line); there is no attach and no
 permission prompt; a card note waits until the turn ends and is then delivered by resuming it (codex.resume); tokens
 come from its event log and its workers' rollouts; closing removes it with codex.remove. The recap is still written by `claude -p`. "Review code"
 takes a model (GET /api/codex-models lists the OpenAI ones), so a Codex reviewer can check a Claude task and back.
@@ -456,10 +459,14 @@ CODEX_SKILL_PATHS = ("the SKILL.md files to read first (user skills: ~/.claude/s
                      ".claude/skills/<name>/SKILL.md)")
 
 
+def worker_model(model, on_codex):
+    """The card's subagent model when it runs on the session's CLI (OpenAI on Codex, Claude on Claude), else ''."""
+    return model if model and MODEL.fullmatch(model) and codex.is_model(model) == on_codex else ""
+
+
 def delegate_lines(model, report, answer_only=False, codex=False):
     """`codex`: the session runs on Codex, whose subagents are workers from its spawn_agent / wait tools."""
-    if model and not MODEL.fullmatch(model):
-        model = ""
+    model = worker_model(model, codex)
     sub = "worker" if codex else "subagent"
     brief = (f"- Give each {sub} a self-contained prompt: the question, the files, the constraints (incl. "
              f"CLAUDE.md rules) and what to return. {sub.capitalize()}s only look into it and return findings: no file "
@@ -467,7 +474,11 @@ def delegate_lines(model, report, answer_only=False, codex=False):
              f"- Give each {sub} a self-contained prompt: the goal, the files, the constraints (incl. CLAUDE.md "
              f"rules), how to verify, and what to return. {sub.capitalize()}s do not commit or post to the card; you do.")
     if codex:
-        use = "- Workers run on your own model: the subagent model picked on the card does not apply."
+        # Measured (Codex 0.155): a full-history fork (fork_turns omitted) ignores `model`.
+        use = (f'- Run every worker on the "{model}" model: pass `model: "{model}"` and `fork_turns: "none"` on each '
+               "spawn_agent call (the user picked this model for workers on the card; a full-history fork keeps your "
+               "own model). A worker then sees none of this conversation, so its prompt must hold everything it needs."
+               if model else "- Workers run on your own model (leave the spawn_agent `model` field unset).")
     else:
         use = (f'- Run every subagent on the "{model}" model: pass `model: "{model}"` on each Agent call.' if model
                else "- Subagents use this session's model (leave the Agent `model` unset).")
@@ -511,16 +522,17 @@ def delegate_reminder(t):
         return ""
     look = "the looking-into this reply needs" if t.get("answerOnly") else "the work this reply asks for"
     agent = t.get("agent") or {}
-    if codex.is_model(agent.get("model")) or agent.get("cli") == "codex":
-        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to workers with "
+    on_codex = codex.is_model(agent.get("model")) or agent.get("cli") == "codex"
+    model = worker_model(t.get("subagentModel") or "", on_codex)
+    if on_codex:
+        on = (f' on the "{model}" model (`model: "{model}"` and `fork_turns: "none"` on each spawn_agent call: the user '
+              "picked it on the card)" if model else "")
+        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to workers{on} with "
                 f"your spawn_agent tool, as the first brief says: a self-contained prompt per part that opens with "
                 f"{CODEX_SKILL_PATHS} for each skill you chose for that part, working-rules skills included (a worker "
                 "has no Skill tool). Split it, spawn the independent parts together and wait for them before you edit "
                 "anything yourself, not only for the check at the end. Keep only tiny or tightly coupled parts "
                 "yourself.")
-    model = t.get("subagentModel") or ""
-    if model and not MODEL.fullmatch(model):
-        model = ""
     on = f' on the "{model}" model (`model: "{model}"` on each Agent call)' if model else ""
     return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to subagents{on}, "
             "as the first brief says: a self-contained prompt per part that opens with `First invoke Skill('<name>') with "
@@ -847,7 +859,7 @@ def codex_note(p):
             f"{shell_path(os.path.join(p.path, '.claude', 'skills'))}/<name>/SKILL.md) and follow it. Where this brief "
             "says subagent or Agent tool, use your spawn_agent tool (one worker per part, independent parts spawned "
             "together, then wait for them); a worker cannot invoke a Skill tool, so put the SKILL.md paths it must read "
-            "first in its prompt. Workers run on your own model: the subagent model picked on the card does not apply. "
+            "first in its prompt. Workers run on your own model unless the brief names one for them. "
             "\"The Read tool\" means opening the file. You must still post on the card with the report.py command exactly as the "
             "brief says.")
 
