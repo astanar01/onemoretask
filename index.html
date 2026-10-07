@@ -2257,7 +2257,7 @@ async function answerPermission(t, choice, ask) {
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = (choice === "deny" ? "Told Claude no." : "Allowed.") + (res.again
+    const msg = (choice === "deny" ? "Told Claude no." : res.once ? "Allowed once: Claude does not offer \"always\" for this one." : "Allowed.") + (res.again
       ? " It asks the same thing again (a second identical request): answer that one too."
       : res.next && res.next !== ask ? " It now asks about something else." : "");
     // With `again` the card keeps the same prompt, so it will not update.

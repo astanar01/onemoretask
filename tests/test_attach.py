@@ -119,4 +119,21 @@ print("ok  answer_prompt: the prompt gone after the key is answered with no note
 got, keys = run_answer("bash_parallel_a_before.raw", "bash_parallel_a_before.raw", par_b)
 assert got == (False, "the prompt on screen asks about something else") and keys == [], (got, keys)
 print("ok  answer_prompt: another request on screen presses no key")
+
+# A Yes / No prompt (no "Yes, and…" line; seen on the board, no capture): Allow always presses Yes and says so.
+saved_menu = attach.menu_options
+attach.menu_options = lambda shown: [("1", "Yes"), ("2", "No")]
+try:
+    got, keys = run_answer("bash_short_before.raw", "bash_short_after_allow.raw", SHORT, "always")
+    assert got == (True, attach.ONCE) and keys == [b"1"], (got, keys)
+    got, keys = run_answer("bash_parallel_a_before.raw", "bash_parallel_a_before.raw", par_a, "always")
+    assert got == (True, attach.AGAIN + "; " + attach.ONCE) and keys == [b"1"], (got, keys)
+    got, keys = run_answer("bash_short_before.raw", "bash_short_after_allow.raw", SHORT, "deny")
+    assert got == (True, "") and keys == [b"2"], (got, keys)
+finally:
+    attach.menu_options = saved_menu
+print("ok  answer_prompt: Allow always on a Yes / No prompt presses Yes and notes it was allowed once")
+got, keys = run_answer("bash_short_before.raw", "bash_short_after_allow.raw", SHORT, "always")
+assert got == (True, "") and keys == [b"2"], (got, keys)
+print("ok  answer_prompt: Allow always on a full menu still presses the 'Yes, and' key")
 print("PASS")

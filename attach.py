@@ -33,6 +33,9 @@ DIALOG = re.compile(r"Esc to cancel|Do you want to|❯\s*1\.")
 SEND_NOW = re.compile(r"to send now")
 PASTE_START, PASTE_END = b"\x1b[200~", b"\x1b[201~"
 ASK = "Do you want to"
+# Notes answer_prompt returns after a key it pressed.
+AGAIN = "it asks the same thing again"
+ONCE = "it could only be allowed once"
 
 
 def available():
@@ -148,8 +151,8 @@ def pick(options, choice):
 def answer_prompt(session_id, choice, expect, cmd=("claude",)):
     """Press the menu key for `choice` (allow / always / deny) on the permission prompt on screen, only when the
     prompt is about `expect` (the request the card showed): a key pressed on another menu would approve something
-    nobody saw. Returns (answered, why): on success `why` is "" or a note, e.g. that the same request is asked
-    again (a second identical tool call waiting)."""
+    nobody saw. Returns (answered, why): on success `why` is "" or notes joined by "; ": AGAIN (a second identical
+    tool call waiting), ONCE (`always` on a menu with no "Yes, and…" choice, e.g. a plain Yes / No: Yes is pressed)."""
     if not pty:
         return False, "needs a POSIX terminal"
     with _terminal(session_id, cmd) as fd:
@@ -160,14 +163,16 @@ def answer_prompt(session_id, choice, expect, cmd=("claude",)):
         if not request_shown(expect, shown):
             return False, "the prompt on screen asks about something else"
         key = pick(options, choice)
+        once = not key and choice == "always" and pick(options, "allow")
+        if once:
+            key = once
         if not key:
             return False, "the prompt has no such choice (it offers: " + "; ".join(label for _, label in options) + ")"
         os.write(fd, key.encode())
         shown = screen_text(_read(fd, 2))
         # A queued tool call shows its own prompt right after the key; an identical one redraws the same box.
-        if request_shown(expect, shown):
-            return True, "it asks the same thing again"
-        return True, ""
+        notes = ([AGAIN] if request_shown(expect, shown) else []) + ([ONCE] if once else [])
+        return True, "; ".join(notes)
 
 
 if __name__ == "__main__":
