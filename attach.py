@@ -114,6 +114,17 @@ def _squash(s):
     return re.sub(r"[\s│─╌]+", "", s)
 
 
+def request_shown(expect, shown):
+    """Whether the last permission prompt on screen asks about `expect`."""
+    at = shown.rfind(ASK)
+    if at < 0:
+        return False
+    box = re.split(r"─{20,}", shown[:at])[-1]  # the prompt box; commands above it in the chat must not count
+    # state.json `needs` is cut at 800 characters and ends with "…".
+    want = _squash(re.sub(r"(…|\.\.\.)\s*$", "", expect))
+    return bool(want) and want in _squash(box)
+
+
 def menu_options(shown):
     """The numbered choices of the last permission menu on screen: [(key, label)]."""
     at = shown.rfind(ASK)
@@ -137,7 +148,8 @@ def pick(options, choice):
 def answer_prompt(session_id, choice, expect, cmd=("claude",)):
     """Press the menu key for `choice` (allow / always / deny) on the permission prompt on screen, only when the
     prompt is about `expect` (the request the card showed): a key pressed on another menu would approve something
-    nobody saw. Returns (answered, why-not)."""
+    nobody saw. Returns (answered, why): on success `why` is "" or a note, e.g. that the same request is asked
+    again (a second identical tool call waiting)."""
     if not pty:
         return False, "needs a POSIX terminal"
     with _terminal(session_id, cmd) as fd:
@@ -145,15 +157,16 @@ def answer_prompt(session_id, choice, expect, cmd=("claude",)):
         options = menu_options(shown)
         if not options:
             return False, "no permission prompt on screen"
-        if not _squash(expect) or _squash(expect) not in _squash(shown[:shown.rfind(ASK)]):
+        if not request_shown(expect, shown):
             return False, "the prompt on screen asks about something else"
         key = pick(options, choice)
         if not key:
             return False, "the prompt has no such choice (it offers: " + "; ".join(label for _, label in options) + ")"
         os.write(fd, key.encode())
         shown = screen_text(_read(fd, 2))
-        if ASK in shown:
-            return False, "the prompt is still on screen"
+        # A queued tool call shows its own prompt right after the key; an identical one redraws the same box.
+        if request_shown(expect, shown):
+            return True, "it asks the same thing again"
         return True, ""
 
 

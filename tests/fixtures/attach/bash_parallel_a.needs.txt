@@ -1,0 +1,1 @@
+approve Bash: echo PROBE_PAR_A > /Users/antoinecm/.claude/jobs/9ec2395a/tmp/probe_par_a.txt

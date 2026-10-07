@@ -328,7 +328,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .nx-k { display: flex; align-items: center; gap: 6px; font-size: calc(11px * var(--ts)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .nx-k [data-ico] { color: var(--accent); }
 #d-next-title { display: block; font-size: calc(16px * var(--ts)); margin-top: 4px; }
-.nx-text { color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+.nx-text { color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; white-space: pre-line; }
 .nx-text:empty { display: none; }
 .nx-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .nx-actions:empty { display: none; }
@@ -1652,6 +1652,9 @@ $("#d-sum-conv").onclick = () => showTab("conversation");
 const claudeReviewed = (ag) => { const log = (ag && ag.log) || []; return reviewing(ag || {}) && log.slice(log.findLastIndex((x) => x.status === "review") + 1).some((x) => x.from !== "you" && x.status === "done"); };
 
 const answering = {};  // task id -> a permission answer is on its way (answerPermission)
+// task id -> {ask, note}: how the last answer to the request `ask` went, shown in the box while the card still shows it
+// (a failure, or a success the server's cached card state has not caught up with yet).
+const permissionNote = {};
 // What to do next, from the task's column, the agent's phase and the real git state (loadTaskGit), never from the
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
 function nextAction(t, ag, g) {
@@ -1687,7 +1690,8 @@ function nextAction(t, ag, g) {
   if (ag.phase === "needs_you") {
     if (ag.permission) {
       const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
-      return { title: `${nm} asks permission`, text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + ".",
+      const note = permissionNote[t.id] && permissionNote[t.id].ask === ag.permission ? "\n" + permissionNote[t.id].note : "";
+      return { title: `${nm} asks permission`, text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + "." + note,
         actions: answering[t.id] ? [] : [answer("Allow", "allow", "primary", "Let it run this once"),
           answer("Allow always", "always", "sec", "Let it run this, and stop asking about this kind of request in this session"),
           answer("Deny", "deny", "ghost", "Do not let it run this")], busy: !!answering[t.id] };
@@ -2211,10 +2215,17 @@ async function answerPermission(t, choice, ask) {
   setStatus(choice === "deny" ? "Saying no…" : "Allowing…");
   refreshAgent(t);
   try {
-    await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    setStatus(choice === "deny" ? "Told Claude no" : "Allowed");
+    const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
+    const msg = (choice === "deny" ? "Told Claude no." : "Allowed.") + (res.again
+      ? " It asks the same thing again (a second identical request): answer that one too."
+      : res.next && res.next !== ask ? " It now asks about something else." : "");
+    // With `again` the card keeps the same prompt, so it will not update.
+    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " The card updates in a moment." };
+    setStatus(msg);
   } catch (e) {
-    setStatus("Could not answer the prompt: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.", true);
+    const msg = "Could not answer: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.";
+    permissionNote[t.id] = { ask, note: msg };
+    setStatus(msg, true);
   }
   delete answering[t.id];
   await pollAgents();
@@ -2366,6 +2377,7 @@ async function pollAgents() {
     // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
     const op = openId && agents[openId] && agents[openId].phase;
     agents = next;
+    for (const id in permissionNote) if (!next[id] || next[id].permission !== permissionNote[id].ask) delete permissionNote[id];
     if (openId && next[openId] && next[openId].phase !== op) { const o = task(openId); if (o) loadTaskGit(o, true); }
     if (!polledOnce && !seenPrimed) markSeen(Object.keys(next));
     if (openId) markSeen([openId]);   // news that lands while you have the card open is read
