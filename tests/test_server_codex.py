@@ -285,6 +285,56 @@ assert 'model: "gpt-5.6-sol"' not in server.build_prompt(p, state, td, None, "op
 assert "does not apply" not in server.codex_note(p)
 print("ok  subagent model: an OpenAI one goes on Codex workers (model + fork_turns none); a mismatched CLI counts as none")
 
+# ---- (e4) a Codex review of Claude's work hands its findings back to the Claude session
+state = server.load_tasks(p)
+state["tasks"].append({"id": "t2", "title": "Claude task", "column": "review", "order": 1,
+                       "agent": {"id": "cl-1", "started": now_iso, "model": "opus"}})
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(state, f)
+reports.append(p.board, "t2", "launch", "Sent to Claude (session cl-1, model opus)", "you", session="cl-1")
+reports.append(p.board, "t2", "done", "Did it.", "claude")
+reports.append(p.board, "t2", "review", "Code review started (low, gpt-5.5, session cdx-9)", "you", session="cdx-9")
+LOG9 = os.path.join(p.board, "agent_reports", "codex", "cdx-9.jsonl")
+open(LOG9, "w").close()
+codex.SESSIONS["cdx-9"] = {"id": "cdx-9", "sessionId": "cdx-9", "cli": "codex", "board": p.board, "name": "review",
+                           "model": "gpt-5.5", "cwd": p.path, "log": LOG9, "err": "", "task": "t2",
+                           "state": "idle", "detail": ""}
+reports.append(p.board, "t2", "done", "FINDING 1: off by one in a.txt", "claude")
+claude_rows = [{"id": "cl-1", "sessionId": "uuid-cl-1", "state": "idle", "name": "task: Claude task"}]
+server.list_sessions = lambda cwd: [dict(r) for r in claude_rows]
+
+
+def run_claude_stop_ok(args, **kw):
+    if args[:1] == ["stop"]:
+        claude_calls.append(args)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+    return fake_run_claude(args, **kw)
+
+
+server.run_claude = run_claude_stop_ok
+poll()
+c2 = W.snapshot(p.id)["t2"]
+assert c2["id"] == "cdx-9" and c2["cli"] == "codex" and c2["handback"] == "Claude", {k: c2[k] for k in ("id", "cli", "handback")}
+assert card()["handback"] == "", card()["handback"]  # t1: Codex reviewed Codex, nothing to hand back
+assert server.review_worker(reports.read(p.board, "t2"), state["tasks"][-1]) == "cl-1"
+aid = server.handback(p, "t2", "fix 1 only")
+assert aid == "abc123", aid
+resume_call = claude_calls[-1]
+assert resume_call[:3] == ["--bg", "--resume", "uuid-cl-1"], resume_call[:3]
+msg = resume_call[3]
+assert "A Codex code review" in msg and "FINDING 1: off by one" in msg and "The user says: fix 1 only" in msg, msg
+assert msg.endswith(server.board_tail(p, "t2")), msg[-200:]
+last = reports.read(p.board, "t2")[-1]
+assert last["status"] == "reply" and last["session"] == "abc123" and last["from"] == "you", last
+assert last["message"] == "Sent the review findings back to Claude: fix 1 only", last["message"]
+try:
+    server.handback(p, "t1", "x")  # t1's reviewer was just started and is not listed yet
+    raise AssertionError("handback while the reviewer works did not refuse")
+except PermissionError as e:
+    assert "still working" in str(e), e
+server.list_sessions = lambda cwd: []
+print("ok  handback: a Codex review of a Claude task resumes the Claude session with the findings; card follows it")
+
 # ---- (f) the model list route
 assert server.codex_models() == {"models": codex.MODELS}, server.codex_models()
 print("ok  codex_models (GET /api/codex-models) returns codex.models()")
