@@ -148,7 +148,8 @@ def pick(options, choice):
 def answer_prompt(session_id, choice, expect, cmd=("claude",)):
     """Press the menu key for `choice` (allow / always / deny) on the permission prompt on screen, only when the
     prompt is about `expect` (the request the card showed): a key pressed on another menu would approve something
-    nobody saw. Returns (answered, why-not)."""
+    nobody saw. Returns (answered, why): on success `why` is "" or a note, e.g. that the same request is asked
+    again (a second identical tool call waiting)."""
     if not pty:
         return False, "needs a POSIX terminal"
     with _terminal(session_id, cmd) as fd:
@@ -163,9 +164,9 @@ def answer_prompt(session_id, choice, expect, cmd=("claude",)):
             return False, "the prompt has no such choice (it offers: " + "; ".join(label for _, label in options) + ")"
         os.write(fd, key.encode())
         shown = screen_text(_read(fd, 2))
-        # A queued second tool call shows its own prompt right after the key, so a prompt alone is not "still asking".
+        # A queued tool call shows its own prompt right after the key; an identical one redraws the same box.
         if request_shown(expect, shown):
-            return False, "the prompt is still on screen"
+            return True, "it asks the same thing again"
         return True, ""
 
 

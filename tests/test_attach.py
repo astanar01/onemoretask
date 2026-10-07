@@ -87,4 +87,36 @@ assert not attach.request_shown(LONG, screen("bash_long_after_always.raw"))
 # Answering B brings up A's queued prompt at once (the capture order was A then B; either order looks the same).
 assert attach.ASK in a_screen and not attach.request_shown(par_b, a_screen)
 print("ok  after the key: a next queued prompt counts as answered, not 'still on screen' (bug 2)")
+
+
+# answer_prompt end to end, with the terminal faked: the reads return captured screens in order, keys are recorded.
+def run_answer(before, after, expect, choice="allow"):
+    def raw(name):
+        with open(os.path.join(FIX, name), "rb") as f:
+            return f.read()
+    reads, keys = [raw(before), raw(after)], []
+
+    @attach.contextlib.contextmanager
+    def fake_terminal(session_id, cmd):
+        yield 99
+
+    saved = attach._terminal, attach._read, attach.os.write
+    attach._terminal, attach._read = fake_terminal, lambda fd, seconds: reads.pop(0)
+    attach.os.write = lambda fd, data: keys.append(data)
+    try:
+        return attach.answer_prompt("x", choice, expect), keys
+    finally:
+        attach._terminal, attach._read, attach.os.write = saved
+
+
+# Two identical parallel calls: after the key the CLI redraws the same prompt for the second one.
+got, keys = run_answer("bash_parallel_a_before.raw", "bash_parallel_a_before.raw", par_a)
+assert got == (True, "it asks the same thing again") and keys == [b"1"], (got, keys)
+print("ok  answer_prompt: the same prompt after the key is answered, with a note (identical queued call)")
+got, keys = run_answer("bash_short_before.raw", "bash_short_after_allow.raw", SHORT)
+assert got == (True, "") and keys == [b"1"], (got, keys)
+print("ok  answer_prompt: the prompt gone after the key is answered with no note")
+got, keys = run_answer("bash_parallel_a_before.raw", "bash_parallel_a_before.raw", par_b)
+assert got == (False, "the prompt on screen asks about something else") and keys == [], (got, keys)
+print("ok  answer_prompt: another request on screen presses no key")
 print("PASS")
