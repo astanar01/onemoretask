@@ -27,6 +27,11 @@ def reply(mid, inp, cw, cr, out):
                   "output_tokens": out, "cache_creation": {"ephemeral_1h_input_tokens": cw}}}}
 
 
+def on(model, e):
+    e["message"]["model"] = model
+    return e
+
+
 def write(path, entries, mode="w"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode, encoding="utf-8") as f:
@@ -63,7 +68,13 @@ print("ok  incremental reads, half-written last line")
 # Subagent rows carry their own total.
 row = server.subagents("aaaa")
 assert [r["tokens"] for r in row] == [522], row
-print("ok  subagent row tokens")
+assert [r["context"] for r in row] == [522], row
+# The row's context is the last real call, as Claude Code's agent list shows it, not a sum over calls.
+write(os.path.join(tdir, "aaaa", "subagents", "agent-x1.jsonl"),
+      [reply("msg_s2", 1, 300, 500, 9), reply("msg_s3", 1, 50, 800, 4), on("<synthetic>", reply("msg_s4", 0, 0, 0, 0))], "a")
+row = server.subagents("aaaa")
+assert [r["context"] for r in row] == [1 + 50 + 800 + 4] and [r["tokens"] for r in row] == [522 + 310 + 55], row
+print("ok  subagent row tokens and context")
 
 # A card whose sessions were removed: the recap's transcript list still finds them.
 board = os.path.join(TMP, "board")
@@ -77,12 +88,7 @@ print("ok  task_transcripts: live sessions + recap list, deduped, missing droppe
 
 # Context: size at the last real API call, the largest so far, the model's window. A compaction shrinks it; Claude
 # Code's own <synthetic> error note after it (zero usage) is not an API call.
-def on(model, e):
-    e["message"]["model"] = model
-    return e
-
-
-C = os.path.join(tdir, "cccc.jsonl")
+C =os.path.join(tdir, "cccc.jsonl")
 write(C, [user, on("claude-opus-5-5", reply("m1", 5, 1000, 0, 9)), on("claude-opus-5-5", reply("m2", 5, 300, 400000, 9)),
           on("claude-opus-5-5", reply("m3", 5, 20000, 0, 9)), on("<synthetic>", reply("m4", 0, 0, 0, 0))])
 c = server.context("cccc")

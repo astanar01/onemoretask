@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-09
+
+- Each helper in the Subagents list now shows how much it holds in mind right now, the same number Claude Code shows, instead of a much bigger running total.
+
 ## 2026-10-07
 
 - Each card now shows how full Claude's memory of the chat is, like "14% ctx", and turns orange then red when it gets close to full. Open the card and look under "Context" to see how much it holds now, the most it held, and the most its model can hold.

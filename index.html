@@ -1770,7 +1770,8 @@ function renderSubagents(ag) {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
-      <span class="meta">${s.tokens ? `<span title="${s.tokens.toLocaleString()} tokens">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
+      <span class="meta">${s.context ? `<span title="Context now: ${s.context.toLocaleString()} tokens (as in Claude Code's agent list). New tokens over the whole run: ${(s.tokens || 0).toLocaleString()}">${fmtTokens(s.context)}</span>`
+        : s.tokens ? `<span title="${s.tokens.toLocaleString()} tokens">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
       ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
       <span class="sks">Skills: ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : "none"}</span></li>`;
   }).join("");

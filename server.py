@@ -1543,11 +1543,14 @@ def subagents(session_id):
         for tid, (skill, _) in sorted(calls.items(), key=lambda c: c[1][1]):
             if tid not in failed and skill not in used:
                 used.append(skill)
+        usage = _usage(f).values()
+        # Claude Code's agent list shows this: the size of the last call (context + its output), not a sum over calls.
+        context = next((sum(u) for u in reversed(list(usage)) if u[0] + u[1] + u[2]), 0)
         row = {"id": name[len("agent-"):-len(".jsonl")], "name": meta.get("description") or "Subagent",
                "type": meta.get("agentType") or "", "started": started,
                "updated": _ts(last["timestamp"]) if last.get("timestamp") else st.st_mtime,
                "finished": handed or last.get("type") == "assistant" and msg.get("stop_reason") == "end_turn",
-               "action": action, "skills": used, "tokens": sum(u[0] + u[1] + u[3] for u in _usage(f).values())}
+               "action": action, "skills": used, "tokens": sum(u[0] + u[1] + u[3] for u in usage), "context": context}
         _sub_memo[f] = ((st.st_mtime, st.st_size), row)
         rows.append(row)
     return sorted(rows, key=lambda r: r["started"])
