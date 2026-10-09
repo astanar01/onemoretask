@@ -1,18 +1,16 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # cmm-grep-nudge.sh — PreToolUse:Grep+Bash hook (hard-blocking CMM navigation gate)
 # BLOCKING: exits 2 for code-targeted Grep or Bash navigation commands when CMM is
 # available, redirecting to graph tools. Honors # cmm-exempt override in Bash commands.
+# Fails open (exit 0) without Python.
 #
-# Install: cp hooks/global/cmm-grep-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-grep-nudge.sh
-# Register in ~/.claude/settings.json under both Grep and Bash matchers:
-#   "hooks": { "PreToolUse": [
-#     { "matcher": "Grep", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] },
-#     { "matcher": "Bash", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] }
-#   ]}
+# Installed by setup/install_hooks.py. Matchers: PreToolUse Grep and Bash
 
 # --- Input Parsing ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | python3 -c "
+omt_has_py || exit 0
+TOOL_NAME=$(echo "$INPUT" | omt_py -c "
 import sys,json
 d=json.load(sys.stdin)
 print(d.get('tool_name','') or '')
@@ -22,7 +20,7 @@ print(d.get('tool_name','') or '')
 # When invoked for a Bash tool call: check for code-navigation commands against source paths.
 # Only enforced when CMM sentinel is present (fail-open when CMM not indexed).
 if [ "$TOOL_NAME" = "Bash" ]; then
-  BASH_CMD=$(echo "$INPUT" | python3 -c "
+  BASH_CMD=$(echo "$INPUT" | omt_py -c "
 import sys,json
 d=json.load(sys.stdin)
 print(d.get('tool_input',{}).get('command','') or '')
@@ -30,7 +28,7 @@ print(d.get('tool_input',{}).get('command','') or '')
 
   # A nav verb whose OWN arguments name a file CMM parses into functions. Checked per pipeline segment,
   # so `git diff x.py | grep foo` passes. .html is left out: CMM keeps inline JS as one blob.
-  SRC_READ=$(BASH_CMD="$BASH_CMD" python3 - <<'PY' 2>/dev/null
+  SRC_READ=$(BASH_CMD="$BASH_CMD" omt_py - <<'PY' 2>/dev/null
 import os, re, shlex
 cmd = os.environ.get("BASH_CMD", "").split("<<")[0].split(">")[0]
 ext = re.compile(r"\.(py|gd|js|jsx|mjs|ts|tsx|go|php|cs|java|kt|c|cc|cpp|h|hpp|cu)$")
@@ -83,7 +81,7 @@ PY
   if [ -n "$SRC_READ" ] || { echo "$BNAV_HEAD" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; }; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
-    BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+    BASH_CWD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
     # Normalize path to resolve symlinks (macOS /var/folders -> /private/var/folders)
     BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && pwd -P) || BASH_REPO_ROOT="${BASH_CWD:-.}"
     BASH_CMM_FOUND=false
@@ -98,8 +96,8 @@ PY
     fi
 
     # Only block when CMM sentinel is present (index is ready)
-    BASH_PROJECT_HASH=$(echo "$BASH_REPO_ROOT" | md5 -q 2>/dev/null || echo "$BASH_REPO_ROOT" | md5sum | awk '{print $1}')
-    BASH_SENTINEL="/tmp/cmm-session-ready-${BASH_PROJECT_HASH}"
+    BASH_PROJECT_HASH=$(omt_md5 "$BASH_REPO_ROOT")
+    BASH_SENTINEL="$OMT_TMP/cmm-session-ready-${BASH_PROJECT_HASH}"
     if [ "$BASH_CMM_FOUND" = true ] && [ -f "$BASH_SENTINEL" ] && ! grep -q '^stale$' "$BASH_SENTINEL" 2>/dev/null; then
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
@@ -118,7 +116,7 @@ EOF
   exit 0
 fi
 
-PARSED=$(echo "$INPUT" | python3 -c "
+PARSED=$(echo "$INPUT" | omt_py -c "
 import sys,json
 d=json.load(sys.stdin)
 ti=d.get('tool_input',{})
@@ -139,7 +137,7 @@ PATTERN_FIELD=$(echo "$PARSED" | sed -n '4p')
 
 # --- Exception: Planning/Config Paths (check path early) ---
 case "$PATH_FIELD" in
-  */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- CMM Availability Check (safety valve — don't block if CMM isn't configured) ---
@@ -150,7 +148,7 @@ elif [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
   REPO_ROOT=$(git -C "$(dirname "$PATH_FIELD")" rev-parse --show-toplevel 2>/dev/null)
 fi
 if [ -z "$REPO_ROOT" ]; then
-  CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+  CWD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
   REPO_ROOT="${CWD:-.}"
 fi
 
@@ -172,9 +170,9 @@ fi
 # --- Extra extensions cache (from .codebase-memory.json) ---
 _EXT_CACHE=""
 if [ -n "$REPO_ROOT" ]; then
-  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)"
+  _EXT_CACHE="$OMT_TMP/cmm-user-ext-$(omt_md5 "$REPO_ROOT")"
   if [ ! -f "$_EXT_CACHE" ]; then
-    python3 -c "
+    omt_py -c "
 import json, os
 for p in ['${REPO_ROOT}/.codebase-memory.json']:
     if os.path.isfile(p):

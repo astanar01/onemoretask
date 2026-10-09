@@ -1,14 +1,11 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # cmm-orient-nudge.sh — PostToolUse:mcp__codebase-memory-mcp__search_graph one-shot orientation nudge
 # On the FIRST search_graph call of a session, emits hookSpecificOutput.additionalContext
 # suggesting get_architecture / trace_path / query_graph for the three underused CMM tools.
 # Session-scoped sentinel dedups subsequent calls. Always exits 0 (fail-open on every path).
 #
-# Install: cp hooks/global/cmm-orient-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-orient-nudge.sh
-# Register in ~/.claude/settings.json (or per-agent frontmatter):
-#   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__search_graph",
-#                                 "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-orient-nudge.sh"}] }] }
-# Matcher: PostToolUse:mcp__codebase-memory-mcp__search_graph
+# Installed by setup/install_hooks.py. Matcher: PostToolUse:mcp__codebase-memory-mcp__search_graph
 # Bypass: include literal '# cmm-exempt' anywhere in the tool_input payload.
 
 # --- Input Parsing (fail-open on every path) ---
@@ -16,7 +13,7 @@ INPUT=$(cat 2>/dev/null)
 [ -z "$INPUT" ] && exit 0
 
 # Base64-encode fields so embedded control chars (newlines, quotes) don't shift positions.
-PARSED=$(printf '%s' "$INPUT" | python3 -c "
+PARSED=$(printf '%s' "$INPUT" | omt_py -c "
 import sys, json, base64
 def enc(s):
     return base64.b64encode(s.encode('utf-8')).decode('ascii')
@@ -72,11 +69,11 @@ fi
 # --- Project Hash + Session-Scoped Sentinel ---
 REPO_ROOT=$(git -C "${CWD:-.}" rev-parse --show-toplevel 2>/dev/null)
 [ -z "$REPO_ROOT" ] && REPO_ROOT="${CWD:-$(pwd)}"
-PROJECT_HASH=$(printf '%s' "$REPO_ROOT" | md5 -q 2>/dev/null || printf '%s' "$REPO_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
+PROJECT_HASH=$(omt_md5 "$REPO_ROOT")
 
 SENTINEL=""
 if [ -n "$PROJECT_HASH" ] && [ -n "$SESSION_ID" ]; then
-    SENTINEL="/tmp/cmm-orient-nudged-${PROJECT_HASH}-${SESSION_ID}"
+    SENTINEL="$OMT_TMP/cmm-orient-nudged-${PROJECT_HASH}-${SESSION_ID}"
     if [ -f "$SENTINEL" ]; then
         exit 0
     fi
@@ -88,10 +85,10 @@ read -r -d '' MSG <<'EOF'
 First search_graph call this session. If you do not yet know this codebase, run get_architecture next for the package map. For cross-service or edge-level questions use query_graph (Cypher). To trace callers/callees of any symbol use trace_path(direction="both").
 EOF
 
-# --- Emit JSON envelope via python3 json.dumps (handles quotes/backslashes/newlines correctly) ---
-python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":sys.argv[1]}}))' "$MSG" 2>/dev/null || exit 0
+# --- Emit JSON envelope via Python json.dumps (handles quotes/backslashes/newlines correctly) ---
+omt_py -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":sys.argv[1]}}))' "$MSG" 2>/dev/null || exit 0
 
-# --- Touch session sentinel (best-effort; never cleaned up here — /tmp TTL or reboot GCs orphans) ---
+# --- Touch session sentinel (best-effort; never cleaned up here — temp-dir TTL or reboot GCs orphans) ---
 if [ -n "$SENTINEL" ]; then
     touch "$SENTINEL" 2>/dev/null || true
 fi

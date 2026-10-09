@@ -1,30 +1,26 @@
 #!/bin/bash
-# ctx-execute-cmm-nudge.sh — PreToolUse hook: hard-block source-code search laundered through ctx_execute in indexed CMM repos (plugin-form and MCP-server-form coverage).
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
+# ctx-execute-cmm-nudge.sh — PreToolUse hook: hard-block source-code search laundered through ctx_execute in indexed CMM repos.
 # BLOCKING: exits 2 when tool_input.code is an unambiguous grep/rg/ack/ag/ugrep/find-name against an indexed project path; otherwise exits 0 (fail-open on any ambiguity).
+# Fails open (exit 0) without Python, when CMM is not registered, and when the project has no CMM sentinel.
+# Installed by setup/install_hooks.py (PreToolUse, matcher
+#   "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute"; both names are accepted below).
 #
-# Install: cp hooks/project/ctx-execute-cmm-nudge.sh .claude/hooks/ && chmod +x .claude/hooks/ctx-execute-cmm-nudge.sh
-# Register in .claude/settings.json (Phase 57 G3 — plugin-form FIRST, MCP-server-form second):
-#   "hooks": { "PreToolUse": [{
-#     "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute",
-#     "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh"}] }] }
-# Matcher: PreToolUse: plugin-form (mcp__plugin_context-mode_context-mode__ctx_execute) OR
-#                      MCP-server-form (mcp__context-mode__ctx_execute) — see internal tool_name probe.
-#
-# Sibling of hooks/project/grep-cmm-gate.sh (Grep-tool hard block). Same REPLACE WITH: machine-readable recovery format.
+# Sibling of grep-cmm-gate.sh (Grep-tool hard block). Same REPLACE WITH: machine-readable recovery format.
 # Parser is intentionally conservative per 46-CONTEXT.md — single-statement, pipe-less, heredoc-less command lines only; anything else fails open.
 
 # --- Input Parsing ---
 INPUT=$(cat 2>/dev/null)
 [ -z "$INPUT" ] && exit 0
 
-# Parse JSON + classify the code field in one python3 block.
+# Parse JSON + classify the code field in one Python block.
 # Output (one per line):
 #   1: tool_name
 #   2: kind (grep-family | find-name | other | exempt | empty)
 #   3: pattern (extracted search term; empty when kind=other/exempt/empty)
 #   4: target_path (extracted last positional arg, or empty)
 #   5: cwd
-PARSED=$(echo "$INPUT" | python3 -c "
+PARSED=$(printf '%s' "$INPUT" | omt_py -c "
 import sys, json, re, shlex
 
 def emit(tool_name='', kind='other', pattern='', target='', cwd=''):
@@ -47,7 +43,7 @@ cwd = d.get('cwd','') or ''
 
 # Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
 # matcher (see header doc-line) routes only ctx_execute today, and the shell
-# `case "$TOOL_NAME"` block at the bottom of this file dispatches only those
+# case-on-TOOL_NAME block at the bottom of this file dispatches only those
 # two names — keep this python set in lockstep with that shell case to avoid
 # the F-06 divergence where python classified ctx_execute_file/_batch_execute
 # but shell silently no-op'd. If the install matcher is ever widened to also
@@ -342,24 +338,20 @@ if [ -n "$_PROBE_DIR" ] && [ -d "$_PROBE_DIR" ]; then
 fi
 [ -z "$REPO_ROOT" ] && exit 0
 
-# --- CMM availability check (.mcp.json cascade) ---
+# --- CMM availability check: an mcpServers key "codebase-memory-mcp" (quoted, so the
+# mcp__codebase-memory-mcp__* hook matchers in settings.json do not count) ---
 CMM_FOUND=false
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
+_CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+for _F in "$REPO_ROOT/.mcp.json" "$_CFG/settings.json" "$_CFG/.claude.json" "$HOME/.claude.json"; do
+    grep -q '"codebase-memory-mcp"' "$_F" 2>/dev/null && { CMM_FOUND=true; break; }
+done
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 
 # --- Indexed-repo sentinel probe ---
-PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
+PROJECT_HASH=$(omt_md5 "$REPO_ROOT")
 [ -z "$PROJECT_HASH" ] && exit 0
-CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+CMM_SENTINEL="$OMT_TMP/cmm-session-ready-${PROJECT_HASH}"
 # If project not indexed for this session, fail open
 [ ! -f "$CMM_SENTINEL" ] && exit 0
 

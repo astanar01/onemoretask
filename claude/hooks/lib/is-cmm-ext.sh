@@ -5,10 +5,10 @@
 # Built-in extensions and filenames (covering CMM's 155-language grammar set)
 # are checked inline (zero overhead).
 # User-defined extensions from CMM config are cached per repo root in
-# /tmp/cmm-user-ext-<hash>, built lazily on first miss.
+# $OMT_TMP/cmm-user-ext-<hash>, built lazily on first miss (needs Python; without it: no user extensions).
 #
-# Install: cp -r hooks/lib ~/.claude/hooks/
-# Hooks source via: source "${BASH_SOURCE[0]%/*}/lib/is-cmm-ext.sh"
+# Installed by setup/install_hooks.py. Hooks source via: source "${BASH_SOURCE[0]%/*}/lib/is-cmm-ext.sh"
+. "${BASH_SOURCE[0]%/*}/compat.sh"
 
 is_cmm_ext() {
   local file="$1"
@@ -58,15 +58,15 @@ is_cmm_ext() {
   [ -z "$repo_root" ] && return 1
 
   local cache_key cache_file
-  cache_key=$(echo -n "$repo_root" | md5 2>/dev/null || echo -n "$repo_root" | md5sum 2>/dev/null | cut -d' ' -f1)
-  cache_file="/tmp/cmm-user-ext-${cache_key}"
+  cache_key=$(omt_md5 "$repo_root")
+  cache_file="$OMT_TMP/cmm-user-ext-${cache_key}"
 
   # Build cache if missing (once per session/repo)
   if [ ! -f "$cache_file" ]; then
     local global_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/codebase-memory-mcp/config.json"
     local project_cfg="${repo_root}/.codebase-memory.json"
 
-    python3 -c "
+    omt_py -c "
 import json, os
 exts = {}
 for path in ['$global_cfg', '$project_cfg']:

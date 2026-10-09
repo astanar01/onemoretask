@@ -1,27 +1,24 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # session-gate.sh — PreToolUse:* hook (unified CMM + Context Mode session gate)
 # BLOCKING: gates all tools until CMM index is refreshed and (if installed) Context Mode is initialized
 #
-# Purpose: Single merged gate replacing cmm-session-gate.sh and context-mode-session-gate.sh.
-#          Sentinel path uses git-aware root detection (show-superproject-working-tree) so
-#          the hash is stable whether the session CWD is the project root, a git submodule,
-#          or a git worktree.
+# Sentinel path uses git-aware root detection (lib/project-root.sh) so the hash is stable
+# whether the session CWD is the project root, a git submodule, or a git worktree.
+# Fails open without Python: the hooks that open the gate need it.
 #
-# Install: cp hooks/project/session-gate.sh .claude/hooks/ && chmod +x .claude/hooks/session-gate.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-gate.sh"}] }] }
-# Matcher: PreToolUse:*
+# Installed by setup/install_hooks.py. Matcher: PreToolUse:*
 
 # --- Input Capture ---
 # stdin can only be read once — capture it immediately for all subsequent parsing
 INPUT=$(cat)
 
 # --- Lightweight Tool Extraction ---
-# Use bash-only grep/sed to extract tool_name without python3 overhead.
-# Fall back to python3 if the lightweight parse fails (malformed JSON, etc.)
+# Use bash-only grep/sed to extract tool_name without Python overhead.
+# Fall back to Python if the lightweight parse fails (malformed JSON, etc.)
 TOOL=$(echo "$INPUT" | grep -o '"tool_name": *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
 if [ -z "$TOOL" ]; then
-    TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+    TOOL=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
 fi
 
 # If parsing failed, do not block — fail open to avoid spurious hook errors
@@ -48,62 +45,19 @@ case "$TOOL" in
     exit 0 ;;
 esac
 
-# --- Project root detection (shared library with /tmp cache) ---
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
-if [ -f "$_LIB_DIR/project-root.sh" ]; then
-  source "$_LIB_DIR/project-root.sh"
-else
-  # Fallback: inline detection (pre-optimization installs) — matches hooks/lib/project-root.sh
-  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [ -n "$PROJECT_ROOT" ]; then
-      _WALK="$PROJECT_ROOT"
-      while true; do
-          _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-          [ -z "$_PARENT" ] && break
-          _WALK="$_PARENT"
-      done
-      PROJECT_ROOT="$_WALK"
-  fi
-  if [ -z "$PROJECT_ROOT" ]; then
-      PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-  fi
-  if [ -n "$PROJECT_ROOT" ]; then
-      _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
-      _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
-      [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
-      [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
-      if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
-          _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
-          [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
-      fi
-  fi
-  # Legacy orphaned .git/modules/<name>/ recovery (matches hooks/lib/project-root.sh)
-  if [ -n "$PROJECT_ROOT" ]; then
-      case "$PROJECT_ROOT" in
-        */.git/*)
-          _MODULES_OWNER="${PROJECT_ROOT%%/.git/*}"
-          if [ -n "$_MODULES_OWNER" ] && [ -d "$_MODULES_OWNER" ]; then
-              _CANDIDATE="$(cd "$_MODULES_OWNER" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)"
-              case "$_CANDIDATE" in
-                */.git/*|"") : ;;
-                *) PROJECT_ROOT="$_CANDIDATE" ;;
-              esac
-          fi
-          ;;
-      esac
-  fi
-  PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
-  CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-fi
-CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+# No Python: cmm-sentinel-writer.sh cannot open the gate, so never close it.
+omt_has_py || exit 0
 
-# --- Path Integrity Check ---
+# --- Project root detection (lib/project-root.sh, cached) ---
+. "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
+CMM_SENTINEL="$OMT_TMP/cmm-session-ready-${PROJECT_HASH}"
+
+# --- Path Integrity Check (advisory only: never blocks) ---
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
 { [ "$_SCRIPT_ROOT" = "$HOME" ] || [ "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)" = "$(cd "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" 2>/dev/null && pwd -P)" ]; } && _SCRIPT_ROOT="$PROJECT_ROOT"  # global-install (incl. CLAUDE_CONFIG_DIR): suppress path-mismatch advisory
-if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$(printf %s "$_SCRIPT_ROOT" | tr 'A-Z' 'a-z')" != "$(printf %s "$PROJECT_ROOT" | tr 'A-Z' 'a-z')" ]; then  # case-insensitive (macOS Herd/herd) — patched locally
+if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$(pr_norm_path "$_SCRIPT_ROOT")" != "$(pr_norm_path "$PROJECT_ROOT")" ]; then  # loose: case, C:/ vs /c/, backslashes
     echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'." >&2
     echo "Project was moved or cloned. Re-run: python3 setup/install_hooks.py from the onemoretask folder" >&2
-    exit 2
 fi
 
 # No codebase-memory-mcp server registered (install skipped or failed): fail open.
@@ -118,7 +72,7 @@ done
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
   # Fail-open-while-indexing (large-repo startup): cmm-session-start.sh writes
-  # /tmp/cmm-indexing-<hash> at session start; cmm-sentinel-writer.sh clears it
+  # $OMT_TMP/cmm-indexing-<hash> at session start; cmm-sentinel-writer.sh clears it
   # (and writes the ready sentinel) once index_repository/index_status completes.
   # While that marker is present AND fresh, the index is still being built for
   # this session — fail OPEN with an advisory instead of hard-blocking, so a slow
@@ -128,7 +82,7 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   # Safety valve: a marker older than the TTL (e.g. a crashed prior session that
   # left it behind, or an index that never completed) is treated as stale and we
   # fall through to the hard block — the gate must not stay open indefinitely.
-  INDEXING_MARKER="/tmp/cmm-indexing-${PROJECT_HASH}"
+  INDEXING_MARKER="$OMT_TMP/cmm-indexing-${PROJECT_HASH}"
   INDEXING_TTL_MIN=120
   if [ -f "$INDEXING_MARKER" ] && [ -n "$(find "$INDEXING_MARKER" -mmin "-${INDEXING_TTL_MIN}" 2>/dev/null)" ]; then
     cat >&2 <<INDEXING
@@ -149,7 +103,7 @@ You can still use these tools without opening the gate:
   mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage
 
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
-  touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+  touch "$CMM_SENTINEL"
 BLOCKED
   exit 2
 fi
@@ -168,7 +122,7 @@ fi
 # --- Phase 3: Context Mode Gate (only if installed) ---
 # Detection: check project .mcp.json and global Claude Code settings, then session DB
 CONTEXT_MODE_INSTALLED=0
-if python3 -c "
+if omt_py -c "
 import json, os, sys
 # 1. Project .mcp.json
 try:
@@ -221,7 +175,7 @@ Run one of these to initialize:
   ctx_execute        (run any command through the sandbox to initialize)
 
 If you want to bypass the gate temporarily, create the sentinel in your terminal:
-  touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+  touch "$CONTEXT_MODE_SENTINEL"
 BLOCKED
   exit 2
 fi

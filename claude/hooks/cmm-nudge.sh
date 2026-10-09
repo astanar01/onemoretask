@@ -1,4 +1,5 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # cmm-nudge.sh — PreToolUse:Read hook (soft per-file read budget; advisory, NEVER blocks)
 #
 # NON-BLOCKING: always exits 0. For code files (>=50 lines) in CMM-configured repos it
@@ -17,17 +18,14 @@
 # nudge on repeated access of the same file (the pagination pattern Finding B actually
 # cared about) can change behavior and save tokens. So: nudge on repetition, never block.
 #
-# Install: cp hooks/global/cmm-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-nudge.sh
-#   (or: setup.sh --project also copies to .claude/hooks/cmm-nudge.sh for agent frontmatter hooks)
-# Register in ~/.claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "Read", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-nudge.sh"}] }] }
+# Installed by setup/install_hooks.py. Matcher: PreToolUse:Read. Silent without Python.
 
 READ_BUDGET=3              # silent for the first N reads of a file per session
 NUDGE_CONSECUTIVE_UNTIL=8  # past the budget, nudge EVERY read up to here, then back off to powers of two
 
 # --- Input Parsing (dual-form: tool_input.file_path + top-level fallback) ---
 INPUT=$(cat)
-PARSED=$(echo "$INPUT" | python3 -c "
+PARSED=$(echo "$INPUT" | omt_py -c "
 import sys,json
 d=json.load(sys.stdin)
 ti=d.get('tool_input',{})
@@ -57,13 +55,13 @@ esac
 
 # --- Exception: Planning/Config Paths ---
 case "$FILE_PATH" in
-  */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- CMM Availability Check (safety valve — don't nudge if CMM isn't configured) ---
 REPO_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ]; then
-  CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+  CWD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
   REPO_ROOT="${CWD:-.}"
 fi
 
@@ -94,9 +92,9 @@ case "$FILE_PATH" in
 esac
 # Check project extra_extensions from .codebase-memory.json
 if [ "$_IS_CODE" = false ] && [ -n "$REPO_ROOT" ]; then
-  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)"
+  _EXT_CACHE="$OMT_TMP/cmm-user-ext-$(omt_md5 "$REPO_ROOT")"
   if [ ! -f "$_EXT_CACHE" ]; then
-    python3 -c "
+    omt_py -c "
 import json, os
 for p in ['${REPO_ROOT}/.codebase-memory.json']:
     if os.path.isfile(p):
@@ -119,7 +117,7 @@ fi
 [ ! -f "$FILE_PATH" ] && exit 0
 
 # --- Exception: Small Files (<50 lines) ---
-if [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
+if [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ] 2>/dev/null; then
   exit 0
 fi
 
@@ -135,8 +133,8 @@ fi
 # no project-root hash to diverge (the old cmm-recent submodule/worktree hash-mismatch
 # bug class cannot occur here).
 _SID="${SESSION_ID:-nosession}"
-_FHASH=$(echo -n "$FILE_PATH" | md5 -q 2>/dev/null || echo -n "$FILE_PATH" | md5sum 2>/dev/null | awk '{print $1}')
-_CFILE="/tmp/cmm-reads-${_SID}-${_FHASH}"
+_FHASH=$(omt_md5 "$FILE_PATH")
+_CFILE="$OMT_TMP/cmm-reads-${_SID}-${_FHASH}"
 _CNT=$(cat "$_CFILE" 2>/dev/null || echo 0)
 case "$_CNT" in ''|*[!0-9]*) _CNT=0 ;; esac
 _CNT=$((_CNT + 1))
@@ -154,7 +152,7 @@ elif [ "$_CNT" -gt "$NUDGE_CONSECUTIVE_UNTIL" ] && [ "$(( _CNT & (_CNT - 1) ))" 
 fi
 if [ "$_NUDGE" = true ]; then
   _MSG="You've read '${BASENAME}' ${_CNT} times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory — this read is allowed)"
-  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null || true
+  omt_py -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null || true
 fi
 
 exit 0

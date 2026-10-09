@@ -85,7 +85,7 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute",
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute",
         "hooks": [
           {
             "type": "command",
@@ -160,14 +160,6 @@
       }
     ],
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/context-mode-cache-heal.mjs\""
-          }
-        ]
-      },
       {
         "hooks": [
           {

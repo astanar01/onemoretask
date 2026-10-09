@@ -1,60 +1,27 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # cmm-session-start.sh — SessionStart hook (CMM index enforcement)
 # Deletes stale sentinel and injects mandatory first-action prompt.
 # Spawned agents receive a richer prompt explaining the gate, allow-list, and task location.
 # Always exits 0.
 #
-# Install: cp hooks/project/cmm-session-start.sh .claude/hooks/ && chmod +x .claude/hooks/cmm-session-start.sh
-# Register in .claude/settings.json:
-#   "hooks": { "SessionStart": [{ "hooks": [{"type": "command", "command": "bash .claude/hooks/cmm-session-start.sh"}] }] }
-#
-# Matcher: SessionStart (no matcher needed — fires on every session start)
+# Installed by setup/install_hooks.py. Matcher: SessionStart (fires on every session start)
 
-# --- Project root detection (shared library with /tmp cache) ---
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
-if [ -f "$_LIB_DIR/project-root.sh" ]; then
-  source "$_LIB_DIR/project-root.sh"
-else
-  # Fallback: inline detection (pre-optimization installs)
-  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [ -n "$PROJECT_ROOT" ]; then
-      _WALK="$PROJECT_ROOT"
-      while true; do
-          _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-          [ -z "$_PARENT" ] && break
-          _WALK="$_PARENT"
-      done
-      PROJECT_ROOT="$_WALK"
-  fi
-  if [ -z "$PROJECT_ROOT" ]; then
-      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-      PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-  fi
-  if [ -n "$PROJECT_ROOT" ]; then
-      _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
-      _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
-      [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
-      [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
-      if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
-          _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
-          [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
-      fi
-  fi
-  PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
-fi
+# --- Project root detection (lib/project-root.sh, cached) ---
+. "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
 
 # --- Path Integrity Check ---
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
 { [ "$_SCRIPT_ROOT" = "$HOME" ] || [ "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)" = "$(cd "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" 2>/dev/null && pwd -P)" ]; } && _SCRIPT_ROOT="$PROJECT_ROOT"  # global-install (incl. CLAUDE_CONFIG_DIR): suppress path-mismatch advisory
-if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$(printf %s "$_SCRIPT_ROOT" | tr 'A-Z' 'a-z')" != "$(printf %s "$PROJECT_ROOT" | tr 'A-Z' 'a-z')" ]; then  # case-insensitive (macOS Herd/herd) — patched locally
+if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$(pr_norm_path "$_SCRIPT_ROOT")" != "$(pr_norm_path "$PROJECT_ROOT")" ]; then  # loose: case, C:/ vs /c/, backslashes
     echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'."
     echo "Project was moved or cloned. Re-run: python3 setup/install_hooks.py from the onemoretask folder"
 fi
 
 # --- Sentinel Deletion ---
 # Delete both CMM and Context Mode sentinels to force re-initialization each session
-rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}"
-rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
+rm -f "$CMM_SENTINEL"
+rm -f "$CONTEXT_MODE_SENTINEL"
 
 # --- Fail-open-while-indexing marker ---
 # Mark that a CMM index refresh is pending for this session. While this marker is
@@ -64,7 +31,7 @@ rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 # index_repository/index_status completes. `touch` (re)sets the mtime each session
 # so the gate's TTL safety valve measures age from this session start, not an older
 # orphaned marker.
-touch "/tmp/cmm-indexing-${PROJECT_HASH}"
+touch "$OMT_TMP/cmm-indexing-${PROJECT_HASH}"
 
 # --- Context Mode Bootstrap ---
 # If Context Mode is installed, write its sentinel at session start.
@@ -74,12 +41,12 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 #
 # ORDERING GUARANTEE: SessionStart hooks run synchronously before any
 # PreToolUse hooks fire. This means the sentinel written below at
-# /tmp/context-mode-ready-${PROJECT_HASH} is guaranteed to exist before
+# $CONTEXT_MODE_SENTINEL is guaranteed to exist before
 # ctx-execute-enforcer.sh checks for it on the first tool call. The
 # delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
 # is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
-if python3 -c "
+if omt_py -c "
 import json, os, sys
 # 1. Project .mcp.json
 try:
@@ -103,7 +70,7 @@ fi
 [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 1 ]; then
-  echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+  echo "ready" > "$CONTEXT_MODE_SENTINEL"
 fi
 
 # --- Session Type Detection ---
@@ -141,16 +108,16 @@ even when the server is connected.
 - `ToolSearch` — schema fetch (catch-22 escape)
 - `SendMessage` — inter-agent coordination (never gated)
 
-**If CMM server is unavailable**, create the sentinel manually:
-  touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+**If CMM server is unavailable**, create the sentinel manually with the `touch` command
+printed in the session-gate BLOCKED message.
 
 ## Context Mode Auto-Initialization
 
 If Context Mode is installed, its sentinel is written automatically at session start.
 You do NOT need to call `ctx_stats` manually — the gate is already open.
 
-**If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init):
-  touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+**If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init), use the
+`touch` command printed in the session-gate BLOCKED message.
 
 ## CMM Tool Decision Table
 

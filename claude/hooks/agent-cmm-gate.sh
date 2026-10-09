@@ -1,21 +1,20 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # agent-cmm-gate.sh — PreToolUse:Agent hook (ensures agents use CMM tools)
-# BLOCKING: exits 2 if agent prompt lacks CMM keywords, 0 if present or exempt.
+# BLOCKING: exits 2 if agent prompt lacks CMM keywords, 0 if present or exempt (or no Python).
 #
-# Install: cp hooks/project/agent-cmm-gate.sh .claude/hooks/ && chmod +x .claude/hooks/agent-cmm-gate.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "Agent", "hooks": [{"type": "command", "command": "bash .claude/hooks/agent-cmm-gate.sh"}] }] }
-# Matcher: PreToolUse:Agent
+# Installed by setup/install_hooks.py. Matcher: PreToolUse:Agent
 
 # --- Input Parsing ---
 INPUT=$(cat)
-SUBAGENT_TYPE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('subagent_type',''))" 2>/dev/null || echo "")
-PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
+omt_has_py || exit 0
+SUBAGENT_TYPE=$(echo "$INPUT" | omt_py -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('subagent_type',''))" 2>/dev/null || echo "")
+PROMPT=$(echo "$INPUT" | omt_py -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
 
 # --- Subagent Type Exemption ---
 # Built-in Claude Code skills and non-coding agents are exempt from the keyword gate.
 case "$SUBAGENT_TYPE" in
-  claude-code-guide|statusline-setup|vbw:*)
+  claude-code-guide|statusline-setup)
     echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;

@@ -1,19 +1,16 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # grep-cmm-gate.sh — PreToolUse:Grep hook (hard-block source-code Grep in indexed CMM repos with machine-readable REPLACE WITH: advisory)
 # BLOCKING: exits 2 for code-targeted Grep when CMM is registered AND the project is indexed (sentinel present); otherwise exits 0.
+# Fails open without Python (the parse below returns nothing).
 #
-# Install: cp hooks/project/grep-cmm-gate.sh .claude/hooks/ && chmod +x .claude/hooks/grep-cmm-gate.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "Grep", "hooks": [{"type": "command", "command": "bash .claude/hooks/grep-cmm-gate.sh"}] }] }
-# Matcher: PreToolUse:Grep
-#
-# Coexists with hooks/global/cmm-grep-nudge.sh (global soft advisory). Hook order: global soft first, project hard second.
+# Installed by setup/install_hooks.py. Matcher: PreToolUse:Grep. Coexists with cmm-grep-nudge.sh.
 
 # --- Input Parsing ---
 INPUT=$(cat 2>/dev/null)
 [ -z "$INPUT" ] && exit 0
 
-PARSED=$(echo "$INPUT" | python3 -c "
+PARSED=$(echo "$INPUT" | omt_py -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -62,7 +59,7 @@ esac
 
 # Planning/config path exemptions (parity with cmm-grep-nudge.sh)
 case "$PATH_FIELD" in
-  */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- Determine repo root (walk upward from path or cwd) ---
@@ -100,10 +97,10 @@ fi
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 
-# --- Indexed-repo sentinel probe (parity with ctx-execute-enforcer.sh md5 pattern) ---
-PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
+# --- Indexed-repo sentinel probe (same omt_md5 hash as lib/project-root.sh) ---
+PROJECT_HASH=$(omt_md5 "$REPO_ROOT")
 [ -z "$PROJECT_HASH" ] && exit 0
-CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+CMM_SENTINEL="$OMT_TMP/cmm-session-ready-${PROJECT_HASH}"
 # If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer)
 [ ! -f "$CMM_SENTINEL" ] && exit 0
 

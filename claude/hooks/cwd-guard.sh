@@ -1,4 +1,5 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # cwd-guard.sh — PreToolUse:Bash hook (CWD-drift prevention gate)
 # BLOCKING: exits 2 when a command would persistently `cd` the shell away from the project root.
 #
@@ -8,8 +9,8 @@
 #   every later call. In a monorepo with git submodules that is corrosive: once
 #   the shell sits inside a submodule, `git rev-parse --show-toplevel` resolves
 #   to the SUBMODULE root, so every CMM/Context-Mode hook computes a DIFFERENT
-#   PROJECT_HASH, the `/tmp/cmm-session-ready-<hash>` and
-#   `/tmp/context-mode-ready-<hash>` sentinels no longer match, and the session
+#   PROJECT_HASH, the `cmm-session-ready-<hash>` and
+#   `context-mode-ready-<hash>` sentinels no longer match, and the session
 #   gate + enforcer wrongly report "not indexed / not initialized". Hooks cannot
 #   read the persistent shell's drifted cwd (the hook payload's cwd is the
 #   session root), so drift cannot be DETECTED after the fact — only PREVENTED.
@@ -24,41 +25,19 @@
 #
 #   Operator bypass: include the literal `# cwd-exempt` anywhere in the command.
 #
-# Install: cp hooks/project/cwd-guard.sh .claude/hooks/ && chmod +x .claude/hooks/cwd-guard.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/cwd-guard.sh"}] }] }
-# Matcher: PreToolUse:Bash
+# Installed by setup/install_hooks.py. Matcher: PreToolUse:Bash
 
-# --- Project root detection (shared library with /tmp cache) ---
-# Use the same git-aware superproject detection the other hooks use, so the
-# "root" this guard anchors to is byte-identical to the root the sentinel hash
-# is computed from. Falls back to inline detection for pre-lib installs.
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
-if [ -f "$_LIB_DIR/project-root.sh" ]; then
-  source "$_LIB_DIR/project-root.sh"
-else
-  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [ -n "$PROJECT_ROOT" ]; then
-      _WALK="$PROJECT_ROOT"
-      while true; do
-          _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-          [ -z "$_PARENT" ] && break
-          _WALK="$_PARENT"
-      done
-      PROJECT_ROOT="$_WALK"
-  fi
-  if [ -z "$PROJECT_ROOT" ]; then
-      PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)"
-  fi
-fi
+# --- Project root detection (lib/project-root.sh, cached) ---
+# Same root the sentinel hash is computed from.
+. "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
 [ -z "$PROJECT_ROOT" ] && exit 0   # fail-open: cannot resolve root
 
 INPUT=$(cat)
 
-# Fail open if python3 is unavailable — never wedge every Bash call.
-command -v python3 >/dev/null 2>&1 || exit 0
+# Fail open if Python is unavailable — never wedge every Bash call.
+omt_has_py || exit 0
 
-DECISION=$(CWD_GUARD_ROOT="$PROJECT_ROOT" python3 - "$INPUT" <<'PY' 2>/dev/null
+DECISION=$(CWD_GUARD_ROOT="$PROJECT_ROOT" omt_py - "$INPUT" <<'PY' 2>/dev/null
 import sys, json, os, re, shlex
 
 root = os.environ.get("CWD_GUARD_ROOT", "")
@@ -93,15 +72,21 @@ ALLOWED_TARGET_TOKENS = {
     '"${CLAUDE_PROJECT_DIR}"', ".", "./",
 }
 
+def norm(p):
+    # Windows: Git Bash gives /c/Users/..., git gives C:/Users/...; fold both.
+    if os.name == "nt" and re.match(r"^/[A-Za-z](/|$)", p):
+        p = p[1] + ":" + (p[2:] or "/")
+    return os.path.normcase(os.path.realpath(p))
+
 def target_is_root(tok):
     if tok in ALLOWED_TARGET_TOKENS:
         return True
     t = tok.strip().strip('"').strip("'")
     if not t:
         return False
-    if t.startswith("/"):
+    if t.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", t):
         try:
-            return os.path.realpath(t) == os.path.realpath(root)
+            return norm(t) == norm(root)
         except Exception:
             return False
     return False

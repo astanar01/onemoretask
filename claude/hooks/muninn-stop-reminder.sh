@@ -1,19 +1,13 @@
 #!/bin/bash
-# UserPromptSubmit hook — fires at the start of every turn with a combined
-# Muninn nudge: (1) recall prior context before exploring/implementing, and
-# (2) scan the prior assistant turn for durable learnings worth storing.
-#
-# Merges what used to be two separate hooks:
-#   - muninn-prompt-reminder.sh (recall, was registered at project level)
-#   - muninn-stop-reminder.sh (remember, was originally a Stop hook — moved
-#     here after confirming Stop events don't deliver hookSpecificOutput.
-#     additionalContext to the model in this Claude Code version).
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
+# UserPromptSubmit hook: every turn, nudge the model to recall from Muninn first and to store
+# durable learnings from the prior turn. A nudge only: prints its JSON even when Muninn is absent.
+# Needs no Python. Installed by setup/install_hooks.py.
 
-# Diagnostic: record every invocation. Useful for confirming the hook fires
-# and for session-level auditing of how often Muninn nudges are triggered.
-echo "$(date -u +%FT%TZ) pid=$$ ppid=$PPID" >> "${TMPDIR:-/tmp}/muninn-stop-fired.log" 2>/dev/null
+# Diagnostic: one line per invocation (date %F/%T work on BSD and GNU date).
+echo "$(date -u +%FT%TZ) pid=$$ ppid=$PPID" >> "$OMT_TMP/muninn-stop-fired.log" 2>/dev/null
 
-cat <<'PROMPT'
+TEXT=$(cat <<'PROMPT'
 **Muninn: recall first, then consider what to remember.**
 
 RECALL — before exploring the codebase, launching agents, or reading files:
@@ -30,3 +24,10 @@ REMEMBER — scan the PRIOR assistant turn for durable learnings that should be 
   - User-corrected ground truth (domain, workflow, deploy quirks)
 If none of those apply, skip silently — do not narrate the check.
 PROMPT
+)
+
+# JSON-escape in pure bash (the text has no tabs or control characters besides newlines).
+TEXT=${TEXT//\\/\\\\}
+TEXT=${TEXT//\"/\\\"}
+TEXT=${TEXT//$'\n'/\\n}
+printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$TEXT"

@@ -1,20 +1,18 @@
 #!/bin/bash
+. "${BASH_SOURCE[0]%/*}/lib/compat.sh"
 # reindex-after-edit.sh — PostToolUse:Write|Edit hook (CMM reindex reminder)
-# NON-BLOCKING: always exits 0 (advisory only, never blocks)
+# NON-BLOCKING: always exits 0 (advisory only, never blocks). Silent without jq or Python.
 # Debounce: 60 seconds between prompts
 #
-# Install: cp -r hooks/lib ~/.claude/hooks/ && cp hooks/global/reindex-after-edit.sh ~/.claude/hooks/
-#          chmod +x ~/.claude/hooks/reindex-after-edit.sh
-# Register in ~/.claude/settings.json:
-#   "hooks": { "PostToolUse": [{ "matcher": "Write|Edit", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/reindex-after-edit.sh"}] }] }
+# Installed by setup/install_hooks.py. Matcher: PostToolUse:Write|Edit
 
 INPUT=$(cat)
 
-# Try jq first, fall back to python3
+# Try jq first, fall back to Python
 if command -v jq >/dev/null 2>&1; then
   FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)
 else
-  FILE=$(echo "$INPUT" | python3 -c "
+  FILE=$(echo "$INPUT" | omt_py -c "
 import sys, json
 d = json.load(sys.stdin)
 ti = d.get('tool_input', {})
@@ -27,7 +25,7 @@ fi
 
 # Skip planning artifacts and config paths (don't need reindex)
 case "$FILE" in
-  */.vbw-planning/*|*/.claude/*|*/.git/*) exit 0 ;;
+  */.claude/*|*/.git/*) exit 0 ;;
 esac
 
 # Only trigger for CMM-indexed file types (built-in extensions/filenames covering CMM's 155-language grammar set + user-defined)
@@ -38,14 +36,10 @@ source "${BASH_SOURCE[0]%/*}/../lib/is-cmm-ext.sh" 2>/dev/null \
 is_cmm_ext "$FILE" || exit 0
 
 # Debounce: skip if we prompted within the last 60 seconds
-STAMP="/tmp/cmm-reindex-stamp-$(id -u)"
-if [ -f "$STAMP" ]; then
-  # Cross-platform mtime: date -r works on both BSD (macOS) and GNU (Linux)
-  LAST=$(date -r "$STAMP" +%s 2>/dev/null || echo 0)
-  NOW=$(date +%s)
-  if [ $((NOW - LAST)) -lt 60 ]; then
-    exit 0
-  fi
+STAMP="$OMT_TMP/cmm-reindex-stamp-$(id -u 2>/dev/null || echo 0)"
+# find -mmin works on BSD, GNU and Git Bash; older macOS `date -r` takes seconds, not a file.
+if [ -f "$STAMP" ] && [ -n "$(find "$STAMP" -mmin -1 2>/dev/null)" ]; then
+  exit 0
 fi
 touch "$STAMP"
 
