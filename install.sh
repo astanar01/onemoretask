@@ -5,6 +5,8 @@
 # Downloads (or updates) the repo in $ONEMORETASK_DIR (default ~/.onemoretask) unless run from a clone,
 # then links bin/onemoretask into ~/.local/bin and adds that folder to PATH if needed.
 # Also copies the bundled task-observer Claude skill to ~/.claude/skills (skip: ONEMORETASK_NO_OBSERVER=1),
+# sets up the Claude Code tools the board's sessions use — codebase-memory-mcp, MuninnDB, the context-mode
+# plugin, and the hooks, rules and skills that make sessions use them (skip: ONEMORETASK_NO_TOOLS=1),
 # and makes a double-click shortcut that starts the board (skip: ONEMORETASK_NO_SHORTCUT=1):
 # ~/Desktop/OneMoreTask.command + ~/Applications/OneMoreTask.app on macOS, a .desktop launcher on Linux.
 set -e
@@ -69,6 +71,15 @@ if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
       echo "Note: could not install the task-observer skill in $obs — skipped, the old copy is kept."
     fi
   fi
+fi
+
+# Claude Code tools: setup/install_tools.py downloads pinned codebase-memory-mcp and MuninnDB builds (kept if
+# already installed), registers them as MCP servers, installs the context-mode plugin and starts Muninn;
+# setup/install_hooks.py copies the hooks, rules and skills into ~/.claude and registers the hooks in
+# settings.json. Both keep a user's own files and never fail the install.
+if [ "${ONEMORETASK_NO_TOOLS:-}" != 1 ]; then
+  python3 "$dir/setup/install_tools.py" || echo "Note: the Claude Code tools setup did not finish — skipped."
+  python3 "$dir/setup/install_hooks.py" || echo "Note: the Claude Code hooks setup did not finish — skipped."
 fi
 
 # Double-click shortcut. Runs bin/onemoretask by absolute path: a GUI launch may not have ~/.local/bin on PATH.

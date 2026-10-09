@@ -2,6 +2,7 @@
 
 ## 2026-10-09
 
+- Installing the board now also sets up the three helpers Claude works with: one that maps your code, one that remembers things between tasks, and one that keeps big outputs out of the way. Starting the board wakes up the memory helper.
 - A task you send no longer stays on "Ready to send" while Claude is already working on it, even if you switch to another project while it starts.
 - Each helper in the Subagents list now shows how much it holds in mind right now, the same number Claude Code shows, instead of a much bigger running total.
 - Words you type in a task's message box but don't send now stay with that task. Other tasks show their own box, not yours.

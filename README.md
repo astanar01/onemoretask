@@ -41,6 +41,9 @@ It:
 - copies the task-observer skill that ships with the app into `~/.claude/skills/task-observer`
   (see [Skill observations](#skill-observations)). Your own copy is never changed.
   Set `ONEMORETASK_NO_OBSERVER=1` to skip this.
+- sets up the three Claude Code tools the board's sessions work with, and the hooks that make
+  sessions use them (see [Claude Code tools](#claude-code-tools)). Your own copies and settings are
+  never changed. Set `ONEMORETASK_NO_TOOLS=1` to skip this.
 - makes a double-click shortcut that starts the board (see [Shortcut](#shortcut)).
   Set `ONEMORETASK_NO_SHORTCUT=1` to skip this.
 
@@ -63,7 +66,7 @@ irm https://raw.githubusercontent.com/astanar01/onemoretask/main/install.ps1 | i
 
 It downloads the app to `%USERPROFILE%\.onemoretask`, puts `onemoretask.cmd` in
 `%USERPROFILE%\.local\bin`, adds that folder to your user PATH, installs the task-observer skill
-the same way, and makes a **OneMoreTask** shortcut on the Desktop and in the Start menu. Open a new
+and the Claude Code tools the same way, and makes a **OneMoreTask** shortcut on the Desktop and in the Start menu. Open a new
 terminal after.
 
 Already cloned the repo? Run `powershell -ExecutionPolicy Bypass -File install.ps1` inside it.
@@ -240,6 +243,29 @@ your skills and asks you on the card which changes to make.
   task's worktree; pick another copy to jump to it.
 - **Update** (see [Update](#update)) and a count of cards waiting on you.
 
+### Claude Code tools
+
+The install command also sets up three tools that the board's sessions use, plus the hooks that make
+every session use them. They ship with the app in `claude/` (hooks, rules, settings) and `skills/`;
+the two programs are downloaded, at a fixed version, from their GitHub releases and checked against the
+release checksums. Nothing is installed if it is already there: an existing `codebase-memory-mcp` or
+`muninn` on your PATH, your own hook files, and your own hook entries in `settings.json` are kept.
+
+| Tool | What it does for a session | How it is installed |
+|---|---|---|
+| [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) (MIT) | A code graph of the project: find a function, its callers, its source, without reading whole files. | Binary in `~/.local/bin`, MCP server `codebase-memory-mcp` in `~/.claude.json`. |
+| [MuninnDB](https://github.com/scrypster/muninndb) (BSL 1.1) | Long-term memory across sessions: decisions, root causes, facts about your setup. | Binary in `~/.local/bin`, MCP server `muninn` in `~/.claude.json`; the board starts its daemon (port 8750) when it launches. Semantic recall needs [Ollama](https://ollama.com) with the `nomic-embed-text` model; without it Muninn works with word search only. |
+| [context-mode](https://github.com/mksglu/context-mode) (Elastic 2.0) | Runs commands in a sandbox and indexes the output, so big outputs don't fill the context window. | Claude Code plugin, installed with `claude plugin install context-mode@context-mode`. Needs the `claude` command. |
+
+The hooks (`claude/hooks/`, registered in `~/.claude/settings.json`) ask each session to index the project
+first, block raw `grep`/`cat` on source files in favour of the code graph, and remind it to recall and store
+memories. The rules (`claude/rules/`) and the `cmm-rules` / `ctx-rules` skills explain the tools to the
+session. `claude/NOTICE.md` lists where the hooks come from.
+
+Re-running the install updates the files it installed before, unless you edited them: then it keeps your
+version and says so. To redo it alone: `python3 ~/.onemoretask/setup/install_tools.py` and
+`python3 ~/.onemoretask/setup/install_hooks.py` (`--dry-run` shows what would change).
+
 To see a session in the terminal: `claude agents` lists them and `claude attach <id>` opens one.
 
 ### Posting from an agent
@@ -386,6 +412,10 @@ rm -rf ~/.onemoretask
 rm -rf ~/.config/task_board   # remembered projects and settings
 rm -rf ~/.claude/skills/task-observer   # only if you don't want the skill any more
 ```
+
+The Claude Code tools stay (other sessions may use them). To remove them too: `codebase-memory-mcp uninstall`,
+`muninn stop` then `rm ~/.local/bin/muninn` and `rm -rf ~/.muninn`, `claude plugin uninstall context-mode@context-mode`,
+and delete the hook files listed in `~/.claude/.onemoretask-install-sums` plus their entries in `~/.claude/settings.json`.
 
 On Windows (PowerShell):
 
