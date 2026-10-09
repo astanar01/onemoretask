@@ -6,6 +6,9 @@ Ctrl-C stops the server.
 """
 import os
 import runpy
+import shutil
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -39,6 +42,24 @@ def answers(url):
         return False
 
 
+def start_muninn():
+    """Wake the MuninnDB memory daemon the sessions talk to (port 8750). Best effort: no muninn, no complaint."""
+    exe = shutil.which("muninn")
+    if not exe:
+        return
+    try:
+        with socket.create_connection(("127.0.0.1", 8750), timeout=0.5):
+            return  # already running
+    except OSError:
+        pass
+    try:
+        r = subprocess.run([exe, "start"], capture_output=True, text=True, timeout=60)
+        print("Started the Muninn memory daemon." if r.returncode == 0
+              else "Note: could not start the Muninn memory daemon (muninn start failed) — sessions remember nothing until it runs.")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"Note: could not start the Muninn memory daemon ({e}).")
+
+
 def open_when_up(url):
     for _ in range(50):
         if answers(url):
@@ -53,6 +74,7 @@ def main(args):
         runpy.run_path(SERVER, run_name="__main__")
         return
     url = "http://127.0.0.1:" + port_from(args)
+    start_muninn()
     if answers(url):
         print("Task board already running: " + url)
         webbrowser.open(url)

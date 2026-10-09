@@ -4,6 +4,8 @@
 # Downloads (or updates) the repo in $env:ONEMORETASK_DIR (default ~\.onemoretask) unless run from a clone,
 # then puts an onemoretask.cmd in ~\.local\bin and adds that folder to your user PATH if needed.
 # Also copies the bundled task-observer Claude skill to ~\.claude\skills (skip: $env:ONEMORETASK_NO_OBSERVER=1),
+# sets up the Claude Code tools the board's sessions use — codebase-memory-mcp, MuninnDB, the context-mode
+# plugin, and the hooks, rules and skills that make sessions use them (skip: $env:ONEMORETASK_NO_TOOLS=1),
 # and makes a OneMoreTask shortcut on the Desktop and in the Start menu (skip: $env:ONEMORETASK_NO_SHORTCUT=1).
 # No `exit` in the body: under `irm | iex` it would close the user's PowerShell window.
 
@@ -141,6 +143,14 @@ function Install-OneMoreTask {
     Write-Host "Installed $shim"
 
     if ($env:ONEMORETASK_NO_OBSERVER -ne '1') { Install-TaskObserver (Join-Path $dir 'skills\task-observer') }
+    # Claude Code tools: pinned codebase-memory-mcp + MuninnDB builds, MCP entries, the context-mode plugin, and
+    # the hooks/rules/skills that make sessions use them. Both scripts keep a user's own files and exit 0.
+    if ($env:ONEMORETASK_NO_TOOLS -ne '1') {
+        foreach ($script in @('setup\install_tools.py', 'setup\install_hooks.py')) {
+            try { & cmd /c "$python `"$(Join-Path $dir $script)`"" }
+            catch { Write-Host "Note: $script did not finish ($($_.Exception.Message)) — skipped." -ForegroundColor Yellow }
+        }
+    }
     if ($env:ONEMORETASK_NO_SHORTCUT -ne '1') { Install-Shortcuts $dir }
 
     $inSession = @($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $bin.TrimEnd('\')
