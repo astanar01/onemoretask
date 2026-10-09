@@ -677,8 +677,32 @@ def launch(p, task_id, model=""):
     where = f", worktree {wt['branch']}" if wt else ""
     reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{where})",
                    "you", session=aid)
+    cli = "codex" if codex.is_model(model) else "claude"
+    agent = {"id": aid, "started": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+             **({"model": model} if model else {}), **({"worktree": wt} if wt else {}), **({"cli": cli} if cli == "codex" else {})}
+    revs = set_agent(p, task_id, agent)
     WATCH.expect(p, task_id, aid)
-    return {"id": aid, "worktree": wt, "cli": "codex" if codex.is_model(model) else "claude"}
+    return {"id": aid, "worktree": wt, "cli": cli, "agent": agent, **revs}
+
+
+def set_agent(p, task_id, agent):
+    """Put the session on the card in tasks.json. The page that sent it saves it too, but that save can be lost (the
+    user switched project during the launch, or a refused save), and a card with no `agent` reads "Ready to send" while
+    its session runs. Returns {"revBefore", "rev"}: the disk revs around this write, so the page can keep saving."""
+    with board_lock(p):
+        with open(p.data, "rb") as f:
+            cur = f.read()
+        state = json.loads(cur.decode("utf-8"))
+        t = next((x for x in state["tasks"] if isinstance(x, dict) and x.get("id") == task_id), None)
+        if not t or t.get("agent"):
+            return {}
+        t["agent"] = agent
+        out = (json.dumps(state, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        fd, tmp = tempfile.mkstemp(dir=p.board, suffix=".tmp")
+        with os.fdopen(fd, "wb") as f:
+            f.write(out)
+        replace_file(tmp, p.data)
+    return {"revBefore": board_rev(p, cur), "rev": board_rev(p, out)}
 
 
 OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")   # log, staged skills, project skills

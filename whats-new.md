@@ -2,6 +2,7 @@
 
 ## 2026-10-09
 
+- A task you send no longer stays on "Ready to send" while Claude is already working on it, even if you switch to another project while it starts.
 - Each helper in the Subagents list now shows how much it holds in mind right now, the same number Claude Code shows, instead of a much bigger running total.
 
 ## 2026-10-07

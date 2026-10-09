@@ -2188,11 +2188,15 @@ async function sendToClaude(t) {
   }
   try {
     const model = $("#d-model").value;
-    const res = await post("/api/agent", { p: P, taskId: t.id, model });
-    const agent = { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
+    const pid = P;
+    const res = await post("/api/agent", { p: pid, taskId: t.id, model });
+    const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
+    // The server already put the session on the card in tasks.json. When disk held our board before that write,
+    // take its rev so our next save is not refused as coming from another window.
+    if (pid === P && res.revBefore && rev === res.revBefore && !saving) rev = res.rev;
     // A poll may have swapped in another window's board while Claude started: put the session on the live card,
-    // and once more if that save is refused, so the watcher never loses a session that is running.
-    for (let i = 0; i < 2; i++) {
+    // and once more if that save is refused. After a project switch the server's write is all the card needs.
+    for (let i = 0; i < 2 && pid === P; i++) {
       t = task(t.id) || t; t.agent = agent; touch(t);
       const g = boardGen;
       await settled();   // the watcher reads t.agent from tasks.json
