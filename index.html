@@ -1013,6 +1013,24 @@ function toggleCollapsed(id) {
   render();
 }
 
+// Unsent reply text per card (one shared textarea), kept in this browser across reloads.
+let replyDrafts = {};
+try { replyDrafts = JSON.parse(localStorage.getItem(LS_KEY + ":drafts") || "{}") || {}; } catch (_) {}
+const draftKey = (id) => P + ":" + id;
+function setReplyDraft(id, text) {
+  if (text) replyDrafts[draftKey(id)] = text; else delete replyDrafts[draftKey(id)];
+  try { localStorage.setItem(LS_KEY + ":drafts", JSON.stringify(replyDrafts)); } catch (_) {}
+  const box = $("#d-reply");
+  if (box.dataset.task === id && box.value !== text) box.value = text;
+}
+// Swap the box to the shown card's draft whenever the panel shows another card.
+function loadReplyDraft(id) {
+  const box = $("#d-reply");
+  if (box.dataset.task === id) return;
+  box.dataset.task = id;
+  box.value = replyDrafts[draftKey(id)] || "";
+}
+
 // Unread = a Review card whose Claude log has an entry newer than the last time you opened it.
 // Per-browser like `collapsed`; with no stored map yet, the first poll marks everything read.
 let seen = null;
@@ -1270,6 +1288,7 @@ function settleDraft() {
 function renderDetail() {
   const t = task(openId);
   if (!t) { closeDetail(); return; }
+  loadReplyDraft(t.id);
   const chain = [];
   for (let p = t.parent && task(t.parent); p; p = p.parent && task(p.parent)) chain.unshift(p);
   $("#d-crumb").innerHTML = chain.length
@@ -2240,7 +2259,7 @@ async function sendFindingsBack(t) {
   if (!to) return;
   const typed = $("#d-reply").value.trim(), text = typed || "Fix the findings you agree with; say which ones you skip and why.";
   const pm = addPending(t, "reply", `Sent the review findings back to ${to}: ${text}`, []);
-  $("#d-reply").value = "";
+  setReplyDraft(t.id, "");
   setStatus(`Sending the findings to ${to}…`);
   refreshAgent(t); render();
   try {
@@ -2249,7 +2268,7 @@ async function sendFindingsBack(t) {
     setStatus(`${to} is fixing the review findings`);
   } catch (e) {
     dropPending(t, pm);
-    if (typed && openId === t.id && !$("#d-reply").value) $("#d-reply").value = typed;
+    if (typed && openId === t.id && !$("#d-reply").value) setReplyDraft(t.id, typed);
     setStatus("Could not send the findings back: " + e.message, true);
   }
   refreshAgent(t); render();
@@ -2354,7 +2373,7 @@ async function sendReply() {
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? "Sending note…" : "Sending reply…");
   const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images);
-  $("#d-reply").value = ""; replyImages = []; renderReplyImages();
+  setReplyDraft(t.id, ""); replyImages = []; renderReplyImages();
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
   // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
@@ -2372,7 +2391,7 @@ async function sendReply() {
     dropPending(t, pm);
     if (t.column !== fromCol) { moveTask(t.id, fromCol, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
     // Hand the unsent message back so nothing typed is lost.
-    if (openId === t.id && !$("#d-reply").value) { $("#d-reply").value = text; replyImages = images; renderReplyImages(); }
+    if (openId === t.id && !$("#d-reply").value) { setReplyDraft(t.id, text); replyImages = images; renderReplyImages(); }
     setStatus("Reply failed: " + e.message, true);
   }
   refreshAgent(t);
@@ -2381,7 +2400,8 @@ async function sendReply() {
 $("#d-reply-send").onclick = sendReply;
 $("#d-reply-attach").onclick = () => $("#d-file").click();
 $("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files], true); e.target.value = ""; });
-$("#d-reply").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
+$("#d-reply").addEventListener("input", (e) => { if (e.target.dataset.task) setReplyDraft(e.target.dataset.task, e.target.value); });
+$("#d-reply").addEventListener("keydown",(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
 
 let pollTimer = null, polledOnce = false;
 async function pollAgents() {

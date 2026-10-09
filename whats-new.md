@@ -4,6 +4,7 @@
 
 - A task you send no longer stays on "Ready to send" while Claude is already working on it, even if you switch to another project while it starts.
 - Each helper in the Subagents list now shows how much it holds in mind right now, the same number Claude Code shows, instead of a much bigger running total.
+- Words you type in a task's message box but don't send now stay with that task. Other tasks show their own box, not yours.
 
 ## 2026-10-07
 
