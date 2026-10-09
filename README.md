@@ -1,20 +1,26 @@
 # onemoretask
 
-A local kanban board that hands cards to Claude Code. Write a task, click **Send to Claude**,
-and the agent works on it in the background, posting its progress, questions and results
-back onto the card.
+A local kanban board that hands cards to Claude Code (or OpenAI's Codex). Write a task, click
+**Send to Claude**, and the agent works on it in the background, posting its progress, questions and
+results back onto the card.
 
-![The board: a task Claude splits across subagents, one waiting on you, one finished, one under code review](docs/screenshots/board.png)
+![The board: a task Claude splits across subagents, a question and a permission request waiting on you, a finished task, and one under code review](docs/screenshots/board.png)
 
-| Claude asks you a question | Claude reports it is done |
+| Claude asks you a question | Claude asks permission |
 |---|---|
-| ![A card with Claude's question and a reply box](docs/screenshots/question.png) | ![A card with Claude's progress, a note you sent while it worked, its final report, and the Review code button](docs/screenshots/finished.png) |
+| ![A card with Claude's question, a Reply in Conversation button and the reply box](docs/screenshots/question.png) | ![A card asking to run npm install, with Allow, Allow always and Deny buttons](docs/screenshots/permission.png) |
+
+| Claude is done: merge or review | Claude works with subagents |
+|---|---|
+| ![The Summary tab of a finished card: the result, its two commits, and Merge worktree to main, Review code and Run app in the Next action box](docs/screenshots/finished.png) | ![A running card with its Subagents list: one finished, two running, each with its context size, time and skills](docs/screenshots/subagents.png) |
 
 ## Requirements
 
 - macOS, Linux or Windows
 - Python 3.7 or newer, and `git`
 - [Claude Code](https://claude.com/claude-code) (the `claude` command), for Send to Claude
+- Optional: OpenAI's [Codex CLI](https://github.com/openai/codex) (the `codex` command), to send a task
+  or a code review to an OpenAI model
 
 Desktop notifications are macOS only. The **Open folder…** dialog works on macOS and Windows;
 on Linux, paste the folder's path. Everything else works the same on all three.
@@ -103,10 +109,11 @@ the git repo you run it from.
    folder. Each project keeps its board in `<project>/.task_board/`. The board
    stays out of git: tasks are not committed. A project with work
    waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions, plus
-   finished cards you have not opened yet.
+   finished cards you have not opened yet. A turning arrow marks projects where Claude is working.
 2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes.
 3. **Send to Claude.** Pick a model (or leave the default) and send. A background Claude
-   session starts in the project folder with the task as its prompt. Tick
+   session starts in the project folder with the task as its prompt. Pick an OpenAI model and
+   the task runs in Codex instead; the card works the same. Tick
    **Divide in subtasks / use subagents** to let it split the work; Claude picks the skills each
    part needs and tells that subagent to load them first. The card then lists each
    subagent (running, finished or stopped), what a running one is doing now and the skills it used.
@@ -119,8 +126,19 @@ the git repo you run it from.
    reorder it inside its column (a subtask stays among its siblings); it can't be dragged to
    another column. To move one by hand, use the Status menu in its panel. Columns drag to reorder.
    A **cache** chip counts down the session's prompt cache. Reply before it runs out
-   ("cache cold") and the reply reads the context from cache, at a lower price.
-5. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
+   ("cache cold") and the reply reads the context from cache, at a lower price. A **ctx** chip
+   (e.g. `38% ctx`) shows how full the session's context is; it turns orange, then red, near the limit.
+   If Claude stops because auto mode's safety check keeps failing, the board starts it again after a minute.
+5. **Open the card.** The left side holds the status, the priority and a **Next action** box that
+   says what to do now (wait, answer, merge, review, mark done) with the button for it. Fold-out rows
+   under it show the subtasks, the subagents, the skills used, the context size, the tokens used
+   (subagents included) and the exact prompt. The right side has four tabs: **Summary** (Claude's
+   result, its commits and whether they are merged), **Changes** (files and commits; click one to see
+   its diff), **Conversation** (every message, with the reply box) and **Images**.
+6. **Answer permission requests.** When Claude stops to ask before running something, the card says
+   "Claude asks permission" with the command. Click **Allow**, **Allow always** or **Deny** on the card;
+   the board answers the prompt in the session for you (macOS and Linux).
+7. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session. You can also write while Claude is still working, to add information or change
    course. That message is a **note**. The board types it straight into the running
    session (`claude attach`, like typing in Claude Code yourself), so Claude reads it as
@@ -128,7 +146,7 @@ the git repo you run it from.
    once it is in. If a permission prompt is on screen, or on Windows, a hook the board
    installs on each session (`inbox.py`) hands it over after the current step instead. Claude answers in the
    language you wrote in, even if the project is in another one.
-6. **Review the code.** A finished card in the Review column has a **Review code** button
+8. **Review the code.** A finished card in the Review column has a **Review code** button
    once the task made a commit (a Claude message on the card names its sha). An **Answer only**
    card gets it only after a reply had Claude go ahead and commit.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
@@ -141,6 +159,9 @@ the git repo you run it from.
    findings. When the other agent reviewed (Codex on Claude's work, or the reverse),
    **Send findings to Claude** (or Codex) hands them back to the session that did the work, with
    your reply box text as the word on which to fix.
+9. **Finish.** **Mark as done** (or **Move to done**) puts the card in Done. Once its session is idle,
+   Claude writes a short recap on the card (what was decided, why, how, what came out) and the board
+   removes the session. A later reply on the card starts a fresh session from that recap.
 
 ### Use a worktree
 
@@ -208,7 +229,16 @@ a step that kept failing, a workflow worth keeping. Every session the board star
 
 ![The Observations window: two observations ticked, one opened to read it](docs/screenshots/observations.png)
 
-The ◐ button in the header switches the theme: System (follows your computer), Light, or Dark.
+**Run full review** in the same window makes a card where Claude checks every open observation against
+your skills and asks you on the card which changes to make.
+
+### Header
+
+- **View**: theme (System, Light or Dark), text size, and whether subtasks show on the board.
+- The gear button: project settings and the **Changelog**, a plain-words list of what changed in the board.
+- The branch menu (e.g. `main`) shows which copy of the board app you are running. It turns orange on a
+  task's worktree; pick another copy to jump to it.
+- **Update** (see [Update](#update)) and a count of cards waiting on you.
 
 To see a session in the terminal: `claude agents` lists them and `claude attach <id>` opens one.
 
