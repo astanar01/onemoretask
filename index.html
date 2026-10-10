@@ -1698,7 +1698,7 @@ function nextAction(t, ag, g) {
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
   const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
-  const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
+  const merge = (cls = "primary") => act(worktreeLabel(t, "merge"), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
   const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
   const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [], busy: true }
@@ -2298,9 +2298,15 @@ async function answerPermission(t, choice, ask) {
   await pollAgents();
   refreshAgent(t);
 }
+// Same text as the server's worktree_label(): the merge names the branch the worktree was made from (not a sha).
+function worktreeLabel(t, action) {
+  if (action === "run") return "Run app from worktree";
+  const base = t.agent && t.agent.worktree && t.agent.worktree.base;
+  return base && !/^[0-9a-f]{7,40}$/.test(base) ? `Merge worktree to ${base}` : "Merge worktree";
+}
 // The server types a canned message into the card's session; its logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
-  const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
+  const label = worktreeLabel(t, action), pm = addPending(t, "reply", label, []);
   setStatus(action === "run" ? "Asking Claude to run the app…" : "Asking Claude to merge…");
   refreshAgent(t); render();
   try {

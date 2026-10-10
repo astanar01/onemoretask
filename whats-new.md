@@ -4,6 +4,10 @@
 
 - When you fix or review the notes Claude keeps about its own skills, Claude now always works right in your project, never in a side copy.
 
+## 2026-10-10
+
+- The merge button now names the branch it merges into, like "Merge worktree to dev". Before, it always said "to main", even when the task was made from another branch and merged there.
+
 ## 2026-10-09
 
 - Installing the board now also sets up the three helpers Claude works with: one that maps your code, one that remembers things between tasks, and one that keeps big outputs out of the way. Starting the board wakes up the memory helper.

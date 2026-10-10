@@ -188,9 +188,9 @@ A finished card in Review then has two more buttons:
 
 - **Run app from worktree**: Claude starts the app from the worktree (a dev server on a spare port,
   the game, a demo) and says on the card how to reach it and how to stop it.
-- **Merge worktree to main**: Claude commits what is left, merges the branch into the branch your
-  checkout is on, then removes the worktree and the branch. If anything goes wrong (a conflict,
-  your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
+- **Merge worktree to *branch*** (e.g. "Merge worktree to dev"): Claude commits what is left, merges the
+  task's branch into the branch your checkout was on when you sent the task, then removes the worktree
+  and the branch. If anything goes wrong (a conflict, your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
 
 A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
 `git init` and commits everything as "Initial commit", except the board folder and `.env` files (`.env`, `.env.*`; `.env.example`,
