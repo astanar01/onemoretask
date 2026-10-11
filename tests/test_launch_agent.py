@@ -38,7 +38,9 @@ p = server.Project(proj)
 os.makedirs(p.board)
 board = {"columns": [{"id": "todo", "name": "To do"}, {"id": "prog", "name": "In Progress"}],
          "tasks": [{"id": "t1", "title": "Plain task", "column": "prog", "order": 0, "worktree": False},
-                   {"id": "t2", "title": "Worktree task", "column": "prog", "order": 1}]}
+                   {"id": "t2", "title": "Worktree task", "column": "prog", "order": 1},
+                   {"id": "t3", "title": "Apply skill observation #1", "column": "prog", "order": 2,
+                    "tags": ["observations"], "worktree": True}]}
 with open(p.data, "w", encoding="utf-8") as f:
     json.dump(board, f)
 
@@ -72,6 +74,13 @@ assert server.set_agent(p, "t1", {"id": "other"}) == {}, "set_agent overwrote an
 assert on_disk("t1")["agent"]["id"] == "abc123"
 print("ok  set_agent never replaces a card's agent")
 
-# ---- (d) the launch log still names the session
+# ---- (d) an observations card never gets a worktree, even with the option on
+wts = git("worktree", "list")
+res = server.launch(p, "t3")
+assert res["worktree"] is None and "worktree" not in on_disk("t3")["agent"], res
+assert git("worktree", "list") == wts, "an observations card made a worktree"
+print("ok  an observations card runs in the project folder")
+
+# ---- (e) the launch log still names the session
 assert any(e.get("status") == "launch" and e.get("session") == "abc123" for e in reports.read(p.board, "t1"))
 print("all launch-agent tests passed")

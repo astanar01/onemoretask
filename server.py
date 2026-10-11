@@ -645,10 +645,15 @@ def trust_folder(p):
             raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
 
 
+def no_worktree_tag(t):
+    return "observations" in (t.get("tags") or [])
+
+
 def launch(p, task_id, model=""):
     """Start the task's session; {"id", "worktree", "cli"} (the worktree record, or None; "claude" or "codex").
 
-    The task's own `worktree` field decides the worktree (missing = on); "Answer only" never gets one."""
+    The task's own `worktree` field decides the worktree (missing = on); "Answer only" and observations cards
+    (Apply / Run full review, tag "observations": they edit the live skills and logs) never get one."""
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -658,7 +663,7 @@ def launch(p, task_id, model=""):
     name = "task: " + t["title"][:60]
     exclude_local(p)
     made = []
-    use_wt = t.get("worktree", True) and not t.get("answerOnly")  # an answer changes no files
+    use_wt = t.get("worktree", True) and not t.get("answerOnly") and not no_worktree_tag(t)  # an answer changes no files
     wt = make_worktree(p, t, made) if use_wt else None
     try:
         prompt = build_prompt(p, state, t, wt, model)

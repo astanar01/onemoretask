@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-11
+
+- When you fix or review the notes Claude keeps about its own skills, Claude now always works right in your project, never in a side copy.
+
 ## 2026-10-09
 
 - Installing the board now also sets up the three helpers Claude works with: one that maps your code, one that remembers things between tasks, and one that keeps big outputs out of the way. Starting the board wakes up the memory helper.

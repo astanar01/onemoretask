@@ -1308,14 +1308,14 @@ function renderDetail() {
   $("#d-delegate").checked = !!t.delegate;
   renderSubmodel(t);
   $("#d-answeronly").checked = !!t.answerOnly;
-  $("#d-worktree").checked = t.worktree !== false;   // missing = on (cards made before the option)
+  $("#d-worktree").checked = t.worktree !== false && !obsCard(t);   // missing = on (cards made before the option)
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
   const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
   $("#d-delegate").disabled = sent;
   $("#d-submodel").disabled = sent || !t.delegate;
   $("#d-answeronly").disabled = sent;
-  $("#d-worktree").disabled = sent || !!t.answerOnly;
+  $("#d-worktree").disabled = sent || !!t.answerOnly || obsCard(t);
   $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
@@ -2573,13 +2573,15 @@ function obsNotes(list) {
     "The Apply click also approves the install: stage each change the way the skill says, then in this same session copy the staged file over the live skill (the folder the skill loads from) and check the live file has the change. Only then mark each observation actioned in the file listed (edit its status line in place). A change that is staged but not installed does not count as applied.",
     "If one needs a decision (new skill, removing content, conflicting), ask on the card instead of guessing."].join("\n");
 }
+// Observations cards edit the live skills and logs, so they always run in the project folder (server.py agrees).
+function obsCard(t) { return (t.tags || []).includes("observations"); }
 function obsTitle(list) { return list.length === 1 ? `Apply skill observation #${list[0].id}` : `Apply ${list.length} skill observations`; }
 
 async function applyObservations() {
   const list = obsList().filter((o) => obsSel.has(o.key));
   if (!list.length) return;
   const t = addTask(obsTitle(list), firstOpenCol());
-  t.notes = obsNotes(list); t.tags = ["observations"]; touch(t);
+  t.notes = obsNotes(list); t.tags = ["observations"]; t.worktree = false; touch(t);
   obsSel.clear(); closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
   $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
@@ -2599,7 +2601,7 @@ function reviewNotes() {
 
 async function runFullReview() {
   const t = addTask("Run the full skill review", firstOpenCol());
-  t.notes = reviewNotes(); t.tags = ["observations"]; touch(t);
+  t.notes = reviewNotes(); t.tags = ["observations"]; t.worktree = false; touch(t);
   closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
   $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
