@@ -1003,6 +1003,15 @@ def review(p, task_id, level, model=None):
     return aid
 
 
+def review_column(columns):
+    """Id of the board's Review column: the one with role "review", else (old boards) the first not-done
+    column whose name says review. A rename (or a French name) never breaks a column that has the role."""
+    cols = [c for c in columns if isinstance(c, dict) and not c.get("done")]
+    if not any(c.get("role") == "review" for c in columns if isinstance(c, dict)):
+        return next((c["id"] for c in cols if re.search("review", c.get("name", ""), re.I)), None)
+    return next((c["id"] for c in cols if c.get("role") == "review"), None)
+
+
 def review_worker(log, t):
     """The session whose work the card's last code review looked at (the card's session before that review), or None
     when the card had no review."""
@@ -2000,7 +2009,7 @@ class Watcher:
                 state = boards[p.id]
                 t = state and next((x for x in state["tasks"] if x.get("id") == a["id"]), None)
                 cols = {c["id"]: c for c in (state or {}).get("columns", [])}
-                review = next((c["id"] for c in cols.values() if not c.get("done") and re.search("review", c.get("name", ""), re.I)), None)
+                review = review_column(cols.values())
                 col = t and cols.get(t.get("column"))
                 # The page puts finished work on top of Review even when it was there, so a move shows as a new
                 # "updated"; a card in a done column or a board with no Review column has nothing to wait for.

@@ -717,9 +717,19 @@ let draftId = null;        // task made by "+ Add task"; dropped on close if lef
 let drag = null;           // the column being dragged: { id }, or the card: { card, box } (box = its sibling list)
 
 function defaultState() {
-  const cols = [["To Do", false], ["In Progress", false], ["Review", false], ["Done", true]]
-    .map(([name, done]) => ({ id: uid(), name, done }));
+  const cols = [["To Do", false], ["In Progress", false, "progress"], ["Review", false, "review"], ["Done", true]]
+    .map(([name, done, role]) => (role ? { id: uid(), name, done, role } : { id: uid(), name, done }));
   return { version: 1, columns: cols, tasks: [] };
+}
+const ROLE_NAMES = { review: /review/i, progress: /progress|doing/i };
+// Old boards have no roles: give them to the columns found by name, so a later rename keeps them. True if changed.
+function tagRoles(board) {
+  let changed = false;
+  for (const role of Object.keys(ROLE_NAMES)) {
+    const c = !board.columns.some((x) => x.role === role) && colRole(role, board.columns);
+    if (c && !c.role) { c.role = role; changed = true; }
+  }
+  return changed;
 }
 
 // ---------------------------------------------------------------- persistence
@@ -733,6 +743,7 @@ async function load() {
     $("#banner").style.display = "block";
     try { state = JSON.parse(localStorage.getItem(LS_KEY)); } catch (_) { state = null; }
     state = state || defaultState();
+    tagRoles(state);
     return;
   }
   let last = null;
@@ -748,7 +759,8 @@ async function fetchBoard() {
   // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
   const extra = board.columns.filter((c) => c.done).slice(0, -1);
   extra.forEach((c) => { c.done = false; });
-  return { board, rev: r.headers.get("X-Board-Rev"), fixed: extra.length > 0 };
+  const tagged = tagRoles(board);
+  return { board, rev: r.headers.get("X-Board-Rev"), fixed: extra.length > 0 || tagged };
 }
 async function loadTasks() {
   state = defaultState();
@@ -1048,7 +1060,7 @@ const lastClaudeAt = (id) => {
   return 0;
 };
 function isUnread(t) {
-  const review = colNamed(/review/i);
+  const review = colRole("review");
   return !!(t.agent && review && t.column === review.id && lastClaudeAt(t.id) > (seen[t.id] || 0));
 }
 function markSeen(ids) {
@@ -1489,8 +1501,12 @@ function tickCache() {
   if (o && o.agent && agents[o.id]) renderCacheNote(agents[o.id]);
 }
 setInterval(tickCache, 15000);
-const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
-function inReview(t) { const r = colNamed(/review/i); return !!(r && t.column === r.id); }
+// The Review / In Progress column: found by its role, so renaming it keeps it working; by name on old boards.
+function colRole(role, cols = state.columns) {
+  if (!cols.some((c) => c.role === role)) return cols.find((c) => !c.done && ROLE_NAMES[role].test(c.name));
+  return cols.find((c) => !c.done && c.role === role);
+}
+function inReview(t) { const r = colRole("review"); return !!(r && t.column === r.id); }
 // No "Move to done" while Claude still has work: running, a reply in flight, or a reply it has not answered yet.
 function canFinish(t) {
   if (!inReview(t)) return false;
@@ -1750,7 +1766,7 @@ function nextAction(t, ag, g) {
       actions: replyOpen(t) ? [toReply()] : [] };
   }
   // Finished (or last message is a done report): what is there to review, merge, or complete?
-  if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colNamed(/review/i) ? [act(window.t("Move to {col}", { col: window.t(colNamed(/review/i).name) }), "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
+  if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colRole("review") ? [act(window.t("Move to {col}", { col: window.t(colRole("review").name) }), "sec", () => { moveTask(t.id, colRole("review").id, null); renderDetail(); render(); })] : [] };
   if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
   if (g === undefined || g === null) return { title: window.t("Ready for review"), text: g === null ? window.t("Checking the repository state…") : window.t("Repository state not loaded yet."), actions: [...review("primary"), ...extra] };
@@ -2208,7 +2224,7 @@ async function sendToClaude(t) {
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
-  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); $("#d-col").value = t.column;
   const gen = boardGen;
@@ -2392,7 +2408,7 @@ async function sendReply() {
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
   // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
-  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  const fromCol = t.column, prog = colRole("progress");
   if (isDone(t) && prog) {
     moveTask(t.id, prog.id, null);
     render(); $("#d-col").value = t.column;
@@ -2444,7 +2460,7 @@ async function pollAgents() {
     for (const [id, a] of Object.entries(next)) {
       const t = task(id), was = agents[id] && agents[id].phase;
       if (!t) continue;
-      const review = colNamed(/review/i), prog = colNamed(/progress|doing/i);
+      const review = colRole("review"), prog = colRole("progress");
       // A finish the page never saw change (closed tab, reload, server restart) still reaches Review
       // if Claude's last message is newer than the card's last edit or move.
       const last = [...(a.log || [])].reverse().find((e) => e.from !== "you");

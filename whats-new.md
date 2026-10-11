@@ -2,6 +2,7 @@
 
 ## 2026-10-11
 
+- Renaming the Review or In Progress column no longer stops cards from moving there on their own.
 - The board can now talk French. Open the View menu, pick Français under Language, and everything on the page changes. Pick English to go back.
 - When you tick "Answer only", the "Use a worktree" box now shows as off, because Claude won't use a side copy for it. Untick "Answer only" and your old choice comes back.
 - When you fix or review the notes Claude keeps about its own skills, Claude now always works right in your project, never in a side copy.
