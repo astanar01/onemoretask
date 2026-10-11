@@ -21,6 +21,11 @@ card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
   `<dir>` to `~/.config/task_board/projects.json`, the registry the real board reads.
   Start the test server with `HOME=<tmp>/home` so the throwaway project never lands
   there.
+- That fake HOME also logs out every CLI backend. For a Codex test keep its login with
+  `CODEX_HOME=~/.codex`; `claude agents --json --all` fails in a fresh HOME, so the
+  launcher replaces `server.list_sessions` with `lambda cwd: []` before `server.main()`
+  (`--port`, `--project`). An API-driven test must `PUT` `task.agent` itself: the page
+  normally does it after `/api/agent`.
 - When the real board is already running, serve `server.Handler` under a
   `ThreadingHTTPServer` from a small script instead of `server.py main()`: `main()`
   also starts the session watcher, and a second watcher would act on live sessions.
@@ -45,6 +50,15 @@ card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
   trusted folder — a scratch dir fails with "Workspace not trusted"), then read
   `claude agents --json --all` and `~/.claude/jobs/<id>/state.json`. Then `claude stop`
   and `claude rm` it. The field is often already there.
+
+## Measuring card sessions from transcripts
+
+A card session in `~/.claude/projects` is one whose FIRST non-meta user message starts
+with the card prompt ("Work on this task from the project task board") and whose project
+folder is not a temp dir (`-T…`, `var-folders`). Matching the card text anywhere in a
+transcript also picks up the recap runs (`claude -p` in a temp dir, no tools), which embed
+it: once 158 of 159 matches were recaps and every number on the card was wrong. Before
+reporting numbers, check the sample: does it have `tool_use` calls, and are sizes plausible?
 
 ## Screenshots of the running board
 

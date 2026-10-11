@@ -245,7 +245,9 @@ def untake_notes(board, task_id, notes, since):
 
 
 LANGUAGE_RULE = ("Answer in the language the user wrote their latest message in (the task notes, or their newest "
-                 "reply), even when the app or project you work on uses another language.")
+                 "reply), even when the app or project you work on uses another language. A task ABOUT a "
+                 "language (translating, adding French) is not a request to answer in it: check the language "
+                 "of the user's latest message each time you write a report.")
 
 
 def notes_message(board, notes):

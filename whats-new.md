@@ -5,6 +5,7 @@
 - The Update button now puts in the new version even when you changed things in your copy, and keeps your changes. If the two don't fit together, it stops, changes nothing and tells you why.
 - Renaming the Review or In Progress column no longer stops cards from moving there on their own.
 - The board can now talk French. Open the View menu, pick Français under Language, and everything on the page changes. Pick English to go back.
+- When a card's job is about another language, like translating into French, Claude now still answers you in the language you wrote in.
 - When you tick "Answer only", the "Use a worktree" box now shows as off, because Claude won't use a side copy for it. Untick "Answer only" and your old choice comes back.
 - When you fix or review the notes Claude keeps about its own skills, Claude now always works right in your project, never in a side copy.
 

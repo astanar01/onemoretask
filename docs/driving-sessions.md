@@ -33,6 +33,11 @@ option's label, not its number: the menu varies (measured on a Bash prompt: `1. 
 mode`, `4. No`). Allow always never picks the auto-mode option. Number keys answer at once,
 no Enter needed.
 
+Test any change here with more than short one-line commands: a command past 800 characters
+(a 20-line heredoc), two parallel tool calls (the next prompt shows right after the key),
+and a mismatch (the card's command is not the one on screen, so no key is pressed). The
+first version passed one-liners only and did nothing for the user on both of the first two.
+
 ## The keys (measured)
 
 - **Ctrl+B** sent through `claude attach` does nothing.
