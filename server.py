@@ -1295,7 +1295,7 @@ def phase_of(session, log, launched_at):
         if last.get("from") == "claude" and last.get("status") == "progress":
             return "needs_you", "Stopped after a progress note without reporting done — reply to check on it" + (f" (CLI: {detail})" if detail else "")
         if is_codex(session):  # no attach and no permission prompts in Codex
-            return "needs_you", f"Stopped in the session{': ' + detail if detail else ''} — reply to check on it"
+            return "needs_you", f"Stopped in the session: {detail} — reply to check on it" if detail else "Stopped in the session — reply to check on it"
         if detail:
             return "needs_you", f"Stopped in the session: {detail} — reply, or attach if it asks for a permission"
         return "needs_you", "Waiting on a permission prompt or a question in the session — attach to answer"
@@ -1880,8 +1880,8 @@ class Watcher:
                 stalled = None
             unstalling = bool(stalled) and stall_retries(said) < STALL_TRIES and self.unstall_fail.get(key) != stalled
             if stalled:
-                reason = "Claude Code's safety check kept failing, so Claude stopped. " + (
-                    "The board tries again in a minute." if unstalling else "Reply to try again.")
+                reason = ("Claude Code's safety check kept failing, so Claude stopped. The board tries again in a minute."
+                          if unstalling else "Claude Code's safety check kept failing, so Claude stopped. Reply to try again.")
             if (unstalling and not pending and key not in self.delivering and key not in self.closing
                     and time.time() - stalled > STALL_RETRY):
                 self.delivering.add(key)
