@@ -37,6 +37,7 @@ const I18N = {
     "Medium": "Moyenne",
     "High": "Haute",
     "Tags (comma separated)": "Tags (séparés par des virgules)",
+    "Add this tag": "Ajouter ce tag",
     "The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)": "L’agent planifie d’abord le découpage du travail, puis confie les parties à des sous-agents (l’outil Agent de Claude, ou les workers de Codex)",
     "Divide in subtasks / use subagents": "Découper en sous-tâches / utiliser des sous-agents",
     "Subagent model": "Modèle des sous-agents",
