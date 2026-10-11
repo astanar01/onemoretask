@@ -2633,7 +2633,7 @@ $("#obs-modal").addEventListener("mousedown", (e) => { if (e.target.id === "obs-
 
 // ---------------------------------------------------------------- changelog
 // The board app's own changes in plain words (whats-new.md), and the ones Update would bring.
-const dayName = (d) => { const t = new Date(d + "T12:00"); return isNaN(t) ? d : t.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); };
+const dayName = (d) => { const t = new Date(d + "T12:00"); return isNaN(t) ? d : t.toLocaleDateString(LOCALE, { month: "long", day: "numeric", year: "numeric" }); };
 function fmtChangelog(list) {
   let out = "", day = null;
   for (const c of list) {
@@ -2789,7 +2789,7 @@ function fmtMsg(text) {
   }
   return out;
 }
-function fmt(iso) { return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
+function fmt(iso) { return iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
 // Text size is a per-browser view preference, like collapsed groups.
 function applyTextSize(v) { document.documentElement.style.setProperty("--ts", v); $("#text-size").value = v; }
