@@ -2,6 +2,7 @@
 
 ## 2026-10-11
 
+- Pressing the orange "Update available" button now opens a small box that tells you why the board can't update by itself, instead of doing nothing.
 - Renaming the Review or In Progress column no longer stops cards from moving there on their own.
 - The board can now talk French. Open the View menu, pick Français under Language, and everything on the page changes. Pick English to go back.
 - When you tick "Answer only", the "Use a worktree" box now shows as off, because Claude won't use a side copy for it. Untick "Answer only" and your old choice comes back.

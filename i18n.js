@@ -459,6 +459,7 @@ const I18N = {
     "Theme": "Thème",
     "Theme: {name} (click to change)": "Thème : {name} (cliquer pour changer)",
     "Click to check again": "Cliquer pour vérifier à nouveau",
+    "Check again": "Vérifier à nouveau",
     "Checking…": "Vérification…",
     "Checking GitHub for updates": "Recherche de mises à jour sur GitHub",
     "Update": "Mettre à jour",
