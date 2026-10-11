@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Task Board</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237a4fd6'/%3E%3Cg fill='%23fff'%3E%3Crect x='5' y='6' width='6' height='5' rx='1.5'/%3E%3Crect x='5' y='13' width='6' height='5' rx='1.5'/%3E%3Crect x='5' y='20' width='6' height='5' rx='1.5'/%3E%3Crect x='13' y='6' width='6' height='5' rx='1.5'/%3E%3Crect x='13' y='13' width='6' height='5' rx='1.5'/%3E%3Crect x='21' y='6' width='6' height='5' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
-<script>try { const t = localStorage.getItem("task-board:theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}</script>
+<script>try { const th = localStorage.getItem("task-board:theme"); if (th) document.documentElement.dataset.theme = th; } catch (_) {}</script>
+<script src="i18n.js"></script>
 <style>
 :root {
   --ts: 1;
@@ -561,12 +562,13 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <button class="pop-row" id="theme"></button>
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
+  <label class="pop-row"><span>Language</span><select id="lang" title="Language"><option value="en">English</option><option value="fr">Français</option></select></label>
 </div>
 <div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
   <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
   <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
 </div>
-<div id="banner">Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
+<div id="banner" data-i18n>Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
 
 <div id="overlay">
@@ -620,7 +622,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <button class="iconbtn" id="d-x" title="Close (Esc)"><span data-ico="x" data-s="18"></span></button>
       </div>
       <div class="menu" id="d-menu" role="menu" hidden>
-        <button role="menuitem" id="d-copy-attach"><span data-ico="copy" data-s="14"></span>Copy <code>claude attach</code> command</button>
+        <button role="menuitem" id="d-copy-attach"><span data-ico="copy" data-s="14"></span><span data-i18n>Copy <code>claude attach</code> command</span></button>
         <button role="menuitem" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first"><span data-ico="trash" data-s="14"></span>Delete worktree…</button>
         <button role="menuitem" class="danger" id="d-delete"><span data-ico="trash" data-s="14"></span>Delete task</button>
       </div>
@@ -665,12 +667,12 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 <div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
 <div id="trust-modal" role="dialog" aria-modal="true" aria-labelledby="trust-title"><div class="box">
   <h3 id="trust-title">Trust this folder?</h3>
-  <p>Claude doesn't trust <b id="trust-path"></b> yet. Trusting it lets Claude read, edit and run files in this folder, the same as accepting the prompt in <code>claude</code>.</p>
+  <p data-i18n>Claude doesn't trust <b id="trust-path"></b> yet. Trusting it lets Claude read, edit and run files in this folder, the same as accepting the prompt in <code>claude</code>.</p>
   <div class="actions"><button class="btn" id="trust-no">Cancel</button><button class="btn primary" id="trust-yes">Trust folder and send</button></div>
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <p data-i18n><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
   <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn" id="repo-nowt">Send without a worktree</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="wtdel-modal" role="dialog" aria-modal="true" aria-labelledby="wtdel-title"><div class="box">
@@ -700,6 +702,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 "use strict";
 const LS_KEY = "task-board";
 const $ = (s) => document.querySelector(s);
+translateDom(document.body);   // i18n.js: static markup in the chosen language; dynamic text goes through t()
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
@@ -714,9 +717,19 @@ let draftId = null;        // task made by "+ Add task"; dropped on close if lef
 let drag = null;           // the column being dragged: { id }, or the card: { card, box } (box = its sibling list)
 
 function defaultState() {
-  const cols = [["To Do", false], ["In Progress", false], ["Review", false], ["Done", true]]
-    .map(([name, done]) => ({ id: uid(), name, done }));
+  const cols = [["To Do", false], ["In Progress", false, "progress"], ["Review", false, "review"], ["Done", true]]
+    .map(([name, done, role]) => (role ? { id: uid(), name, done, role } : { id: uid(), name, done }));
   return { version: 1, columns: cols, tasks: [] };
+}
+const ROLE_NAMES = { review: /review/i, progress: /progress|doing/i };
+// Old boards have no roles: give them to the columns found by name, so a later rename keeps them. True if changed.
+function tagRoles(board) {
+  let changed = false;
+  for (const role of Object.keys(ROLE_NAMES)) {
+    const c = !board.columns.some((x) => x.role === role) && colRole(role, board.columns);
+    if (c && !c.role) { c.role = role; changed = true; }
+  }
+  return changed;
 }
 
 // ---------------------------------------------------------------- persistence
@@ -730,6 +743,7 @@ async function load() {
     $("#banner").style.display = "block";
     try { state = JSON.parse(localStorage.getItem(LS_KEY)); } catch (_) { state = null; }
     state = state || defaultState();
+    tagRoles(state);
     return;
   }
   let last = null;
@@ -740,12 +754,13 @@ async function load() {
 }
 async function fetchBoard() {
   const r = await fetch(api("/api/tasks"), { cache: "no-store" });
-  if (!r.ok) throw new Error("server said " + r.status);
+  if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
   const board = (await r.json()) || defaultState();
   // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
   const extra = board.columns.filter((c) => c.done).slice(0, -1);
   extra.forEach((c) => { c.done = false; });
-  return { board, rev: r.headers.get("X-Board-Rev"), fixed: extra.length > 0 };
+  const tagged = tagRoles(board);
+  return { board, rev: r.headers.get("X-Board-Rev"), fixed: extra.length > 0 || tagged };
 }
 async function loadTasks() {
   state = defaultState();
@@ -761,8 +776,8 @@ async function loadTasks() {
   $("#board").style.display = P ? "" : "none";
   renderProjects();
   updateWaiting();
-  if (p) setStatus("Saving to " + p.board.replace(p.path, p.name) + "/tasks.json");
-  else setStatus("Open a project folder to start");
+  if (p) setStatus(t("Saving to {path}", { path: p.board.replace(p.path, p.name) + "/tasks.json" }));
+  else setStatus(t("Open a project folder to start"));
 }
 // Swaps in the board as saved on disk (another window changed it). force: replace it even if an edit made
 // meanwhile is waiting to save (the 409 path); without it such an edit wins and the reload is dropped.
@@ -778,7 +793,7 @@ async function reloadBoard(force = false) {
     if (openId) { if (task(openId)) renderDetail(); else closeDetail(); }
     return true;
   } catch (e) {
-    setStatus("Could not reload the board: " + e.message, true);
+    setStatus(t("Could not reload the board: {error}", { error: t(e.message) }), true);
     return false;
   }
 }
@@ -800,15 +815,15 @@ function renderProjects() {
     const n = attentionCount(p), name = dup(p.name) ? p.path.replace(/^\/Users\/[^/]+/, "~") : p.name;
     return n ? `${name} * (${n})` : name;
   };
-  const html = (P ? "" : `<option value="" disabled>No project</option>`)
+  const html = (P ? "" : `<option value="" disabled>${t("No project")}</option>`)
     + projects.map((p) => `<option value="${p.id}" title="${esc(p.path)}">${esc(label(p))}</option>`).join("")
-    + `<option disabled>──────────</option><option value=":pick">Open folder…</option><option value=":path">Open a path…</option>`
-    + (P ? `<option value=":forget">Remove this project from the list</option>` : "");
+    + `<option disabled>──────────</option><option value=":pick">${t("Open folder…")}</option><option value=":path">${t("Open a path…")}</option>`
+    + (P ? `<option value=":forget">${t("Remove this project from the list")}</option>` : "");
   if (sel.innerHTML !== html) sel.innerHTML = html;   // rebuilding closes an open menu, so only on change
   sel.value = P || "";
   const others = projects.filter((p) => p.id !== P && attentionCount(p));
   const waiting = others.map((p) => p.name);
-  sel.title = (project() ? project().path : "Project") + (waiting.length ? "\nNeeds you: " + waiting.join(", ") : "");
+  sel.title = (project() ? project().path : t("Project")) + (waiting.length ? "\n" + t("Needs you: {list}", { list: waiting.join(", ") }) : "");
   // The closed picker shows only this project, so a star inside it says another project needs you.
   $("#others-waiting").hidden = !others.length || !useServer;
   $("#project-wrap").classList.toggle("others", others.length > 0);
@@ -819,19 +834,19 @@ async function switchProject(id) {
   await settled();
   openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
   P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
-  try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
+  try { await loadTasks(); } catch (e) { setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true); }
   render(); pollAgents();
 }
 
 async function openFolder(how, path) {
-  setStatus(how === "pick" ? "Choose a folder in the dialog…" : "Opening…");
+  setStatus(how === "pick" ? t("Choose a folder in the dialog…") : t("Opening…"));
   try {
     const res = how === "pick" ? await post("/api/projects/pick", {}) : await post("/api/projects", { path });
     if (res.cancelled) { setStatus(""); return; }
     projects = await (await fetch("/api/projects", { cache: "no-store" })).json();
     await switchProject(res.id);
   } catch (e) {
-    setStatus("Open folder failed: " + e.message, true);
+    setStatus(t("Open folder failed: {error}", { error: t(e.message) }), true);
     if (how === "pick") showPathInput();
   }
 }
@@ -851,7 +866,7 @@ function buildProjectMenu() {
     if (o.disabled) return o.textContent.startsWith("─") ? `<div class="pop-sep"></div>` : "";
     const on = o.value === sel.value, p = projects.find((x) => x.id === o.value);
     const busy = p && ((p.attention || {}).working || []).length;
-    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}${busy ? "\nClaude is working here" : ""}">`
+    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}${busy ? "\n" + t("Claude is working here") : ""}">`
       + `<span class="ck">${on ? "✓" : ""}</span>${esc(o.textContent)}${busy ? turning(14) : ""}</button>`;
   }).join("");
 }
@@ -879,7 +894,7 @@ $("#project").addEventListener("change", async (e) => {
 
 let saveTimer = null;
 function save() {
-  setStatus("Saving…");
+  setStatus(t("Saving…"));
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 300);
 }
@@ -890,8 +905,8 @@ function flush(keepalive = false) {
   saveTimer = null;
   if (useServer && !P) return Promise.resolve();
   if (!useServer) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); setStatus("Saved"); }
-    catch (e) { setStatus("Save failed: " + e.message, true); }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); setStatus(t("Saved")); }
+    catch (e) { setStatus(t("Save failed: {error}", { error: t(e.message) }), true); }
     return Promise.resolve();
   }
   if (keepalive) return putBoard(true);   // the page is going away: no time to wait for the queue
@@ -917,16 +932,16 @@ async function putBoard(keepalive) {
     if (r.status === 409) {
       if (!keepalive && pid === P && await reloadBoard(true)) {
         skip = queued;
-        setStatus("The board changed in another window, so it was reloaded. Please redo your last change.", true);
+        setStatus(t("The board changed in another window, so it was reloaded. Please redo your last change."), true);
       }
       return;
     }
-    if (!r.ok) throw new Error("server said " + r.status);
+    if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
     const next = r.headers.get("X-Board-Rev");
     if (next !== null && pid === P) rev = next;
-    setStatus("Saved");
+    setStatus(t("Saved"));
   } catch (e) {
-    setStatus("Save failed: " + e.message, true);
+    setStatus(t("Save failed: {error}", { error: t(e.message) }), true);
   }
 }
 // The task panel covers the header status, so while it is open an error also shows inside it, above its buttons.
@@ -1045,7 +1060,7 @@ const lastClaudeAt = (id) => {
   return 0;
 };
 function isUnread(t) {
-  const review = colNamed(/review/i);
+  const review = colRole("review");
   return !!(t.agent && review && t.column === review.id && lastClaudeAt(t.id) > (seen[t.id] || 0));
 }
 function markSeen(ids) {
@@ -1092,16 +1107,16 @@ function render() {
     const head = document.createElement("div");
     head.className = "col-head";
     head.draggable = true;
-    head.innerHTML = `<input class="name" value="${esc(col.name)}" title="Rename column">
-      ${col.done ? '<span class="done-flag" title="Tasks here count as done">done</span>' : ""}
+    head.innerHTML = `<input class="name" value="${esc(t(col.name))}" title="${t("Rename column")}">
+      ${col.done ? `<span class="done-flag" title="${t("Tasks here count as done")}">${t("done")}</span>` : ""}
       <span class="count">${cards.length}</span>
-      <button class="icon" data-act="del" title="Delete column (only when empty)">✕</button>`;
+      <button class="icon" data-act="del" title="${t("Delete column (only when empty)")}">✕</button>`;
     const name = head.querySelector(".name");
     name.addEventListener("change", () => { col.name = name.value.trim() || col.name; save(); render(); });
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); });
     name.addEventListener("mousedown", (e) => e.stopPropagation());
     head.querySelector('[data-act="del"]').onclick = () => {
-      if (state.tasks.some((t) => t.column === col.id)) { setStatus(`"${col.name}" still has tasks — move them first`, true); return; }
+      if (state.tasks.some((t) => t.column === col.id)) { setStatus(t("\"{col}\" still has tasks — move them first", { col: t(col.name) }), true); return; }
       if (state.columns.length <= 1) return;
       state.columns = state.columns.filter((c) => c !== col); save(); render();
     };
@@ -1128,7 +1143,7 @@ function render() {
 
   const addCol = document.createElement("div");
   addCol.className = "add-col";
-  addCol.innerHTML = `<button class="btn">+ Add column</button>`;
+  addCol.innerHTML = `<button class="btn">${t("+ Add column")}</button>`;
   addCol.firstChild.onclick = () => {
     const doneIdx = state.columns.findIndex((c) => c.done);
     const c = { id: uid(), name: "New column", done: false };
@@ -1166,21 +1181,21 @@ function cardEl(t, top, nestedCount) {
   el.innerHTML = `
     ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
     <div class="row">
-      ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? "Expand" : "Collapse"} subtasks"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
-      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: "High", med: "Medium", low: "Low" }[t.priority]} priority"></span>` : ""}${esc(t.title)}</div>
-      ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
+      ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? window.t("Expand subtasks") : window.t("Collapse subtasks")}"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: window.t("High priority"), med: window.t("Medium priority"), low: window.t("Low priority") }[t.priority]}"></span>` : ""}${esc(t.title)}</div>
+      ${nestedCount && shut ? `<span class="hidden-count" title="${window.t("Hidden subtasks")}">+${nestedCount}</span>` : ""}
     </div>
     ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length) ? `<div class="meta">
-      ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
-      ${t.notes ? `<span title="Has notes">≡</span>` : ""}
-      ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
-      ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${who(t)} session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${kids.length ? `<span class="progress" title="${window.t("{done} of {total} subtasks done", { done: doneKids, total: kids.length })}"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
+      ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
+      ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
+      ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? window.t("Code review") : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
-    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="A fresh ${reviewer(t)} session code-reviews this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
+    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
+    ${canReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits ({level} budget)", { who: reviewer(t), level: esc(reviewLevel()) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1195,7 +1210,7 @@ function addCardEl(col) {
   const wrap = document.createElement("div");
   wrap.className = "add-card";
   const btn = document.createElement("button");
-  btn.textContent = "+ Add task";
+  btn.textContent = t("+ Add task");
   btn.onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
   wrap.appendChild(btn);
   return wrap;
@@ -1294,13 +1309,13 @@ function renderDetail() {
   const chain = [];
   for (let p = t.parent && task(t.parent); p; p = p.parent && task(p.parent)) chain.unshift(p);
   $("#d-crumb").innerHTML = chain.length
-    ? "Subtask of " + chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ")
-    : "Task";
+    ? window.t("Subtask of {chain}", { chain: chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ") })
+    : window.t("Task");
   $("#d-crumb").style.display = t.agent && !chain.length ? "none" : "";
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
-  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(window.t(c.name))}</option>`).join("");
   $("#d-col").value = t.column;
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
@@ -1320,16 +1335,16 @@ function renderDetail() {
   renderImages(t);
 
   const kids = children(t.id);
-  $("#d-subcount").textContent = kids.length ? `(${kids.filter(isDone).length}/${kids.length} done)` : "";
+  $("#d-subcount").textContent = kids.length ? window.t("({done}/{total} done)", { done: kids.filter(isDone).length, total: kids.length }) : "";
   const ul = $("#d-subs");
   ul.innerHTML = "";
   for (const k of kids) {
     const li = document.createElement("li");
     li.className = isDone(k) ? "done" : "";
     const n = children(k.id).length;
-    li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="Done">
-      <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${n} sub</span>` : ""}
-      <span class="c">${esc((column(k.column) || {}).name || "")}</span>`;
+    li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="${window.t("Done")}">
+      <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${window.t("{n} sub", { n })}</span>` : ""}
+      <span class="c">${esc(window.t((column(k.column) || {}).name || ""))}</span>`;
     li.querySelector("input").onchange = (e) => { moveTask(k.id, e.target.checked ? doneCol() : firstOpenCol(), null, false); renderDetail(); };
     li.querySelector(".t").onclick = () => { openId = k.id; renderDetail(); };
     ul.appendChild(li);
@@ -1338,7 +1353,7 @@ function renderDetail() {
   $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
   $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (t.agent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
   renderAgent(t);
-  $("#d-dates").textContent = `Updated ${fmt(t.updated)} · Created ${fmt(t.created)}`;
+  $("#d-dates").textContent = window.t("Updated {updated} · Created {created}", { updated: fmt(t.updated), created: fmt(t.created) });
   disarmDelete();
 }
 
@@ -1360,7 +1375,7 @@ function syncWorktreeBox(t) {
   box.checked = t.worktree !== false && !off;   // missing = on (cards made before the option)
   box.disabled = off;
   label.dataset.tip ??= label.title;
-  label.title = t.answerOnly ? "Off: an answer-only task changes nothing, so it needs no worktree" : label.dataset.tip;
+  label.title = t.answerOnly ? window.t("Off: an answer-only task changes nothing, so it needs no worktree") : label.dataset.tip;
 }
 $("#d-worktree").addEventListener("change", (e) => { const t = task(openId); t.worktree = e.target.checked; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
@@ -1383,7 +1398,7 @@ $("#d-more").onclick = () => toggleMenu();
 document.addEventListener("mousedown", (e) => { if (menuOpen() && !e.target.closest("#d-menu, #d-more")) toggleMenu(false); });
 $("#d-copy-attach").onclick = () => {
   const t = task(openId), ag = t && agents[t.id], id = t && t.agent && ((ag && ag.id) || t.agent.id);
-  if (id) { navigator.clipboard.writeText("claude attach " + id); setStatus("Copied claude attach " + id); }
+  if (id) { navigator.clipboard.writeText("claude attach " + id); setStatus(window.t("Copied {text}", { text: "claude attach " + id })); }
   toggleMenu(false);
 };
 
@@ -1401,14 +1416,14 @@ $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overla
 
 // Two-step delete instead of window.confirm (a modal dialog blocks browser automation).
 let deleteArmed = false;
-function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.innerHTML = icon("trash", 14) + "Delete task"; }
+function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.innerHTML = icon("trash", 14) + t("Delete task"); }
 $("#d-delete").onclick = () => {
   const t = task(openId);
   if (!deleteArmed) {
     const n = descendants(t.id).length;
     deleteArmed = true;
     $("#d-delete").classList.add("armed");
-    $("#d-delete").textContent = n ? `Delete with ${n} subtask${n > 1 ? "s" : ""}? Click again` : "Really delete? Click again";
+    $("#d-delete").textContent = n ? (n === 1 ? window.t("Delete with 1 subtask? Click again") : window.t("Delete with {n} subtasks? Click again", { n })) : window.t("Really delete? Click again");
     return;
   }
   toggleMenu(false);
@@ -1438,9 +1453,9 @@ let agents = {};                 // task id -> { id, sessionId, state, phase, re
 let pending = {};                // task id -> [{ from, status, message, images, at, state: "sending" | "sent", base }]
 let logFollow = false;           // next renderAgent scrolls the log to the end
 const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
-const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
-const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· Claude has it</span>`
-  : ` <span class="note-state">· sending to Claude…</span>`;
+const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="${t("Sending…")}">${COG}</span>` : `<span class="mark sent" title="${t("Sent")}">✓</span>`;
+const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· ${t("Claude has it")}</span>`
+  : ` <span class="note-state">· ${t("sending to Claude…")}</span>`;
 function addPending(t, status, message, images) {
   const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
   (pending[t.id] = pending[t.id] || []).push(m);
@@ -1449,7 +1464,7 @@ function addPending(t, status, message, images) {
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
-const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
+const PHASES = { working: t("working"), needs_you: t("needs you"), finished: t("finished"), gone: t("removed") };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
 const reviewing = (a) => { const e = (a.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status)); return !!(e && e.status === "review"); };
@@ -1461,7 +1476,7 @@ function subagentRows(ag) {
   if (!subs.length) return "";
   return `<ul class="card-subs">${subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
-    return `<li title="${esc(s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? "running" : st}</span>
+    return `<li title="${esc(s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
       <span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
   }).join("")}</ul>`;
 }
@@ -1474,20 +1489,24 @@ function tickCache() {
   const nowS = Date.now() / 1000;
   const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + "h" + (m % 60 ? " " + (m % 60) + "m" : "") : m + "m"; };
   for (const el of document.querySelectorAll(".ttl")) {
-    const left = +el.dataset.exp - nowS, tok = Math.round(+el.dataset.tok / 1000) + "k tokens", tier = el.dataset.ttl >= 3600 ? "1h" : "5m";
+    const left = +el.dataset.exp - nowS, tok = t("{n}k tokens", { n: Math.round(+el.dataset.tok / 1000) }), tier = el.dataset.ttl >= 3600 ? "1h" : "5m";
     el.className = "ttl" + (left <= 0 ? " cold" : left < 300 ? " low" : "");
-    el.title = left > 0 ? `Prompt cache (${tier} TTL) expires in ${dur(left)}. A reply before then reads ${tok} from cache.`
-      : `Prompt cache expired ${dur(-left)} ago. A reply re-reads ${tok} at full cost.`;
+    el.title = left > 0 ? t("Prompt cache ({tier} TTL) expires in {left}. A reply before then reads {tokens} from cache.", { tier, left: dur(left), tokens: tok })
+      : t("Prompt cache expired {ago} ago. A reply re-reads {tokens} at full cost.", { ago: dur(-left), tokens: tok });
     el.textContent = el.dataset.long
-      ? (left > 0 ? `cache warm · ${dur(left)} left · ${tok}` : `cache expired ${dur(-left)} ago · reply re-reads ${tok} at full cost`)
-      : (left > 0 ? `cache ${dur(left)}` : "cache cold");
+      ? (left > 0 ? t("cache warm · {left} left · {tokens}", { left: dur(left), tokens: tok }) : t("cache expired {ago} ago · reply re-reads {tokens} at full cost", { ago: dur(-left), tokens: tok }))
+      : (left > 0 ? t("cache {left}", { left: dur(left) }) : t("cache cold"));
   }
   const o = openId && task(openId);
   if (o && o.agent && agents[o.id]) renderCacheNote(agents[o.id]);
 }
 setInterval(tickCache, 15000);
-const colNamed = (re) => state.columns.find((c) => !c.done && re.test(c.name));
-function inReview(t) { const r = colNamed(/review/i); return !!(r && t.column === r.id); }
+// The Review / In Progress column: found by its role, so renaming it keeps it working; by name on old boards.
+function colRole(role, cols = state.columns) {
+  if (!cols.some((c) => c.role === role)) return cols.find((c) => !c.done && ROLE_NAMES[role].test(c.name));
+  return cols.find((c) => !c.done && c.role === role);
+}
+function inReview(t) { const r = colRole("review"); return !!(r && t.column === r.id); }
 // No "Move to done" while Claude still has work: running, a reply in flight, or a reply it has not answered yet.
 function canFinish(t) {
   if (!inReview(t)) return false;
@@ -1519,7 +1538,7 @@ const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === run
 const subModelName = (t) => { const m = subModel(t); return ((runsCodex(t) ? codexList : CLAUDE_SUBMODELS).find((x) => x.id === m) || { name: m }).name; };
 function renderSubmodel(t) {
   const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
-  $("#d-submodel").innerHTML = `<option value="">Same as session</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   $("#d-submodel").value = subModel(t);
 }
 async function loadCodexModels() {
@@ -1539,8 +1558,8 @@ async function loadCodexModels() {
 }
 function sendLabel() {
   const cx = isCodexModel($("#d-model").value), send = $("#d-send");
-  send.textContent = cx ? "Send to Codex" : "Send to Claude";
-  send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
+  send.textContent = cx ? window.t("Send to Codex") : window.t("Send to Claude");
+  send.title = useServer ? window.t("Start a background {who} session on this task", { who: cx ? "Codex" : "Claude" }) : window.t("Needs server.py");
   const t = openId && state && task(openId);
   if (t) renderSubmodel(t);
 }
@@ -1583,29 +1602,29 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
   $("#d-review-model").value = reviewModel();
-  $("#d-review").title = `Start a fresh ${reviewer(t)} session that code-reviews this task's commits and posts the findings here`;
+  $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
   // from the CLI's record) or on something only `claude attach` can show.
   const said = log.filter((e) => e.status !== "note").pop();
   if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
-    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
+    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
   const nm = who(t);
-  $("#d-reply").placeholder = busy ? `Add to what ${nm} is doing — it goes in right away and ${nm} reads it as soon as it can. Cmd+Enter to send, paste images to attach`
-    : `Answer ${nm} — Cmd+Enter to send, paste images to attach`;
-  $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
+  $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach", { who: nm })
+    : window.t("Answer {who} — Cmd+Enter to send, paste images to attach", { who: nm });
+  $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
   $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
   if (recapping) {
-    $("#d-reply").placeholder = "Writing the recap — you can send once it is posted.";
-    $("#d-reply-send").textContent = "Writing recap…";
+    $("#d-reply").placeholder = window.t("Writing the recap — you can send once it is posted.");
+    $("#d-reply-send").textContent = window.t("Writing recap…");
   }
   renderReplyImages();
   renderCacheNote(ag);
@@ -1617,21 +1636,21 @@ function renderAgent(t) {
   }
 }
 // Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.
-const AGENT_LABELS = { working: "Working", needs_you: "Needs you", finished: "Finished", gone: "Session removed" };
-const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? "Reviewing code" : AGENT_LABELS[ag.phase] || ag.phase) : "Starting…");
+const AGENT_LABELS = { working: t("Working"), needs_you: t("Needs you"), finished: t("Finished"), gone: t("Session removed") };
+const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? t("Reviewing code") : AGENT_LABELS[ag.phase] || ag.phase) : t("Starting…"));
 
 // Compact notice above the composer: a reply after the prompt cache expired re-reads the whole context at full price.
 function renderCacheNote(ag) {
   const box = $("#d-cache-note"), c = ag && ag.cache;
   if (!c || ag.phase === "working" || ag.phase === "gone") { box.hidden = true; return; }
-  const left = c.expires - Date.now() / 1000, tok = c.tokens >= 1000 ? Math.round(c.tokens / 1000) + "k" : String(c.tokens || 0), tier = c.ttl >= 3600 ? "1 hour" : "5 minutes";
+  const left = c.expires - Date.now() / 1000, tok = c.tokens >= 1000 ? Math.round(c.tokens / 1000) + "k" : String(c.tokens || 0), tier = c.ttl >= 3600 ? t("1 hour") : t("5 minutes");
   box.hidden = false;
   box.classList.toggle("warm", left > 0);
   const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min"; };
   box.innerHTML = `<span data-ico="info" data-s="16"></span><details><summary>${left > 0
-    ? `Session cache warm for ${dur(left)}. A reply before then reads ${tok} tokens from cache.`
-    : `Session cache expired. A reply will reload approximately ${tok} tokens.`}</summary>
-    <div class="tech">Cache TTL ${tier} · last API call ${fmt(new Date(c.at * 1000).toISOString())} · expires ${fmt(new Date(c.expires * 1000).toISOString())} · context ${(c.tokens || 0).toLocaleString()} tokens. The number comes from the session transcript's last usage record.</div></details>`;
+    ? t("Session cache warm for {left}. A reply before then reads {tokens} tokens from cache.", { left: dur(left), tokens: tok })
+    : t("Session cache expired. A reply will reload approximately {tokens} tokens.", { tokens: tok })}</summary>
+    <div class="tech">${t("Cache TTL {tier} · last API call {at} · expires {expires} · context {tokens} tokens. The number comes from the session transcript's last usage record.", { tier, at: fmt(new Date(c.at * 1000).toISOString()), expires: fmt(new Date(c.expires * 1000).toISOString()), tokens: (c.tokens || 0).toLocaleString() })}</div></details>`;
   box.querySelector("[data-ico]").innerHTML = icon("info", 16);
 }
 
@@ -1699,69 +1718,71 @@ const permissionNote = {};
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
 function nextAction(t, ag, g) {
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
-  const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
-  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { pick: true, title: `A fresh ${reviewer(t)} session code-reviews this task's commits (${reviewLevel()} budget) and posts its findings here` });
+  const nFiles = (k) => k === 1 ? window.t("1 uncommitted file") : window.t("{n} uncommitted files", { n: k });
+  const nCommits = (k) => k === 1 ? window.t("1 commit") : window.t("{n} commits", { n: k });
+  const markDone = (cls = "primary") => act(window.t("Mark as done"), cls, () => { moveToDone(t.id); closeDetail(); }, { title: window.t("Move this task to the done column. The worktree and its changes stay as they are.") });
+  const askReview = (cls = "primary") => act(window.t("Review code"), cls, () => startReview(t), { pick: true, title: window.t("A fresh {who} session code-reviews this task's commits ({level} budget) and posts its findings here", { who: reviewer(t), level: reviewLevel() }) });
   // A finished review by the other agent (Codex on Claude's work, or the reverse): its findings can go back to the worker.
-  const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(`Send findings to ${ag.handback}`, "primary", () => sendFindingsBack(t), { icon: "back", title: `The ${ag.handback} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with` })] : [];
+  const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(window.t("Send findings to {who}", { who: ag.handback }), "primary", () => sendFindingsBack(t), { icon: "back", title: window.t("The {who} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with", { who: ag.handback }) })] : [];
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
-  const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
-  const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
-  const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
+  const runApp = () => act(window.t("Run app"), "sec", () => worktreeAction(t, "run"), { icon: "play", title: window.t("Claude starts the app from this task's worktree so you can try the changes") });
+  const merge = (cls = "primary") => act(window.t("Merge worktree to main"), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way") });
+  const toReply = () => act(window.t("Reply in Conversation"), "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
   const nm = who(t);
-  if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [], busy: true }
-    : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
+  if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
+    : { title: window.t("Ready to send"), text: window.t("Claude has not started this task yet. Pick a model and send it."), actions: [] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
     // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).
     const canMerge = wt && useServer && replyOpen(t) && ag.phase !== "working" && !ag.recapping && (ag.closed || ag.archived);
-    return { title: "Done", text: canMerge ? "Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it."
-      : wt ? "Its worktree is not merged yet. The merge button shows here once Claude has written the recap." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: canMerge ? [merge()] : [] };
+    return { title: window.t("Done"), text: canMerge ? window.t("Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it.")
+      : wt ? window.t("Its worktree is not merged yet. The merge button shows here once Claude has written the recap.") : ag && ag.recapping ? window.t("Claude is writing the recap.") : window.t("Nothing left to do."), actions: canMerge ? [merge()] : [] };
   }
-  if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [], busy: true };
+  if (!ag) return { title: window.t("Work in progress"), text: window.t("Waiting for the first status from the session."), actions: [], busy: true };
   if (ag.phase === "working") {
     const subs = (ag.subagents || []).filter((s) => !s.finished).length;
-    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `${nm} is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : `${nm} is working. You can add a note in Conversation; it reads it as soon as it can.`, actions: [], busy: true };
+    return { title: reviewing(ag) ? window.t("Code review in progress") : window.t("Work in progress"), text: subs ? (subs === 1 ? window.t("{who} is working with 1 subagent running. You can add a note below.", { who: nm }) : window.t("{who} is working with {n} subagents running. You can add a note below.", { who: nm, n: subs })) : window.t("{who} is working. You can add a note in Conversation; it reads it as soon as it can.", { who: nm }), actions: [], busy: true };
   }
   if (ag.phase === "gone") {
     const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
-    return { title: "Session removed", text: `The ${nm} session for this task no longer exists, so nothing more can be sent to it.` + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
+    return { title: window.t("Session removed"), text: window.t("The {who} session for this task no longer exists, so nothing more can be sent to it.", { who: nm }) + (left ? " " + window.t("Its work ({files}, {commits}) is still in the repository: check Changes before finishing.", { files: nFiles((g.changed || []).length), commits: nCommits((g.ahead || []).length) }) : inReview(t) ? " " + window.t("Review what is on the card, then mark it done.") : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
   }
   if (ag.phase === "needs_you") {
     if (ag.permission) {
       const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
       const note = permissionNote[t.id] && permissionNote[t.id].ask === ag.permission ? "\n" + permissionNote[t.id].note : "";
-      return { title: `${nm} asks permission`, text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + "." + note,
-        actions: answering[t.id] ? [] : [answer("Allow", "allow", "primary", "Let it run this once"),
-          answer("Allow always", "always", "sec", "Let it run this, and stop asking about this kind of request in this session"),
-          answer("Deny", "deny", "ghost", "Do not let it run this")], busy: !!answering[t.id] };
+      return { title: window.t("{who} asks permission", { who: nm }), text: ag.permission.replace(/^Claude asks permission: /, () => window.t("It wants to run:") + " ") + "." + note,
+        actions: answering[t.id] ? [] : [answer(window.t("Allow"), "allow", "primary", window.t("Let it run this once")),
+          answer(window.t("Allow always"), "always", "sec", window.t("Let it run this, and stop asking about this kind of request in this session")),
+          answer(window.t("Deny"), "deny", "ghost", window.t("Do not let it run this"))], busy: !!answering[t.id] };
     }
     // Only an unanswered question counts: a reply after it means Claude stopped on something else.
     const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
-    return { title: q ? `${nm} has a question` : stopped ? "Run stopped" : `${nm} needs you`,
-      text: q ? `Answer it in Conversation to let ${nm} continue.` : (ag.reason || `${nm} is waiting on you.`).replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
+    return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
+      text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
   // Finished (or last message is a done report): what is there to review, merge, or complete?
-  if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
-  if (!canFinish(t)) return { title: `Waiting for ${nm}`, text: "Your last message has not been answered yet.", actions: [] };
+  if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colRole("review") ? [act(window.t("Move to {col}", { col: window.t(colRole("review").name) }), "sec", () => { moveTask(t.id, colRole("review").id, null); renderDetail(); render(); })] : [] };
+  if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
-  if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [...review("primary"), ...extra] };
-  if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [...review("primary"), ...extra, markDone("ghost")] };
+  if (g === undefined || g === null) return { title: window.t("Ready for review"), text: g === null ? window.t("Checking the repository state…") : window.t("Repository state not loaded yet."), actions: [...review("primary"), ...extra] };
+  if (!g.available) return { title: window.t("Ready for review"), text: window.t("Repository state unavailable: {error}. Check the changes by hand before finishing.", { error: g.error ? window.t(g.error) : window.t("git did not answer") }), actions: [...review("primary"), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
-  const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
-  const where = g.shared ? ` in the project folder (shared with other tasks)` : "";
+  const where = g.shared ? " " + window.t("in the project folder (shared with other tasks)") : "";
   if (!has) {
-    const why = g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "The worktree branch is already merged. Nothing left to merge." : g.worktree && !g.worktree.exists ? "The worktree is gone and its branch holds nothing unmerged." : "No repository changes to merge.";
-    return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
+    const why = g.answerOnly ? window.t("Answer-only task: no changes were expected.") : g.merged ? window.t("The worktree branch is already merged. Nothing left to merge.") : g.worktree && !g.worktree.exists ? window.t("The worktree is gone and its branch holds nothing unmerged.") : window.t("No repository changes to merge.");
+    return { title: window.t("Ready to complete"), text: why, actions: [markDone(), ...extra] };
   }
-  const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
-  const by = claudeReviewed(ag) ? `, ${ag.cli === "codex" ? "Codex" : "Claude"} reviewed them` : "";
+  const commits = ahead ? (g.aheadKind === "own" ? window.t("{commits} on {branch}", { commits: nCommits(ahead), branch: g.branch }) : window.t("{commits} ahead of {target}", { commits: nCommits(ahead), target: g.target })) : "";
+  const what = files && commits ? window.t("{files} and {commits}", { files: nFiles(files), commits }) : files ? nFiles(files) : commits;
+  const by = claudeReviewed(ag) ? window.t(", {who} reviewed them", { who: ag.cli === "codex" ? "Codex" : "Claude" }) : "";
   const hb = handBack(), first = hb.length ? "sec" : "primary";
-  if (wt) return { title: "Ready to merge", text: `${what}${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
-  return { title: "Ready to complete", text: (g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge` : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
+  if (wt) return { title: window.t("Ready to merge"), text: window.t("{what}{by}. Merging brings them into {target}.", { what, by, target: g.target }) + (files ? " " + window.t("Uncommitted files are committed by the merge step.") : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
+  return { title: window.t("Ready to complete"), text: (g.aheadKind === "own" ? window.t("{what} are already on {branch}; nothing to merge", { what, branch: g.branch }) : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
 }
 function renderNext(t) {
   const ag = t.agent && agents[t.id];
@@ -1793,16 +1814,16 @@ function renderSubagents(ag) {
   const subs = (ag && ag.subagents) || [];
   $("#d-subagents").hidden = !subs.length;
   const run = subs.filter((s) => !s.finished && ag.phase === "working").length;
-  $("#d-sa-n").textContent = run ? `${run} running of ${subs.length}` : `${subs.length}`;
+  $("#d-sa-n").textContent = run ? t("{run} running of {total}", { run, total: subs.length }) : `${subs.length}`;
   const dur = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "<1m" : m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
   const html = subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
-      <span class="meta">${s.context ? `<span title="Context now: ${s.context.toLocaleString()} tokens (as in Claude Code's agent list). New tokens over the whole run: ${(s.tokens || 0).toLocaleString()}">${fmtTokens(s.context)}</span>`
-        : s.tokens ? `<span title="${s.tokens.toLocaleString()} tokens">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
-      ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
-      <span class="sks">Skills: ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : "none"}</span></li>`;
+      <span class="meta">${s.context ? `<span title="${t("Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}", { now: s.context.toLocaleString(), total: (s.tokens || 0).toLocaleString() })}">${fmtTokens(s.context)}</span>`
+        : s.tokens ? `<span title="${t("{n} tokens", { n: s.tokens.toLocaleString() })}">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span></span>
+      ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? t("Now:") : t("Last:")} ${esc(s.action)}</span>` : ""}
+      <span class="sks">${t("Skills:")} ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : t("none")}</span></li>`;
   }).join("");
   if ($("#d-sa-list").innerHTML !== html) $("#d-sa-list").innerHTML = html;
 }
@@ -1812,7 +1833,7 @@ function renderSkills(ag) {
   const used = (ag && ag.skills) || [];
   $("#d-skills").hidden = !used.length;
   $("#d-sk-n").textContent = used.length || "";
-  const html = used.map((s) => `<li title="First used ${esc(fmt(s.first))}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
+  const html = used.map((s) => `<li title="${t("First used {date}", { date: esc(fmt(s.first)) })}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
   if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
 }
 
@@ -1827,13 +1848,13 @@ function renderTokens(ag) {
   const all = tk ? tk.main.map((v, i) => v + tk.subagents[i]) : [0, 0, 0, 0], total = fresh(all);
   $("#d-tokens").hidden = !total;
   $("#d-tok-n").textContent = total ? fmtTokens(total) : "";
-  $("#d-tok-n").title = total.toLocaleString() + " new tokens (cache re-reads not counted)";
+  $("#d-tok-n").title = t("{n} new tokens (cache re-reads not counted)", { n: total.toLocaleString() });
   if (!total) return;
   const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}</dd>`;
-  const html = row("Main agent", fresh(tk.main)) + row(`Subagents (${tk.count})`, fresh(tk.subagents))
-    + row("New input", all[0] + all[1], "Text Claude read for the first time (incl. writing it to the cache)")
-    + row("Written by Claude", all[3])
-    + row("Re-read from cache (not in total)", all[2], "Claude re-reads the whole conversation at every step, so this adds the same text again and again. It is cheap and not counted above.");
+  const html = row(t("Main agent"), fresh(tk.main)) + row(t("Subagents ({n})", { n: tk.count }), fresh(tk.subagents))
+    + row(t("New input"), all[0] + all[1], t("Text Claude read for the first time (incl. writing it to the cache)"))
+    + row(t("Written by Claude"), all[3])
+    + row(t("Re-read from cache (not in total)"), all[2], t("Claude re-reads the whole conversation at every step, so this adds the same text again and again. It is cheap and not counted above."));
   if ($("#d-tok-list").innerHTML !== html) $("#d-tok-list").innerHTML = html;
 }
 
@@ -1845,7 +1866,7 @@ const ctxLevel = (f) => f >= 0.9 ? " full" : f >= 0.7 ? " high" : "";
 function contextChip(ag) {
   const c = ag && ag.context, f = ctxShare(c);
   if (f === null || ag.phase === "gone") return "";
-  return `<span class="ctx${ctxLevel(f)}" title="Context: ${c.tokens.toLocaleString()} of ${c.max.toLocaleString()} tokens (${esc(c.model)})">${Math.round(100 * f)}% ctx</span>`;
+  return `<span class="ctx${ctxLevel(f)}" title="${t("Context: {tokens} of {max} tokens ({model})", { tokens: c.tokens.toLocaleString(), max: c.max.toLocaleString(), model: esc(c.model) })}">${t("{n}% ctx", { n: Math.round(100 * f) })}</span>`;
 }
 function renderContext(ag) {
   const c = ag && ag.context, f = ctxShare(c);
@@ -1857,12 +1878,12 @@ function renderContext(ag) {
     $("#d-ctx-bar").className = "ctx-bar" + ctxLevel(f);
     $("#d-ctx-bar i").style.width = Math.min(100, 100 * f).toFixed(1) + "%";
     $("#d-ctx-bar b").style.left = Math.min(100, 100 * c.peak / c.max).toFixed(1) + "%";
-    $("#d-ctx-bar").title = `Now ${Math.round(100 * f)}% full · peak ${Math.round(100 * c.peak / c.max)}% (the mark)`;
+    $("#d-ctx-bar").title = t("Now {now}% full · peak {peak}% (the mark)", { now: Math.round(100 * f), peak: Math.round(100 * c.peak / c.max) });
   }
   const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}${c.max ? ` (${Math.round(100 * n / c.max)}%)` : ""}</dd>`;
-  const html = row("Now", c.tokens, "What the agent holds in mind at its last step")
-    + row("Most so far", c.peak, "It drops when the conversation is shortened (compacted)")
-    + (c.max ? `<dt>Model limit</dt><dd title="${c.max.toLocaleString()}">${fmtWindow(c.max)} · ${esc(c.model)}</dd>` : `<dt>Model</dt><dd>${esc(c.model) || "unknown"}</dd>`);
+  const html = row(t("Now"), c.tokens, t("What the agent holds in mind at its last step"))
+    + row(t("Most so far"), c.peak, t("It drops when the conversation is shortened (compacted)"))
+    + (c.max ? `<dt>${t("Model limit")}</dt><dd title="${c.max.toLocaleString()}">${fmtWindow(c.max)} · ${esc(c.model)}</dd>` : `<dt>${t("Model")}</dt><dd>${esc(c.model) || t("unknown")}</dd>`);
   if ($("#d-ctx-list").innerHTML !== html) $("#d-ctx-list").innerHTML = html;
 }
 
@@ -1870,26 +1891,26 @@ function renderContext(ag) {
 function renderTech(t) {
   const g = (gitInfo.pid === P && gitInfo.data) || {}, tg = taskGitFor(t), ag = agents[t.id], wt = t.agent && t.agent.worktree;
   const rows = [];
-  const code = (s, title = "Click to copy") => `<code title="${esc(title)}">${esc(s)}</code>`;
+  const code = (s, title = window.t("Click to copy")) => `<code title="${esc(title)}">${esc(s)}</code>`;
   if (wt) {
-    rows.push(["Worktree", code(wt.path) + (ag && ag.worktree === false ? ` <span class="dirty">(merged or removed)</span>` : "")]);
-    rows.push(["Branch", code(wt.branch) + (wt.base ? ` from ${code(wt.base)}` : "")]);
-  } else if (g.branch) rows.push(["Branch", code(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes in the project folder">• uncommitted changes</span>` : "")]);
-  if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push(["Merges into", code(tg.target)]);
-  if (g.tag) rows.push(["Release", code(g.tag)]);
+    rows.push([window.t("Worktree"), code(wt.path) + (ag && ag.worktree === false ? ` <span class="dirty">${window.t("(merged or removed)")}</span>` : "")]);
+    rows.push([window.t("Branch"), code(wt.branch) + (wt.base ? " " + window.t("from {base}", { base: code(wt.base) }) : "")]);
+  } else if (g.branch) rows.push([window.t("Branch"), code(g.branch) + (g.dirty ? ` <span class="dirty" title="${window.t("Uncommitted changes in the project folder")}">• ${window.t("uncommitted changes")}</span>` : "")]);
+  if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push([window.t("Merges into"), code(tg.target)]);
+  if (g.tag) rows.push([window.t("Release"), code(g.tag)]);
   if (t.agent) {
-    rows.push(["Session", code("claude attach " + ((ag && ag.id) || t.agent.id))]);
-    rows.push(["Model", esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? prettyModel(defaultModel.model) + " (default)" : "default"))]);
-    rows.push(["Started", esc(fmt(t.agent.started))]);
-    if (t.delegate) rows.push(["Subagents", "allowed" + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
-    if (t.answerOnly) rows.push(["Mode", "answer only"]);
-    if (t.worktree === false && !t.answerOnly) rows.push(["Worktree", "off (works in the project folder)"]);
+    rows.push([window.t("Session"), code("claude attach " + ((ag && ag.id) || t.agent.id))]);
+    rows.push([window.t("Model"), esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
+    rows.push([window.t("Started"), esc(fmt(t.agent.started))]);
+    if (t.delegate) rows.push([window.t("Subagents"), window.t("allowed") + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
+    if (t.answerOnly) rows.push([window.t("Mode"), window.t("answer only")]);
+    if (t.worktree === false && !t.answerOnly) rows.push([window.t("Worktree"), window.t("off (works in the project folder)")]);
   }
-  rows.push(["Task id", code(t.id)]);
+  rows.push([window.t("Task id"), code(t.id)]);
   const html = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   if ($("#d-tech-list").innerHTML !== html) {
     $("#d-tech-list").innerHTML = html;
-    $("#d-tech-list").querySelectorAll("code").forEach((c) => (c.onclick = () => { navigator.clipboard.writeText(c.textContent); setStatus("Copied " + c.textContent); }));
+    $("#d-tech-list").querySelectorAll("code").forEach((c) => (c.onclick = () => { navigator.clipboard.writeText(c.textContent); setStatus(window.t("Copied {text}", { text: c.textContent })); }));
   }
 }
 
@@ -1925,7 +1946,7 @@ function renderOverview(t) {
   if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;
   const kids = children(t.id), done = kids.filter(isDone).length;
   $("#d-crit").hidden = !kids.length;
-  $("#d-crit-n").textContent = `${done} of ${kids.length}`;
+  $("#d-crit-n").textContent = window.t("{done} of {total}", { done, total: kids.length });
   $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
   renderNext(t);
   renderSubagents(ag);
@@ -1953,41 +1974,41 @@ function renderSummary(t) {
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
-  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? "Recap" : rep.status === "answer" ? "Answer" : "Result"} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
-  else if (latest) html = `<div class="sum-label">No final report yet · latest ${esc(latest.status)} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
-  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? "Claude has not reported anything yet." : "No report from Claude on this task."}</div>`;
+  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? window.t("Recap") : rep.status === "answer" ? window.t("Answer") : window.t("Result")} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
+  else if (latest) html = `<div class="sum-label">${window.t("No final report yet")} · ${window.t("latest {status}", { status: esc(latest.status) })} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
+  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? window.t("Claude has not reported anything yet.") : window.t("No report from Claude on this task.")}</div>`;
   if (box.innerHTML !== html) box.innerHTML = html;
   // What changed: commits named on the card / ahead of the target, and uncommitted files.
   const items = [];
   if (g && g.available) {
-    for (const c of (g.ahead || []).slice(0, 12)) items.push(`<li><span class="ok">✓</span><span class="sub">${inl(esc(c.subject || "(no message)"))}</span><span class="n"><code>${esc(c.sha)}</code></span></li>`);
-    if ((g.ahead || []).length > 12) items.push(`<li><span class="n">… ${g.ahead.length - 12} more commits in Changes</span></li>`);
+    for (const c of (g.ahead || []).slice(0, 12)) items.push(`<li><span class="ok">✓</span><span class="sub">${inl(esc(c.subject || window.t("(no message)")))}</span><span class="n"><code>${esc(c.sha)}</code></span></li>`);
+    if ((g.ahead || []).length > 12) items.push(`<li><span class="n">… ${window.t("{n} more commits in Changes", { n: g.ahead.length - 12 })}</span></li>`);
     const ch = g.changed || [];
-    if (ch.length) items.push(`<li><span class="ok">•</span><span class="sub">${ch.length} uncommitted file${ch.length > 1 ? "s" : ""}${g.shared ? " in the project folder" : ""}: ${ch.slice(0, 5).map((f) => `<code>${esc(f.path)}</code>`).join(", ")}${ch.length > 5 ? ", …" : ""}</span></li>`);
+    if (ch.length) items.push(`<li><span class="ok">•</span><span class="sub">${ch.length === 1 ? (g.shared ? window.t("1 uncommitted file in the project folder") : window.t("1 uncommitted file")) : g.shared ? window.t("{n} uncommitted files in the project folder", { n: ch.length }) : window.t("{n} uncommitted files", { n: ch.length })}: ${ch.slice(0, 5).map((f) => `<code>${esc(f.path)}</code>`).join(", ")}${ch.length > 5 ? ", …" : ""}</span></li>`);
   }
   $("#d-sum-changes").innerHTML = items.length ? `<ul class="sum-list">${items.join("")}</ul>`
-    : `<div class="sum-empty">${!g ? "Loading repository state…" : !g.available ? "Repository state unavailable." : g.answerOnly ? "Answer-only task: no changes were expected." : "No commits or uncommitted files found for this task."}</div>`;
+    : `<div class="sum-empty">${!g ? window.t("Loading repository state…") : !g.available ? window.t("Repository state unavailable.") : g.answerOnly ? window.t("Answer-only task: no changes were expected.") : window.t("No commits or uncommitted files found for this task.")}</div>`;
   // Verification: the latest code review's findings, if a review ran after the report.
   const vh = $("#d-sum-verify-h"), vb = $("#d-sum-verify");
   const finding = lastReview >= 0 && [...log.slice(lastReview + 1)].reverse().find((e) => e.from !== "you" && e.status === "done");
-  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">Code review · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
-  else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">Code review started ${esc(fmt(log[lastReview].at))}; no findings posted yet.</div>`; }
-  else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">No code review yet. Start one from the Changes tab.</div>`; }
+  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
+  else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">${window.t("Code review started {at}; no findings posted yet.", { at: esc(fmt(log[lastReview].at)) })}</div>`; }
+  else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">${window.t("No code review yet. Start one from the Changes tab.")}</div>`; }
   $("#d-sum-repo").innerHTML = repoStatusHtml(t, g);
-  $("#d-sum-conv").textContent = `View full conversation (${log.length} message${log.length === 1 ? "" : "s"}) →`;
+  $("#d-sum-conv").textContent = log.length === 1 ? window.t("View full conversation (1 message) →") : window.t("View full conversation ({n} messages) →", { n: log.length });
 }
 function repoStatusHtml(t, g) {
-  if (g === null) return `<div class="repo-note">Checking the repository state…</div>`;
-  if (!g) return `<div class="repo-note">Repository state not loaded.</div>`;
-  if (!g.available) return `<div class="repo-note"><b>Repository state unavailable.</b> ${esc(g.error || "git did not answer.")}</div>`;
+  if (g === null) return `<div class="repo-note">${window.t("Checking the repository state…")}</div>`;
+  if (!g) return `<div class="repo-note">${window.t("Repository state not loaded.")}</div>`;
+  if (!g.available) return `<div class="repo-note"><b>${window.t("Repository state unavailable.")}</b> ${esc(g.error ? window.t(g.error) : window.t("git did not answer."))}</div>`;
   const files = (g.changed || []).length, ahead = (g.ahead || []).length;
-  const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files} changed file${files === 1 ? "" : "s"}${g.truncated ? "+" : ""}</span>
-    <span>${icon("commit", 16)}${ahead} commit${ahead === 1 ? "" : "s"} ${g.aheadKind === "own" ? `on ${esc(g.branch || "HEAD")}` : `ahead of ${esc(g.target || "main")}`}</span>
-    ${g.behind ? `<span class="warn">${icon("branch", 16)}${g.behind} behind ${esc(g.target)}</span>` : ""}</div>`;
+  const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files === 1 ? window.t("1 changed file") : window.t("{n} changed files", { n: files })}${g.truncated ? "+" : ""}</span>
+    <span>${icon("commit", 16)}${g.aheadKind === "own" ? (ahead === 1 ? window.t("1 commit on {branch}", { branch: esc(g.branch || "HEAD") }) : window.t("{n} commits on {branch}", { n: ahead, branch: esc(g.branch || "HEAD") })) : ahead === 1 ? window.t("1 commit ahead of {target}", { target: esc(g.target || "main") }) : window.t("{n} commits ahead of {target}", { n: ahead, target: esc(g.target || "main") })}</span>
+    ${g.behind ? `<span class="warn">${icon("branch", 16)}${window.t("{n} behind {target}", { n: g.behind, target: esc(g.target) })}</span>` : ""}</div>`;
   let note;
-  if (g.worktree && g.worktree.exists) note = ahead || files ? `Work on branch <b>${esc(g.branch)}</b> in its own worktree, not yet in <b>${esc(g.target)}</b>.` : g.merged ? `Branch <b>${esc(g.branch)}</b> is fully merged into <b>${esc(g.target)}</b>.` : `The worktree has no changes to merge.`;
-  else if (g.worktree) note = g.merged ? `The worktree was removed and its branch is merged into <b>${esc(g.target)}</b>.` : ahead ? `The worktree folder is gone, but branch <b>${esc(g.branch)}</b> still holds ${ahead} unmerged commit${ahead === 1 ? "" : "s"}.` : `The worktree was removed. Nothing left to merge.`;
-  else note = ahead ? `Commits named on this card are already on <b>${esc(g.branch)}</b>. No merge is needed.` : files ? `The project folder has uncommitted changes (shared with other tasks).` : `Changes were made outside the repository, or none were made. No merge is needed.`;
+  if (g.worktree && g.worktree.exists) note = ahead || files ? window.t("Work on branch <b>{branch}</b> in its own worktree, not yet in <b>{target}</b>.", { branch: esc(g.branch), target: esc(g.target) }) : g.merged ? window.t("Branch <b>{branch}</b> is fully merged into <b>{target}</b>.", { branch: esc(g.branch), target: esc(g.target) }) : window.t("The worktree has no changes to merge.");
+  else if (g.worktree) note = g.merged ? window.t("The worktree was removed and its branch is merged into <b>{target}</b>.", { target: esc(g.target) }) : ahead === 1 ? window.t("The worktree folder is gone, but branch <b>{branch}</b> still holds 1 unmerged commit.", { branch: esc(g.branch) }) : ahead ? window.t("The worktree folder is gone, but branch <b>{branch}</b> still holds {n} unmerged commits.", { branch: esc(g.branch), n: ahead }) : window.t("The worktree was removed. Nothing left to merge.");
+  else note = ahead ? window.t("Commits named on this card are already on <b>{branch}</b>. No merge is needed.", { branch: esc(g.branch) }) : files ? window.t("The project folder has uncommitted changes (shared with other tasks).") : window.t("Changes were made outside the repository, or none were made. No merge is needed.");
   return chips + `<div class="repo-note">${note}</div>`;
 }
 
@@ -1996,17 +2017,17 @@ function renderChanges(t) {
   const g = taskGitFor(t), badge = $("#d-chcount"), list = $("#d-ch-list"), note = $("#d-ch-note");
   badge.classList.remove("warn");
   if (!g || !g.available) closeDiff();
-  if (g === null) { badge.textContent = "…"; note.textContent = "Checking the repository state…"; list.innerHTML = ""; return; }
+  if (g === null) { badge.textContent = "…"; note.textContent = window.t("Checking the repository state…"); list.innerHTML = ""; return; }
   if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
-  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">Repository state unavailable: ${esc(g.error || "git did not answer")}.</div>`; return; }
+  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">${window.t("Repository state unavailable: {error}.", { error: esc(g.error ? window.t(g.error) : window.t("git did not answer")) })}</div>`; return; }
   const files = g.changed || [], ahead = g.ahead || [];
   badge.textContent = files.length + ahead.length || "0";
-  note.textContent = g.shared ? `Project folder on ${g.branch || "HEAD"} (shared with other tasks)` : `Worktree branch ${g.branch}${g.target ? " → " + g.target : ""}`;
+  note.textContent = g.shared ? window.t("Project folder on {branch} (shared with other tasks)", { branch: g.branch || "HEAD" }) : window.t("Worktree branch {branch}", { branch: g.branch }) + (g.target ? " → " + g.target : "");
   const pm = (f) => f.added == null && f.deleted == null ? "" : `<span class="pm"><span class="a">+${f.added || 0}</span> <span class="d">−${f.deleted || 0}</span></span>`;
   let html = "";
-  if (files.length) html += `<div class="ch-group"><h4>Uncommitted files (${files.length}${g.truncated ? "+" : ""})</h4><ul class="ch-list">${files.map((f) => `<li data-path="${esc(f.path)}" title="Show diff"><span class="st ${esc(f.status.trim()[0] || "?")}">${esc(f.status.trim() || "?")}</span><span class="path">${esc(f.path)}</span>${pm(f)}</li>`).join("")}</ul></div>`;
-  if (ahead.length) html += `<div class="ch-group"><h4>${g.aheadKind === "own" ? `Commits this task named on ${esc(g.branch || "HEAD")}` : `Commits ahead of ${esc(g.target)}`} (${ahead.length})</h4><ul class="ch-list">${ahead.map((c) => `<li data-sha="${esc(c.sha)}" title="Show commit"><span class="sha">${esc(c.sha)}</span><span class="subj">${esc(c.subject)}</span></li>`).join("")}</ul></div>`;
-  if (!html) html = `<div class="ch-empty">${g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "Already merged: nothing left to show." : "No uncommitted files and no commits to show."}</div>`;
+  if (files.length) html += `<div class="ch-group"><h4>${window.t("Uncommitted files")} (${files.length}${g.truncated ? "+" : ""})</h4><ul class="ch-list">${files.map((f) => `<li data-path="${esc(f.path)}" title="${window.t("Show diff")}"><span class="st ${esc(f.status.trim()[0] || "?")}">${esc(f.status.trim() || "?")}</span><span class="path">${esc(f.path)}</span>${pm(f)}</li>`).join("")}</ul></div>`;
+  if (ahead.length) html += `<div class="ch-group"><h4>${g.aheadKind === "own" ? window.t("Commits this task named on {branch}", { branch: esc(g.branch || "HEAD") }) : window.t("Commits ahead of {target}", { target: esc(g.target) })} (${ahead.length})</h4><ul class="ch-list">${ahead.map((c) => `<li data-sha="${esc(c.sha)}" title="${window.t("Show commit")}"><span class="sha">${esc(c.sha)}</span><span class="subj">${esc(c.subject)}</span></li>`).join("")}</ul></div>`;
+  if (!html) html = `<div class="ch-empty">${g.answerOnly ? window.t("Answer-only task: no changes were expected.") : g.merged ? window.t("Already merged: nothing left to show.") : window.t("No uncommitted files and no commits to show.")}</div>`;
   if (list.innerHTML !== html) {
     list.innerHTML = html;
     list.querySelectorAll("li").forEach((li) => {
@@ -2029,14 +2050,14 @@ async function showDiff(t, li) {
   diffSel = diffKey(li);
   const req = ++diffReq, pre = $("#d-diff"), q = li.dataset.sha ? "&sha=" + encodeURIComponent(li.dataset.sha) : "&path=" + encodeURIComponent(li.dataset.path);
   $("#d-ch-list").querySelectorAll("li").forEach((x) => x.classList.toggle("on", x === li));
-  pre.hidden = false; pre.textContent = "Loading diff…";
+  pre.hidden = false; pre.textContent = window.t("Loading diff…");
   try {
     const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
     const d = await r.json();
     if (req !== diffReq) return;
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
-  } catch (e) { if (req !== diffReq) return; pre.textContent = "Could not load the diff: " + e.message; }
+    pre.innerHTML = d.binary ? window.t("Binary file.") : (d.diff || window.t("(empty diff)")).split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">${window.t("… truncated")}</span>` : "");
+  } catch (e) { if (req !== diffReq) return; pre.textContent = window.t("Could not load the diff: {error}", { error: window.t(e.message) }); }
   pre.scrollIntoView({ block: "nearest" });
 }
 
@@ -2056,7 +2077,7 @@ async function loadTaskGit(t, force) {
   try {
     const r = await fetch(api("/api/task-git") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" });
     data = await r.json();
-    if (r.status === 404 && !data.available && !("changed" in data)) data = { available: false, error: "the board server runs older code without /api/task-git; restart it" };
+    if (r.status === 404 && !data.available && !("changed" in data)) data = { available: false, error: window.t("the board server runs older code without /api/task-git; restart it") };
     else if (!r.ok) data = { available: false, error: data.error || "HTTP " + r.status };
   } catch (err) { data = { available: false, error: err.message }; }
   taskGit[key] = { at: Date.now(), data };
@@ -2080,15 +2101,15 @@ $("#d-prompt").addEventListener("toggle", () => { const t = task(openId); if ($(
 async function loadPrompt(t) {
   const key = P + ":" + t.id;
   if (!prompts[key] && useServer) {
-    $("#d-prompt-text").textContent = "Loading…";
+    $("#d-prompt-text").textContent = window.t("Loading…");
     prompts[key] = fetch(api("/api/prompt") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .catch(() => { delete prompts[key]; return null; });
   }
   const res = await prompts[key];
   if (openId !== t.id) return;
-  $("#d-prompt-text").textContent = (res && res.prompt) || t.notes || "No notes.";
-  $("#d-prompt-note").textContent = res && res.saved === false ? "Rebuilt from the current card (sent before prompts were saved)." : "";
+  $("#d-prompt-text").textContent = (res && res.prompt) || t.notes || window.t("No notes.");
+  $("#d-prompt-note").textContent = res && res.saved === false ? window.t("Rebuilt from the current card (sent before prompts were saved).") : "";
 }
 // Names the model a launch with no --model gets. The server may still be probing the account default (null).
 let defaultModel = { pid: null, model: null, at: 0 };
@@ -2109,7 +2130,7 @@ async function loadDefaultModel() {
     if (r.ok && pid === P) defaultModel.model = res.model;
   } catch (e) { /* label stays generic */ }
   const opt = $("#d-model option[value='']");
-  opt.textContent = defaultModel.model ? `Default model (${prettyModel(defaultModel.model)})` : "Default model (checking…)";
+  opt.textContent = defaultModel.model ? t("Default model ({model})", { model: prettyModel(defaultModel.model) }) : t("Default model (checking…)");
   if (!defaultModel.model) setTimeout(() => { const o = openId && task(openId); if (o && !o.agent) loadDefaultModel(); }, 10000);
 }
 // Closed while a reply is in flight too: the box goes the moment you send, and comes back only if the send fails.
@@ -2122,8 +2143,8 @@ async function post(url, body) {
   let res;
   try { res = JSON.parse(text); } catch (e) {
     // A route the running server.py does not know answers a bare 404: it predates this page's code.
-    throw new Error(r.status === 404 ? `the board server does not know ${url} — it runs older code; restart it (Ctrl-C, then onemoretask)`
-      : `the server answered ${r.status} with no details`);
+    throw new Error(r.status === 404 ? t("the board server does not know {url} — it runs older code; restart it (Ctrl-C, then onemoretask)", { url })
+      : t("the server answered {status} with no details", { status: r.status }));
   }
   if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted, norepo: !!res.norepo, unsaved: res.unsaved || null });
   return res;
@@ -2134,10 +2155,10 @@ async function post(url, body) {
 const trustOpen = () => $("#trust-modal").classList.contains("open");
 function closeTrust(cancelled) {
   $("#trust-modal").classList.remove("open");
-  if (cancelled) setStatus("Not sent: folder not trusted");
+  if (cancelled) setStatus(t("Not sent: folder not trusted"));
 }
 function askTrust(t) {
-  $("#trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || "this folder";
+  $("#trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || window.t("this folder");
   $("#trust-no").onclick = () => closeTrust(true);
   $("#trust-yes").onclick = async () => {
     $("#trust-yes").disabled = true;
@@ -2146,7 +2167,7 @@ function askTrust(t) {
       closeTrust(false);
       await sendToClaude(t);
     } catch (e) {
-      setStatus("Trust failed: " + e.message, true);
+      setStatus(window.t("Trust failed: {error}", { error: window.t(e.message) }), true);
     } finally { $("#trust-yes").disabled = false; }
   };
   $("#trust-modal").classList.add("open");
@@ -2159,11 +2180,11 @@ let repoFor = null;
 const repoOpen = () => $("#repo-modal").classList.contains("open");
 function closeRepo(cancelled) {
   $("#repo-modal").classList.remove("open");
-  if (cancelled && repoFor) setStatus("Not sent: no local repo");
+  if (cancelled && repoFor) setStatus(t("Not sent: no local repo"));
 }
 function askRepo(t) {
   repoFor = t;
-  $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || "This folder";
+  $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || window.t("This folder");
   $("#repo-no").onclick = () => closeRepo(true);
   $("#repo-nowt").onclick = async () => {
     if (!t) return closeRepo(true);
@@ -2175,7 +2196,7 @@ function askRepo(t) {
       closeRepo(false);
       await sendToClaude(t);
     } catch (e) {
-      setStatus("Could not send: " + e.message, true);
+      setStatus(window.t("Could not send: {error}", { error: window.t(e.message) }), true);
     } finally { $("#repo-nowt").disabled = false; }
   };
   $("#repo-yes").onclick = async () => {
@@ -2184,10 +2205,10 @@ function askRepo(t) {
       await post("/api/git/init", { p: P });
       gitInfo.at = 0;   // the chips reload with the new branch
       closeRepo(false);
-      setStatus("Local repo created");
+      setStatus(window.t("Local repo created"));
       if (t) await sendToClaude(t);
     } catch (e) {
-      setStatus("Could not create the repo: " + e.message, true);
+      setStatus(window.t("Could not create the repo: {error}", { error: window.t(e.message) }), true);
     } finally { $("#repo-yes").disabled = false; }
   };
   $("#repo-modal").classList.add("open");
@@ -2199,11 +2220,11 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   const nm = isCodexModel($("#d-model").value) ? "Codex" : "Claude";
-  setStatus(`Starting ${nm}…`);
-  const pm = addPending(t, "launch", `Sending to ${nm}` + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  setStatus(window.t("Starting {name}…", { name: nm }));
+  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
-  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); $("#d-col").value = t.column;
   const gen = boardGen;
@@ -2212,7 +2233,7 @@ async function sendToClaude(t) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.
     dropPending(t, pm); t = task(t.id) || t;
     render(); if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
-    setStatus(`The board changed in another window, so ${nm} was not started. Please send again.`, true);
+    setStatus(window.t("The board changed in another window, so {name} was not started. Please send again.", { name: nm }), true);
     return;
   }
   try {
@@ -2232,14 +2253,14 @@ async function sendToClaude(t) {
       if (boardGen === g) break;
     }
     pm.state = "sent";
-    setStatus(`${nm} session ${res.id} started`);
+    setStatus(window.t("{name} session {id} started", { name: nm, id: res.id }));
   } catch (e) {
     dropPending(t, pm); t = task(t.id) || t;
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     await settled();   // else its "Saved" would replace the error
-    if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
-    else if (e.norepo) { askRepo(t); setStatus("Worktrees need a local repo first", true); }
-    else setStatus(`Send to ${nm} failed: ` + e.message, true);
+    if (e.untrusted) { askTrust(t); setStatus(window.t("Claude needs you to trust this folder first"), true); }
+    else if (e.norepo) { askRepo(t); setStatus(window.t("Worktrees need a local repo first"), true); }
+    else setStatus(window.t("Send to {name} failed: {error}", { name: nm, error: window.t(e.message) }), true);
   }
   t = task(t.id) || t;
   render();
@@ -2248,16 +2269,16 @@ async function sendToClaude(t) {
 }
 
 async function startReview(t) {
-  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", `Starting a code review (${level}${model ? ", " + model : ""})`, []);
-  setStatus("Starting code review…");
+  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", window.t("Starting a code review ({details})", { details: level + (model ? ", " + model : "") }), []);
+  setStatus(window.t("Starting code review…"));
   refreshAgent(t); render();
   try {
     const res = await post("/api/agent/review", { p: P, taskId: t.id, level, model });
     pm.state = "sent";
-    setStatus("Code review session " + res.id + " started");
+    setStatus(window.t("Code review session {id} started", { id: res.id }));
   } catch (e) {
     dropPending(t, pm);
-    setStatus("Code review failed: " + e.message, true);
+    setStatus(window.t("Code review failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2270,16 +2291,16 @@ async function sendFindingsBack(t) {
   const typed = $("#d-reply").value.trim(), text = typed || "Fix the findings you agree with; say which ones you skip and why.";
   const pm = addPending(t, "reply", `Sent the review findings back to ${to}: ${text}`, []), pid = P;
   setReplyDraft(t.id, "");
-  setStatus(`Sending the findings to ${to}…`);
+  setStatus(window.t("Sending the findings to {name}…", { name: to }));
   refreshAgent(t); render();
   try {
     await post("/api/agent/handback", { p: P, taskId: t.id, text });
     pm.state = "sent";
-    setStatus(`${to} is fixing the review findings`);
+    setStatus(window.t("{name} is fixing the review findings", { name: to }));
   } catch (e) {
     dropPending(t, pm);
     if (typed && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, typed, pid);
-    setStatus("Could not send the findings back: " + e.message, true);
+    setStatus(window.t("Could not send the findings back: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2287,18 +2308,18 @@ async function sendFindingsBack(t) {
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {
   answering[t.id] = true;
-  setStatus(choice === "deny" ? "Saying no…" : "Allowing…");
+  setStatus(choice === "deny" ? window.t("Saying no…") : window.t("Allowing…"));
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = (choice === "deny" ? "Told Claude no." : res.once ? "Allowed once: Claude does not offer \"always\" for this one." : "Allowed.") + (res.again
-      ? " It asks the same thing again (a second identical request): answer that one too."
-      : res.next && res.next !== ask ? " It now asks about something else." : "");
+    const msg = (choice === "deny" ? window.t("Told Claude no.") : res.once ? window.t("Allowed once: Claude does not offer \"always\" for this one.") : window.t("Allowed.")) + (res.again
+      ? " " + window.t("It asks the same thing again (a second identical request): answer that one too.")
+      : res.next && res.next !== ask ? " " + window.t("It now asks about something else.") : "");
     // With `again` the card keeps the same prompt, so it will not update.
-    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " The card updates in a moment." };
+    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " " + window.t("The card updates in a moment.") };
     setStatus(msg);
   } catch (e) {
-    const msg = "Could not answer: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.";
+    const msg = window.t("Could not answer: {error}. Copy the attach command from the ⋯ menu to answer it in a terminal.", { error: window.t(e.message) });
     permissionNote[t.id] = { ask, note: msg };
     setStatus(msg, true);
   }
@@ -2309,16 +2330,16 @@ async function answerPermission(t, choice, ask) {
 // The server types a canned message into the card's session; its logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
   const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
-  setStatus(action === "run" ? "Asking Claude to run the app…" : "Asking Claude to merge…");
+  setStatus(action === "run" ? window.t("Asking Claude to run the app…") : window.t("Asking Claude to merge…"));
   refreshAgent(t); render();
   try {
     await post("/api/agent/worktree", { p: P, taskId: t.id, action });
     pm.state = "sent";
-    setStatus(action === "run" ? "Asked Claude to run the app from the worktree" : "Asked Claude to merge the worktree");
+    setStatus(action === "run" ? window.t("Asked Claude to run the app from the worktree") : window.t("Asked Claude to merge the worktree"));
     if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);
-    setStatus(label + " failed: " + e.message, true);
+    setStatus(action === "run" ? window.t("Run app from worktree failed: {error}", { error: window.t(e.message) }) : window.t("Merge worktree to main failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2334,32 +2355,32 @@ function busy(msg) {
   $("#busy").classList.toggle("open", !!msg);
 }
 async function deleteWorktree(t, force) {
-  busy("Deleting the worktree…");
+  busy(window.t("Deleting the worktree…"));
   try { await deleteWorktreeNow(t, force); } finally { busy(false); }
   if (wtdelOpen()) $("#wtdel-no").focus();  // inert while busy, so focus only now
 }
 async function deleteWorktreeNow(t, force) {
   $("#d-wt-del").disabled = $("#wtdel-yes").disabled = true;
-  setStatus("Deleting the worktree…");
+  setStatus(window.t("Deleting the worktree…"));
   closeWtdel();
   try {
     await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
     if (agents[t.id]) agents[t.id].worktree = false;
     gitInfo.at = 0; delete taskGit[P + ":" + t.id]; loadTaskGit(t, true);
-    setStatus("Worktree deleted");
+    setStatus(window.t("Worktree deleted"));
   } catch (e) {
     if (e.unsaved && !force) {
       const u = e.unsaved, n = u.changes.length, parts = [];
-      if (u.commits) parts.push(`${u.commits} saved change${u.commits > 1 ? "s" : ""} (commit${u.commits > 1 ? "s" : ""}) that are on no other branch`);
-      if (n) parts.push(`${n} file${n > 1 ? "s" : ""} changed but not saved`);
-      $("#wtdel-text").textContent = `This worktree holds ${parts.join(" and ")}. Deleting it loses ${u.commits + n > 1 ? "them" : "it"} for good.`;
-      $("#wtdel-list").innerHTML = u.changes.slice(0, 50).map((x) => `<li>${esc(x)}</li>`).join("") + (n > 50 ? `<li>… ${n - 50} more</li>` : "");
+      if (u.commits) parts.push(u.commits > 1 ? window.t("{n} saved changes (commits) that are on no other branch", { n: u.commits }) : window.t("1 saved change (commit) that are on no other branch"));
+      if (n) parts.push(n > 1 ? window.t("{n} files changed but not saved", { n }) : window.t("1 file changed but not saved"));
+      $("#wtdel-text").textContent = u.commits + n > 1 ? window.t("This worktree holds {what}. Deleting it loses them for good.", { what: parts.join(" " + window.t("and") + " ") }) : window.t("This worktree holds {what}. Deleting it loses it for good.", { what: parts.join(" " + window.t("and") + " ") });
+      $("#wtdel-list").innerHTML = u.changes.slice(0, 50).map((x) => `<li>${esc(x)}</li>`).join("") + (n > 50 ? `<li>… ${window.t("{n} more", { n: n - 50 })}</li>` : "");
       $("#wtdel-list").hidden = !n;
       $("#wtdel-no").onclick = closeWtdel;
       $("#wtdel-yes").onclick = () => deleteWorktree(t, true);
       $("#wtdel-modal").classList.add("open");
       setStatus("");
-    } else setStatus("Delete worktree failed: " + e.message, true);
+    } else setStatus(window.t("Delete worktree failed: {error}", { error: window.t(e.message) }), true);
   } finally { $("#d-wt-del").disabled = $("#wtdel-yes").disabled = false; }
   refreshAgent(t); render();
   await pollAgents();
@@ -2381,13 +2402,13 @@ async function sendReply() {
   if (!t || (!text && !replyImages.length) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
-  setStatus(busy ? "Sending note…" : "Sending reply…");
+  setStatus(busy ? window.t("Sending note…") : window.t("Sending reply…"));
   const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
   setReplyDraft(t.id, ""); replyImages = []; renderReplyImages();
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
   // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
-  const fromCol = t.column, prog = colNamed(/progress|doing/i);
+  const fromCol = t.column, prog = colRole("progress");
   if (isDone(t) && prog) {
     moveTask(t.id, prog.id, null);
     render(); $("#d-col").value = t.column;
@@ -2396,7 +2417,7 @@ async function sendReply() {
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
-    setStatus(res.queued ? "Note sent — Claude reads it as soon as it can" : "Reply sent — Claude is back at work");
+    setStatus(res.queued ? window.t("Note sent — Claude reads it as soon as it can") : window.t("Reply sent — Claude is back at work"));
   } catch (e) {
     dropPending(t, pm);
     if (t.column !== fromCol) { moveTask(t.id, fromCol, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
@@ -2404,7 +2425,7 @@ async function sendReply() {
     // The text goes back to the card's draft even if you moved on; images only to the open card's box.
     if (text && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, text, pid);
     if (openId === t.id && P === pid && !replyImages.length) { replyImages = images; renderReplyImages(); }
-    setStatus("Reply failed: " + e.message, true);
+    setStatus(window.t("Reply failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t);
   await pollAgents();
@@ -2432,14 +2453,14 @@ async function pollAgents() {
     // (its PUT will 409 and reload) or we saved since this poll left (then the header is just older than rev).
     const diskRev = r.headers.get("X-Board-Rev");
     if (rev !== null && diskRev !== null && diskRev !== rev && rev === revBefore && !saveTimer && !saving
-        && await reloadBoard()) setStatus("Board updated from another window");
+        && await reloadBoard()) setStatus(t("Board updated from another window"));
     if (pid !== P) return;
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
     for (const [id, a] of Object.entries(next)) {
       const t = task(id), was = agents[id] && agents[id].phase;
       if (!t) continue;
-      const review = colNamed(/review/i), prog = colNamed(/progress|doing/i);
+      const review = colRole("review"), prog = colRole("progress");
       // A finish the page never saw change (closed tab, reload, server restart) still reaches Review
       // if Claude's last message is newer than the card's last edit or move.
       const last = [...(a.log || [])].reverse().find((e) => e.from !== "you");
@@ -2466,7 +2487,7 @@ async function pollAgents() {
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
   } catch (e) {
-    setStatus("Claude status check failed: " + e.message, true);
+    setStatus(t("Claude status check failed: {error}", { error: t(e.message) }), true);
   }
   pollTimer = setTimeout(pollAgents, wait);
 }
@@ -2474,10 +2495,10 @@ async function pollAgents() {
 function updateWaiting() {
   const waiting = state.tasks.filter((t) => t.agent && agents[t.id] && agents[t.id].phase === "needs_you");
   const name = project() ? project().name + " · Task Board" : "Task Board";
-  document.title = waiting.length ? `(${waiting.length}) Claude needs you · ${name}` : name;
+  document.title = waiting.length ? `(${waiting.length}) ${t("Claude needs you")} · ${name}` : name;
   const b = $("#waiting");
   b.style.display = waiting.length ? "inline-block" : "none";
-  b.textContent = `${waiting.length} waiting on you`;
+  b.textContent = t("{n} waiting on you", { n: waiting.length });
   b.onclick = () => waiting.length && openDetail(waiting[0].id);
 }
 
@@ -2510,7 +2531,7 @@ function renderObsButton() {
   const d = obs.pid === P && obs.data, n = d ? obsList().length : 0;
   $("#obs-btn").style.display = d && (d.installed || n) ? "inline-flex" : "none";
   $("#obs-n").textContent = n || "";
-  $("#obs-due").textContent = d && reviewDue() ? "review due" : "";
+  $("#obs-due").textContent = d && reviewDue() ? t("review due") : "";
 }
 // The source whose full review is most overdue, or null when none is due.
 function reviewDue() {
@@ -2534,8 +2555,8 @@ new ResizeObserver(() => document.documentElement.style.setProperty("--hdr-h", $
 
 function renderObs() {
   const d = obs.data || { sources: [], observations: [] }, list = obsList();
-  $("#obs-note").textContent = d.installed ? "" : "The task-observer skill is not installed. Re-run the installer to add it.";
-  const scopes = [["project", "This project"], ["user", "All projects (~/.claude)"]];
+  $("#obs-note").textContent = d.installed ? "" : t("The task-observer skill is not installed. Re-run the installer to add it.");
+  const scopes = [["project", t("This project")], ["user", t("All projects (~/.claude)")]];
   const html = scopes.map(([scope, name]) => {
     const rows = list.filter((o) => o.scope === scope), dirs = (d.sources || []).filter((s) => s.scope === scope);
     if (!rows.length && !dirs.length) return "";
@@ -2545,9 +2566,9 @@ function renderObs() {
         <span class="t"><b>#${esc(o.id)}</b>${esc(o.title)}</span>
         <span class="c">${esc([(o.skill || []).join(", "), o.date].filter(Boolean).join(" · "))}</span>
         ${obsOpenRows.has(o.key) ? `<div class="obs-body md">${fmtMsg(o.body || "")}</div>` : ""}</li>`).join("")
-        : `<li class="obs-empty">None open.</li>`}</ul></section>`;
+        : `<li class="obs-empty">${t("None open.")}</li>`}</ul></section>`;
   }).join("");
-  $("#obs-list").innerHTML = html || `<div class="obs-empty">No open observations.</div>`;
+  $("#obs-list").innerHTML = html || `<div class="obs-empty">${t("No open observations.")}</div>`;
   $("#obs-list").querySelectorAll("li[data-key]").forEach((li) => {
     const k = li.dataset.key;
     li.querySelector("input").onchange = (e) => { e.target.checked ? obsSel.add(k) : obsSel.delete(k); renderObsFoot(); };
@@ -2564,13 +2585,13 @@ function renderObsFoot() {
   const n = obsSel.size, all = obsList().length;
   $("#obs-all").checked = !!all && n === all;
   $("#obs-all").disabled = !all;
-  $("#obs-apply").textContent = `Apply (${n})`;
+  $("#obs-apply").textContent = t("Apply ({n})", { n });
   $("#obs-apply").disabled = !n;
   $("#obs-review").disabled = !(obs.data && obs.data.installed);
   const due = reviewDue();
   $("#obs-due-line").textContent = !due ? "" : due.reviewDays != null
-    ? `Skill review due: last run ${due.lastReview} (${due.reviewDays} days ago)`
-    : !due.lastReview || due.lastReview === "never" ? "Skill review due: never run" : "Skill review due";
+    ? t("Skill review due: last run {date} ({n} days ago)", { date: due.lastReview, n: due.reviewDays })
+    : !due.lastReview || due.lastReview === "never" ? t("Skill review due: never run") : t("Skill review due");
 }
 
 // The card's notes are the prompt: they name each observation and its file so the session edits the right ones.
@@ -2628,7 +2649,7 @@ $("#obs-modal").addEventListener("mousedown", (e) => { if (e.target.id === "obs-
 
 // ---------------------------------------------------------------- changelog
 // The board app's own changes in plain words (whats-new.md), and the ones Update would bring.
-const dayName = (d) => { const t = new Date(d + "T12:00"); return isNaN(t) ? d : t.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); };
+const dayName = (d) => { const t = new Date(d + "T12:00"); return isNaN(t) ? d : t.toLocaleDateString(LOCALE, { month: "long", day: "numeric", year: "numeric" }); };
 function fmtChangelog(list) {
   let out = "", day = null;
   for (const c of list) {
@@ -2641,16 +2662,16 @@ const clOpen = () => $("#cl-modal").classList.contains("open");
 async function openChangelog() {
   closeObs();
   $("#cl-modal").classList.add("open");
-  $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? "Loading…" : "The changelog needs server.py."}</div>`;
+  $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? t("Loading…") : t("The changelog needs server.py.")}</div>`;
   if (!useServer) return;
   let html;
   try {
     const r = await fetch("/api/changelog", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-        html = (d.pending.length ? `<div class="h h1">Coming when you press Update</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">Already here</div>` : "")
-      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">Nothing written here yet.</div>`);
-  } catch (e) { html = `<div class="obs-empty">Could not load the changelog.</div>`; }
+        html = (d.pending.length ? `<div class="h h1">${t("Coming when you press Update")}</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">${t("Already here")}</div>` : "")
+      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">${t("Nothing written here yet.")}</div>`);
+  } catch (e) { html = `<div class="obs-empty">${t("Could not load the changelog.")}</div>`; }
   if (clOpen()) $("#cl-body").innerHTML = html;
 }
 function closeChangelog() { $("#cl-modal").classList.remove("open"); }
@@ -2666,7 +2687,7 @@ const fileDir = (sub) => (useServer ? `/files/${P}/${sub}/` : sub + "/");
 let replyImages = [];            // uploaded, waiting for Send reply
 
 function thumbItems(names, dir, removable) {
-  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="Open full size"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="Remove">✕</button>` : ""}</a>`).join("");
+  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="${t("Open full size")}"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="${t("Remove")}">✕</button>` : ""}</a>`).join("");
 }
 function bindRemove(box, list, after) {
   box.querySelectorAll(".x").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); list.splice(+b.dataset.i, 1); after(); }));
@@ -2675,8 +2696,8 @@ function renderImages(t) {
   const box = $("#d-images");
   box.innerHTML = thumbItems(t.images, fileDir("images"), !t.agent);
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
-  $("#d-img-hint").textContent = t.agent ? "Sent to Claude — the task is locked. Add anything new as a reply."
-    : useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
+  $("#d-img-hint").textContent = t.agent ? window.t("Sent to Claude — the task is locked. Add anything new as a reply.")
+    : useServer ? window.t("Paste (⌘V) or drop an image to attach it — Claude gets it with the task.") : window.t("Attaching images needs server.py.");
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
@@ -2700,11 +2721,11 @@ async function attachFiles(files, toReply) {
   files = files.filter((f) => f.type.startsWith("image/"));
   if (!t || !files.length) return false;
   if (!toReply && t.agent) {   // a sent task is locked; images go to the reply instead
-    if (!replyOpen(t)) { setStatus("This task was sent to Claude — attach images to a reply", true); return true; }
+    if (!replyOpen(t)) { setStatus(window.t("This task was sent to Claude — attach images to a reply"), true); return true; }
     toReply = true;
   }
-  if (!useServer) { setStatus("Attaching images needs server.py", true); return true; }
-  setStatus(`Uploading ${files.length} image${files.length > 1 ? "s" : ""}…`);
+  if (!useServer) { setStatus(window.t("Attaching images needs server.py"), true); return true; }
+  setStatus(files.length > 1 ? window.t("Uploading {n} images…", { n: files.length }) : window.t("Uploading 1 image…"));
   try {
     for (const f of files) {
       const name = await uploadImage(f, toReply ? "log" : "task");
@@ -2712,9 +2733,9 @@ async function attachFiles(files, toReply) {
       else { t.images = t.images || []; if (!t.images.includes(name)) t.images.push(name); touch(t); }
     }
     toReply ? renderReplyImages() : (renderImages(t), render());
-    setStatus(toReply ? "Image added to your reply" : "Image attached to the task");
+    setStatus(toReply ? window.t("Image added to your reply") : window.t("Image attached to the task"));
   } catch (e) {
-    setStatus("Image upload failed: " + e.message, true);
+    setStatus(window.t("Image upload failed: {error}", { error: window.t(e.message) }), true);
   }
   return true;
 }
@@ -2784,7 +2805,7 @@ function fmtMsg(text) {
   }
   return out;
 }
-function fmt(iso) { return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
+function fmt(iso) { return iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
 // Text size is a per-browser view preference, like collapsed groups.
 function applyTextSize(v) { document.documentElement.style.setProperty("--ts", v); $("#text-size").value = v; }
@@ -2793,12 +2814,19 @@ $("#text-size").addEventListener("change", (e) => {
   applyTextSize(e.target.value);
   try { localStorage.setItem(LS_KEY + ":ts", e.target.value); } catch (_) {}
 });
+// Language: saved per browser, read by i18n.js before this script; the page reloads so every string is rebuilt.
+$("#lang").value = LANG;
+$("#lang").addEventListener("change", (e) => {
+  try { localStorage.setItem(LS_KEY + ":lang", e.target.value); } catch (_) {}
+  flush(true);
+  location.reload();
+});
 // Theme: "" follows the system; the <head> script applies the saved choice before first paint.
-const THEMES = { "": ["◐", "System"], light: ["☀", "Light"], dark: ["☾", "Dark"] };
+const THEMES = { "": ["◐", t("System")], light: ["☀", t("Light")], dark: ["☾", t("Dark")] };
 function showTheme() {
   const [icon, name] = THEMES[document.documentElement.dataset.theme || ""];
-  $("#theme").innerHTML = `<span>Theme</span><span class="v">${icon} ${name}</span>`;
-  $("#theme").title = `Theme: ${name} (click to change)`;
+  $("#theme").innerHTML = `<span>${t("Theme")}</span><span class="v">${icon} ${name}</span>`;
+  $("#theme").title = t("Theme: {name} (click to change)", { name });
 }
 $("#theme").addEventListener("click", () => {
   const order = ["", "light", "dark"];
@@ -2812,14 +2840,14 @@ showTheme();
 // Update: server.py compares the installed commit with GitHub; the button is green when an update can be installed.
 let upd = null, updBusy = false;
 const short = (s) => (s ? s.slice(0, 7) : "?");
-const again = (s) => s.replace(/\.?$/, ". Click to check again");
+const again = (s) => s.replace(/\.?$/, ". " + t("Click to check again"));
 function showUpdate(label, cls, title) {
   const b = $("#update");
   Object.assign(b, { hidden: false, textContent: label, className: "btn " + cls, title, disabled: updBusy });
 }
 async function checkUpdate(force) {
   if (!useServer || updBusy) return;
-  if (force) showUpdate("Checking…", "", "Checking GitHub for updates");
+  if (force) showUpdate(t("Checking…"), "", t("Checking GitHub for updates"));
   try {
     const r = await fetch("/api/update" + (force ? "?force=1" : ""), { cache: "no-store" });
     if (r.status === 404) { $("#update").hidden = true; return; }
@@ -2828,21 +2856,21 @@ async function checkUpdate(force) {
   } catch (e) { upd = { error: e.message }; }
   // Shown only when GitHub has something newer; up to date or a failed check shows nothing.
   const u = upd;
-  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate("Update", "new", `${u.behind} new update${u.behind > 1 ? "s" : ""} on GitHub (${short(u.installed)} → ${short(u.latest)}). Click to install and restart.`);
-  else if (!u.error && u.behind > 0) showUpdate("Update available", "blocked", again(u.reason || "Cannot update automatically"));
+  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate(t("Update"), "new", u.behind > 1 ? t("{n} new updates on GitHub ({from} → {to}). Click to install and restart.", { n: u.behind, from: short(u.installed), to: short(u.latest) }) : t("1 new update on GitHub ({from} → {to}). Click to install and restart.", { from: short(u.installed), to: short(u.latest) }));
+  else if (!u.error && u.behind > 0) showUpdate(t("Update available"), "blocked", again(u.reason ? t(u.reason) : t("Cannot update automatically")));
   else $("#update").hidden = true;
 }
 // After a restarting update, wait for the old server to go down and the new one to answer, then reload.
 async function runUpdate() {
   updBusy = true;
-  showUpdate("Updating…", "new", "Installing the update");
+  showUpdate(t("Updating…"), "new", t("Installing the update"));
   try {
     const r = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     for (let t0 = Date.now(), down = false; d.restarting; ) {
       await new Promise((ok) => setTimeout(ok, 500));
-      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      if (Date.now() - t0 > 30000) throw new Error(t("The board server did not come back within 30 s"));
       let up = false;
       try { up = (await fetch("/api/update", { cache: "no-store" })).ok; } catch (_) {}
       if (!up) down = true;
@@ -2851,7 +2879,7 @@ async function runUpdate() {
     location.reload();
   } catch (e) {
     updBusy = false; upd = null;
-    showUpdate("Update failed", "", again(e.message));
+    showUpdate(t("Update failed"), "", again(t(e.message)));
   }
 }
 // Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
@@ -2867,24 +2895,24 @@ async function checkAppCopy() {
   const cur = copies.copies.find((c) => c.path === copies.current);
   sel.hidden = copies.copies.length < 2 && (!cur || cur.main);
   sel.classList.toggle("away", !cur || !cur.main);
-  sel.title = cur && cur.main ? "The board runs from the main copy. Pick a worktree to try a task's changes"
-    : "The board runs from a worktree, not from main: " + copies.current;
+  sel.title = cur && cur.main ? t("The board runs from the main copy. Pick a worktree to try a task's changes")
+    : t("The board runs from a worktree, not from main: {path}", { path: copies.current });
   const name = (c) => (c.main ? "main" : "⎇ " + (c.name || c.branch));
   sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
-    + esc(name(c)) + (c.canSwitch ? "" : " (too old)") + "</option>").join("");
+    + esc(name(c)) + (c.canSwitch ? "" : " (" + t("too old") + ")") + "</option>").join("");
   if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);
 }
 $("#app-copy").addEventListener("change", async (e) => {
   const sel = e.target, path = sel.value;
   sel.disabled = true;
-  setStatus("Restarting the board from " + path + "…");
+  setStatus(t("Restarting the board from {path}…", { path }));
   try {
     const r = await fetch("/api/app-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     for (let t0 = Date.now(), down = false; ; ) {
       await new Promise((ok) => setTimeout(ok, 500));
-      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      if (Date.now() - t0 > 30000) throw new Error(t("The board server did not come back within 30 s"));
       // Any answer counts once it went down: an older main copy has no /api/app-copy (404).
       let q = null;
       try { q = await fetch("/api/app-copy", { cache: "no-store" }); } catch (_) {}
@@ -2894,7 +2922,7 @@ $("#app-copy").addEventListener("change", async (e) => {
     location.reload();
   } catch (err) {
     sel.disabled = false;
-    setStatus("Could not switch: " + err.message, true);
+    setStatus(t("Could not switch: {error}", { error: t(err.message) }), true);
     checkAppCopy();
   }
 });
@@ -2952,9 +2980,9 @@ document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", 
 }));
 
 load().then(() => {
-  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
+  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); checkUpdate(); checkAppCopy();
 })
-  .catch((e) => setStatus("Could not load the board: " + e.message, true));
+  .catch((e) => setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true));
 </script>
 </body>
 </html>

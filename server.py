@@ -1003,6 +1003,15 @@ def review(p, task_id, level, model=None):
     return aid
 
 
+def review_column(columns):
+    """Id of the board's Review column: the one with role "review", else (old boards) the first not-done
+    column whose name says review. A rename (or a French name) never breaks a column that has the role."""
+    cols = [c for c in columns if isinstance(c, dict) and not c.get("done")]
+    if not any(c.get("role") == "review" for c in columns if isinstance(c, dict)):
+        return next((c["id"] for c in cols if re.search("review", c.get("name", ""), re.I)), None)
+    return next((c["id"] for c in cols if c.get("role") == "review"), None)
+
+
 def review_worker(log, t):
     """The session whose work the card's last code review looked at (the card's session before that review), or None
     when the card had no review."""
@@ -1295,7 +1304,7 @@ def phase_of(session, log, launched_at):
         if last.get("from") == "claude" and last.get("status") == "progress":
             return "needs_you", "Stopped after a progress note without reporting done — reply to check on it" + (f" (CLI: {detail})" if detail else "")
         if is_codex(session):  # no attach and no permission prompts in Codex
-            return "needs_you", f"Stopped in the session{': ' + detail if detail else ''} — reply to check on it"
+            return "needs_you", f"Stopped in the session: {detail} — reply to check on it" if detail else "Stopped in the session — reply to check on it"
         if detail:
             return "needs_you", f"Stopped in the session: {detail} — reply, or attach if it asks for a permission"
         return "needs_you", "Waiting on a permission prompt or a question in the session — attach to answer"
@@ -1880,8 +1889,8 @@ class Watcher:
                 stalled = None
             unstalling = bool(stalled) and stall_retries(said) < STALL_TRIES and self.unstall_fail.get(key) != stalled
             if stalled:
-                reason = "Claude Code's safety check kept failing, so Claude stopped. " + (
-                    "The board tries again in a minute." if unstalling else "Reply to try again.")
+                reason = ("Claude Code's safety check kept failing, so Claude stopped. The board tries again in a minute."
+                          if unstalling else "Claude Code's safety check kept failing, so Claude stopped. Reply to try again.")
             if (unstalling and not pending and key not in self.delivering and key not in self.closing
                     and time.time() - stalled > STALL_RETRY):
                 self.delivering.add(key)
@@ -2000,7 +2009,7 @@ class Watcher:
                 state = boards[p.id]
                 t = state and next((x for x in state["tasks"] if x.get("id") == a["id"]), None)
                 cols = {c["id"]: c for c in (state or {}).get("columns", [])}
-                review = next((c["id"] for c in cols.values() if not c.get("done") and re.search("review", c.get("name", ""), re.I)), None)
+                review = review_column(cols.values())
                 col = t and cols.get(t.get("column"))
                 # The page puts finished work on top of Review even when it was there, so a move shows as a new
                 # "updated"; a card in a done column or a board with no Review column has nothing to wait for.
@@ -2828,6 +2837,9 @@ class Handler(SimpleHTTPRequestHandler):
             # Only the page itself: the app folder also holds .git/ and the board data.
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 self._send(200, f.read(), TYPES[".html"])
+        elif path == "/i18n.js":
+            with open(os.path.join(HERE, "i18n.js"), "rb") as f:
+                self._send(200, f.read(), TYPES[".js"])
         else:
             self._send(404)
 
