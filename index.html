@@ -1956,41 +1956,41 @@ function renderSummary(t) {
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
-  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? "Recap" : rep.status === "answer" ? "Answer" : "Result"} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
-  else if (latest) html = `<div class="sum-label">No final report yet · latest ${esc(latest.status)} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
-  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? "Claude has not reported anything yet." : "No report from Claude on this task."}</div>`;
+  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? window.t("Recap") : rep.status === "answer" ? window.t("Answer") : window.t("Result")} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
+  else if (latest) html = `<div class="sum-label">${window.t("No final report yet")} · ${window.t("latest {status}", { status: esc(latest.status) })} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
+  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? window.t("Claude has not reported anything yet.") : window.t("No report from Claude on this task.")}</div>`;
   if (box.innerHTML !== html) box.innerHTML = html;
   // What changed: commits named on the card / ahead of the target, and uncommitted files.
   const items = [];
   if (g && g.available) {
-    for (const c of (g.ahead || []).slice(0, 12)) items.push(`<li><span class="ok">✓</span><span class="sub">${inl(esc(c.subject || "(no message)"))}</span><span class="n"><code>${esc(c.sha)}</code></span></li>`);
-    if ((g.ahead || []).length > 12) items.push(`<li><span class="n">… ${g.ahead.length - 12} more commits in Changes</span></li>`);
+    for (const c of (g.ahead || []).slice(0, 12)) items.push(`<li><span class="ok">✓</span><span class="sub">${inl(esc(c.subject || window.t("(no message)")))}</span><span class="n"><code>${esc(c.sha)}</code></span></li>`);
+    if ((g.ahead || []).length > 12) items.push(`<li><span class="n">… ${window.t("{n} more commits in Changes", { n: g.ahead.length - 12 })}</span></li>`);
     const ch = g.changed || [];
-    if (ch.length) items.push(`<li><span class="ok">•</span><span class="sub">${ch.length} uncommitted file${ch.length > 1 ? "s" : ""}${g.shared ? " in the project folder" : ""}: ${ch.slice(0, 5).map((f) => `<code>${esc(f.path)}</code>`).join(", ")}${ch.length > 5 ? ", …" : ""}</span></li>`);
+    if (ch.length) items.push(`<li><span class="ok">•</span><span class="sub">${ch.length === 1 ? (g.shared ? window.t("1 uncommitted file in the project folder") : window.t("1 uncommitted file")) : g.shared ? window.t("{n} uncommitted files in the project folder", { n: ch.length }) : window.t("{n} uncommitted files", { n: ch.length })}: ${ch.slice(0, 5).map((f) => `<code>${esc(f.path)}</code>`).join(", ")}${ch.length > 5 ? ", …" : ""}</span></li>`);
   }
   $("#d-sum-changes").innerHTML = items.length ? `<ul class="sum-list">${items.join("")}</ul>`
-    : `<div class="sum-empty">${!g ? "Loading repository state…" : !g.available ? "Repository state unavailable." : g.answerOnly ? "Answer-only task: no changes were expected." : "No commits or uncommitted files found for this task."}</div>`;
+    : `<div class="sum-empty">${!g ? window.t("Loading repository state…") : !g.available ? window.t("Repository state unavailable.") : g.answerOnly ? window.t("Answer-only task: no changes were expected.") : window.t("No commits or uncommitted files found for this task.")}</div>`;
   // Verification: the latest code review's findings, if a review ran after the report.
   const vh = $("#d-sum-verify-h"), vb = $("#d-sum-verify");
   const finding = lastReview >= 0 && [...log.slice(lastReview + 1)].reverse().find((e) => e.from !== "you" && e.status === "done");
-  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">Code review · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
-  else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">Code review started ${esc(fmt(log[lastReview].at))}; no findings posted yet.</div>`; }
-  else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">No code review yet. Start one from the Changes tab.</div>`; }
+  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
+  else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">${window.t("Code review started {at}; no findings posted yet.", { at: esc(fmt(log[lastReview].at)) })}</div>`; }
+  else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">${window.t("No code review yet. Start one from the Changes tab.")}</div>`; }
   $("#d-sum-repo").innerHTML = repoStatusHtml(t, g);
-  $("#d-sum-conv").textContent = `View full conversation (${log.length} message${log.length === 1 ? "" : "s"}) →`;
+  $("#d-sum-conv").textContent = log.length === 1 ? window.t("View full conversation (1 message) →") : window.t("View full conversation ({n} messages) →", { n: log.length });
 }
 function repoStatusHtml(t, g) {
-  if (g === null) return `<div class="repo-note">Checking the repository state…</div>`;
-  if (!g) return `<div class="repo-note">Repository state not loaded.</div>`;
-  if (!g.available) return `<div class="repo-note"><b>Repository state unavailable.</b> ${esc(g.error || "git did not answer.")}</div>`;
+  if (g === null) return `<div class="repo-note">${window.t("Checking the repository state…")}</div>`;
+  if (!g) return `<div class="repo-note">${window.t("Repository state not loaded.")}</div>`;
+  if (!g.available) return `<div class="repo-note"><b>${window.t("Repository state unavailable.")}</b> ${esc(g.error ? window.t(g.error) : window.t("git did not answer."))}</div>`;
   const files = (g.changed || []).length, ahead = (g.ahead || []).length;
-  const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files} changed file${files === 1 ? "" : "s"}${g.truncated ? "+" : ""}</span>
-    <span>${icon("commit", 16)}${ahead} commit${ahead === 1 ? "" : "s"} ${g.aheadKind === "own" ? `on ${esc(g.branch || "HEAD")}` : `ahead of ${esc(g.target || "main")}`}</span>
-    ${g.behind ? `<span class="warn">${icon("branch", 16)}${g.behind} behind ${esc(g.target)}</span>` : ""}</div>`;
+  const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files === 1 ? window.t("1 changed file") : window.t("{n} changed files", { n: files })}${g.truncated ? "+" : ""}</span>
+    <span>${icon("commit", 16)}${g.aheadKind === "own" ? (ahead === 1 ? window.t("1 commit on {branch}", { branch: esc(g.branch || "HEAD") }) : window.t("{n} commits on {branch}", { n: ahead, branch: esc(g.branch || "HEAD") })) : ahead === 1 ? window.t("1 commit ahead of {target}", { target: esc(g.target || "main") }) : window.t("{n} commits ahead of {target}", { n: ahead, target: esc(g.target || "main") })}</span>
+    ${g.behind ? `<span class="warn">${icon("branch", 16)}${window.t("{n} behind {target}", { n: g.behind, target: esc(g.target) })}</span>` : ""}</div>`;
   let note;
-  if (g.worktree && g.worktree.exists) note = ahead || files ? `Work on branch <b>${esc(g.branch)}</b> in its own worktree, not yet in <b>${esc(g.target)}</b>.` : g.merged ? `Branch <b>${esc(g.branch)}</b> is fully merged into <b>${esc(g.target)}</b>.` : `The worktree has no changes to merge.`;
-  else if (g.worktree) note = g.merged ? `The worktree was removed and its branch is merged into <b>${esc(g.target)}</b>.` : ahead ? `The worktree folder is gone, but branch <b>${esc(g.branch)}</b> still holds ${ahead} unmerged commit${ahead === 1 ? "" : "s"}.` : `The worktree was removed. Nothing left to merge.`;
-  else note = ahead ? `Commits named on this card are already on <b>${esc(g.branch)}</b>. No merge is needed.` : files ? `The project folder has uncommitted changes (shared with other tasks).` : `Changes were made outside the repository, or none were made. No merge is needed.`;
+  if (g.worktree && g.worktree.exists) note = ahead || files ? window.t("Work on branch <b>{branch}</b> in its own worktree, not yet in <b>{target}</b>.", { branch: esc(g.branch), target: esc(g.target) }) : g.merged ? window.t("Branch <b>{branch}</b> is fully merged into <b>{target}</b>.", { branch: esc(g.branch), target: esc(g.target) }) : window.t("The worktree has no changes to merge.");
+  else if (g.worktree) note = g.merged ? window.t("The worktree was removed and its branch is merged into <b>{target}</b>.", { target: esc(g.target) }) : ahead === 1 ? window.t("The worktree folder is gone, but branch <b>{branch}</b> still holds 1 unmerged commit.", { branch: esc(g.branch) }) : ahead ? window.t("The worktree folder is gone, but branch <b>{branch}</b> still holds {n} unmerged commits.", { branch: esc(g.branch), n: ahead }) : window.t("The worktree was removed. Nothing left to merge.");
+  else note = ahead ? window.t("Commits named on this card are already on <b>{branch}</b>. No merge is needed.", { branch: esc(g.branch) }) : files ? window.t("The project folder has uncommitted changes (shared with other tasks).") : window.t("Changes were made outside the repository, or none were made. No merge is needed.");
   return chips + `<div class="repo-note">${note}</div>`;
 }
 
@@ -1999,17 +1999,17 @@ function renderChanges(t) {
   const g = taskGitFor(t), badge = $("#d-chcount"), list = $("#d-ch-list"), note = $("#d-ch-note");
   badge.classList.remove("warn");
   if (!g || !g.available) closeDiff();
-  if (g === null) { badge.textContent = "…"; note.textContent = "Checking the repository state…"; list.innerHTML = ""; return; }
+  if (g === null) { badge.textContent = "…"; note.textContent = window.t("Checking the repository state…"); list.innerHTML = ""; return; }
   if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
-  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">Repository state unavailable: ${esc(g.error || "git did not answer")}.</div>`; return; }
+  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">${window.t("Repository state unavailable: {error}.", { error: esc(g.error ? window.t(g.error) : window.t("git did not answer")) })}</div>`; return; }
   const files = g.changed || [], ahead = g.ahead || [];
   badge.textContent = files.length + ahead.length || "0";
-  note.textContent = g.shared ? `Project folder on ${g.branch || "HEAD"} (shared with other tasks)` : `Worktree branch ${g.branch}${g.target ? " → " + g.target : ""}`;
+  note.textContent = g.shared ? window.t("Project folder on {branch} (shared with other tasks)", { branch: g.branch || "HEAD" }) : window.t("Worktree branch {branch}", { branch: g.branch }) + (g.target ? " → " + g.target : "");
   const pm = (f) => f.added == null && f.deleted == null ? "" : `<span class="pm"><span class="a">+${f.added || 0}</span> <span class="d">−${f.deleted || 0}</span></span>`;
   let html = "";
-  if (files.length) html += `<div class="ch-group"><h4>Uncommitted files (${files.length}${g.truncated ? "+" : ""})</h4><ul class="ch-list">${files.map((f) => `<li data-path="${esc(f.path)}" title="Show diff"><span class="st ${esc(f.status.trim()[0] || "?")}">${esc(f.status.trim() || "?")}</span><span class="path">${esc(f.path)}</span>${pm(f)}</li>`).join("")}</ul></div>`;
-  if (ahead.length) html += `<div class="ch-group"><h4>${g.aheadKind === "own" ? `Commits this task named on ${esc(g.branch || "HEAD")}` : `Commits ahead of ${esc(g.target)}`} (${ahead.length})</h4><ul class="ch-list">${ahead.map((c) => `<li data-sha="${esc(c.sha)}" title="Show commit"><span class="sha">${esc(c.sha)}</span><span class="subj">${esc(c.subject)}</span></li>`).join("")}</ul></div>`;
-  if (!html) html = `<div class="ch-empty">${g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "Already merged: nothing left to show." : "No uncommitted files and no commits to show."}</div>`;
+  if (files.length) html += `<div class="ch-group"><h4>${window.t("Uncommitted files")} (${files.length}${g.truncated ? "+" : ""})</h4><ul class="ch-list">${files.map((f) => `<li data-path="${esc(f.path)}" title="${window.t("Show diff")}"><span class="st ${esc(f.status.trim()[0] || "?")}">${esc(f.status.trim() || "?")}</span><span class="path">${esc(f.path)}</span>${pm(f)}</li>`).join("")}</ul></div>`;
+  if (ahead.length) html += `<div class="ch-group"><h4>${g.aheadKind === "own" ? window.t("Commits this task named on {branch}", { branch: esc(g.branch || "HEAD") }) : window.t("Commits ahead of {target}", { target: esc(g.target) })} (${ahead.length})</h4><ul class="ch-list">${ahead.map((c) => `<li data-sha="${esc(c.sha)}" title="${window.t("Show commit")}"><span class="sha">${esc(c.sha)}</span><span class="subj">${esc(c.subject)}</span></li>`).join("")}</ul></div>`;
+  if (!html) html = `<div class="ch-empty">${g.answerOnly ? window.t("Answer-only task: no changes were expected.") : g.merged ? window.t("Already merged: nothing left to show.") : window.t("No uncommitted files and no commits to show.")}</div>`;
   if (list.innerHTML !== html) {
     list.innerHTML = html;
     list.querySelectorAll("li").forEach((li) => {
@@ -2032,14 +2032,14 @@ async function showDiff(t, li) {
   diffSel = diffKey(li);
   const req = ++diffReq, pre = $("#d-diff"), q = li.dataset.sha ? "&sha=" + encodeURIComponent(li.dataset.sha) : "&path=" + encodeURIComponent(li.dataset.path);
   $("#d-ch-list").querySelectorAll("li").forEach((x) => x.classList.toggle("on", x === li));
-  pre.hidden = false; pre.textContent = "Loading diff…";
+  pre.hidden = false; pre.textContent = window.t("Loading diff…");
   try {
     const r = await fetch(api("/api/task-diff") + "&t=" + encodeURIComponent(t.id) + q, { cache: "no-store" });
     const d = await r.json();
     if (req !== diffReq) return;
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    pre.innerHTML = d.binary ? "Binary file." : (d.diff || "(empty diff)").split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">… truncated</span>` : "");
-  } catch (e) { if (req !== diffReq) return; pre.textContent = "Could not load the diff: " + e.message; }
+    pre.innerHTML = d.binary ? window.t("Binary file.") : (d.diff || window.t("(empty diff)")).split("\n").map((l) => `<span class="${/^(diff |index |commit |Author|Date|--- |\+\+\+ )/.test(l) ? "f" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "hh" : ""}">${esc(l)}</span>`).join("") + (d.truncated ? `<span class="f">${window.t("… truncated")}</span>` : "");
+  } catch (e) { if (req !== diffReq) return; pre.textContent = window.t("Could not load the diff: {error}", { error: window.t(e.message) }); }
   pre.scrollIntoView({ block: "nearest" });
 }
 
@@ -2059,7 +2059,7 @@ async function loadTaskGit(t, force) {
   try {
     const r = await fetch(api("/api/task-git") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" });
     data = await r.json();
-    if (r.status === 404 && !data.available && !("changed" in data)) data = { available: false, error: "the board server runs older code without /api/task-git; restart it" };
+    if (r.status === 404 && !data.available && !("changed" in data)) data = { available: false, error: window.t("the board server runs older code without /api/task-git; restart it") };
     else if (!r.ok) data = { available: false, error: data.error || "HTTP " + r.status };
   } catch (err) { data = { available: false, error: err.message }; }
   taskGit[key] = { at: Date.now(), data };
@@ -2083,15 +2083,15 @@ $("#d-prompt").addEventListener("toggle", () => { const t = task(openId); if ($(
 async function loadPrompt(t) {
   const key = P + ":" + t.id;
   if (!prompts[key] && useServer) {
-    $("#d-prompt-text").textContent = "Loading…";
+    $("#d-prompt-text").textContent = window.t("Loading…");
     prompts[key] = fetch(api("/api/prompt") + "&t=" + encodeURIComponent(t.id), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .catch(() => { delete prompts[key]; return null; });
   }
   const res = await prompts[key];
   if (openId !== t.id) return;
-  $("#d-prompt-text").textContent = (res && res.prompt) || t.notes || "No notes.";
-  $("#d-prompt-note").textContent = res && res.saved === false ? "Rebuilt from the current card (sent before prompts were saved)." : "";
+  $("#d-prompt-text").textContent = (res && res.prompt) || t.notes || window.t("No notes.");
+  $("#d-prompt-note").textContent = res && res.saved === false ? window.t("Rebuilt from the current card (sent before prompts were saved).") : "";
 }
 // Names the model a launch with no --model gets. The server may still be probing the account default (null).
 let defaultModel = { pid: null, model: null, at: 0 };
@@ -2112,7 +2112,7 @@ async function loadDefaultModel() {
     if (r.ok && pid === P) defaultModel.model = res.model;
   } catch (e) { /* label stays generic */ }
   const opt = $("#d-model option[value='']");
-  opt.textContent = defaultModel.model ? `Default model (${prettyModel(defaultModel.model)})` : "Default model (checking…)";
+  opt.textContent = defaultModel.model ? t("Default model ({model})", { model: prettyModel(defaultModel.model) }) : t("Default model (checking…)");
   if (!defaultModel.model) setTimeout(() => { const o = openId && task(openId); if (o && !o.agent) loadDefaultModel(); }, 10000);
 }
 // Closed while a reply is in flight too: the box goes the moment you send, and comes back only if the send fails.
@@ -2125,8 +2125,8 @@ async function post(url, body) {
   let res;
   try { res = JSON.parse(text); } catch (e) {
     // A route the running server.py does not know answers a bare 404: it predates this page's code.
-    throw new Error(r.status === 404 ? `the board server does not know ${url} — it runs older code; restart it (Ctrl-C, then onemoretask)`
-      : `the server answered ${r.status} with no details`);
+    throw new Error(r.status === 404 ? t("the board server does not know {url} — it runs older code; restart it (Ctrl-C, then onemoretask)", { url })
+      : t("the server answered {status} with no details", { status: r.status }));
   }
   if (!r.ok) throw Object.assign(new Error(res.error || r.status), { untrusted: !!res.untrusted, norepo: !!res.norepo, unsaved: res.unsaved || null });
   return res;
@@ -2137,10 +2137,10 @@ async function post(url, body) {
 const trustOpen = () => $("#trust-modal").classList.contains("open");
 function closeTrust(cancelled) {
   $("#trust-modal").classList.remove("open");
-  if (cancelled) setStatus("Not sent: folder not trusted");
+  if (cancelled) setStatus(t("Not sent: folder not trusted"));
 }
 function askTrust(t) {
-  $("#trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || "this folder";
+  $("#trust-path").textContent = (projects.find((x) => x.id === P) || {}).path || window.t("this folder");
   $("#trust-no").onclick = () => closeTrust(true);
   $("#trust-yes").onclick = async () => {
     $("#trust-yes").disabled = true;
@@ -2149,7 +2149,7 @@ function askTrust(t) {
       closeTrust(false);
       await sendToClaude(t);
     } catch (e) {
-      setStatus("Trust failed: " + e.message, true);
+      setStatus(window.t("Trust failed: {error}", { error: window.t(e.message) }), true);
     } finally { $("#trust-yes").disabled = false; }
   };
   $("#trust-modal").classList.add("open");
@@ -2162,11 +2162,11 @@ let repoFor = null;
 const repoOpen = () => $("#repo-modal").classList.contains("open");
 function closeRepo(cancelled) {
   $("#repo-modal").classList.remove("open");
-  if (cancelled && repoFor) setStatus("Not sent: no local repo");
+  if (cancelled && repoFor) setStatus(t("Not sent: no local repo"));
 }
 function askRepo(t) {
   repoFor = t;
-  $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || "This folder";
+  $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || window.t("This folder");
   $("#repo-no").onclick = () => closeRepo(true);
   $("#repo-nowt").onclick = async () => {
     if (!t) return closeRepo(true);
@@ -2178,7 +2178,7 @@ function askRepo(t) {
       closeRepo(false);
       await sendToClaude(t);
     } catch (e) {
-      setStatus("Could not send: " + e.message, true);
+      setStatus(window.t("Could not send: {error}", { error: window.t(e.message) }), true);
     } finally { $("#repo-nowt").disabled = false; }
   };
   $("#repo-yes").onclick = async () => {
@@ -2187,10 +2187,10 @@ function askRepo(t) {
       await post("/api/git/init", { p: P });
       gitInfo.at = 0;   // the chips reload with the new branch
       closeRepo(false);
-      setStatus("Local repo created");
+      setStatus(window.t("Local repo created"));
       if (t) await sendToClaude(t);
     } catch (e) {
-      setStatus("Could not create the repo: " + e.message, true);
+      setStatus(window.t("Could not create the repo: {error}", { error: window.t(e.message) }), true);
     } finally { $("#repo-yes").disabled = false; }
   };
   $("#repo-modal").classList.add("open");
@@ -2202,8 +2202,8 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   const nm = isCodexModel($("#d-model").value) ? "Codex" : "Claude";
-  setStatus(`Starting ${nm}…`);
-  const pm = addPending(t, "launch", `Sending to ${nm}` + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  setStatus(window.t("Starting {name}…", { name: nm }));
+  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colNamed(/progress|doing/i);
@@ -2215,7 +2215,7 @@ async function sendToClaude(t) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.
     dropPending(t, pm); t = task(t.id) || t;
     render(); if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
-    setStatus(`The board changed in another window, so ${nm} was not started. Please send again.`, true);
+    setStatus(window.t("The board changed in another window, so {name} was not started. Please send again.", { name: nm }), true);
     return;
   }
   try {
@@ -2235,14 +2235,14 @@ async function sendToClaude(t) {
       if (boardGen === g) break;
     }
     pm.state = "sent";
-    setStatus(`${nm} session ${res.id} started`);
+    setStatus(window.t("{name} session {id} started", { name: nm, id: res.id }));
   } catch (e) {
     dropPending(t, pm); t = task(t.id) || t;
     if (t.column !== fromCol) moveTask(t.id, fromCol, null);
     await settled();   // else its "Saved" would replace the error
-    if (e.untrusted) { askTrust(t); setStatus("Claude needs you to trust this folder first", true); }
-    else if (e.norepo) { askRepo(t); setStatus("Worktrees need a local repo first", true); }
-    else setStatus(`Send to ${nm} failed: ` + e.message, true);
+    if (e.untrusted) { askTrust(t); setStatus(window.t("Claude needs you to trust this folder first"), true); }
+    else if (e.norepo) { askRepo(t); setStatus(window.t("Worktrees need a local repo first"), true); }
+    else setStatus(window.t("Send to {name} failed: {error}", { name: nm, error: window.t(e.message) }), true);
   }
   t = task(t.id) || t;
   render();
@@ -2251,16 +2251,16 @@ async function sendToClaude(t) {
 }
 
 async function startReview(t) {
-  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", `Starting a code review (${level}${model ? ", " + model : ""})`, []);
-  setStatus("Starting code review…");
+  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", window.t("Starting a code review ({details})", { details: level + (model ? ", " + model : "") }), []);
+  setStatus(window.t("Starting code review…"));
   refreshAgent(t); render();
   try {
     const res = await post("/api/agent/review", { p: P, taskId: t.id, level, model });
     pm.state = "sent";
-    setStatus("Code review session " + res.id + " started");
+    setStatus(window.t("Code review session {id} started", { id: res.id }));
   } catch (e) {
     dropPending(t, pm);
-    setStatus("Code review failed: " + e.message, true);
+    setStatus(window.t("Code review failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2273,16 +2273,16 @@ async function sendFindingsBack(t) {
   const typed = $("#d-reply").value.trim(), text = typed || "Fix the findings you agree with; say which ones you skip and why.";
   const pm = addPending(t, "reply", `Sent the review findings back to ${to}: ${text}`, []), pid = P;
   setReplyDraft(t.id, "");
-  setStatus(`Sending the findings to ${to}…`);
+  setStatus(window.t("Sending the findings to {name}…", { name: to }));
   refreshAgent(t); render();
   try {
     await post("/api/agent/handback", { p: P, taskId: t.id, text });
     pm.state = "sent";
-    setStatus(`${to} is fixing the review findings`);
+    setStatus(window.t("{name} is fixing the review findings", { name: to }));
   } catch (e) {
     dropPending(t, pm);
     if (typed && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, typed, pid);
-    setStatus("Could not send the findings back: " + e.message, true);
+    setStatus(window.t("Could not send the findings back: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2290,18 +2290,18 @@ async function sendFindingsBack(t) {
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {
   answering[t.id] = true;
-  setStatus(choice === "deny" ? "Saying no…" : "Allowing…");
+  setStatus(choice === "deny" ? window.t("Saying no…") : window.t("Allowing…"));
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = (choice === "deny" ? "Told Claude no." : res.once ? "Allowed once: Claude does not offer \"always\" for this one." : "Allowed.") + (res.again
-      ? " It asks the same thing again (a second identical request): answer that one too."
-      : res.next && res.next !== ask ? " It now asks about something else." : "");
+    const msg = (choice === "deny" ? window.t("Told Claude no.") : res.once ? window.t("Allowed once: Claude does not offer \"always\" for this one.") : window.t("Allowed.")) + (res.again
+      ? " " + window.t("It asks the same thing again (a second identical request): answer that one too.")
+      : res.next && res.next !== ask ? " " + window.t("It now asks about something else.") : "");
     // With `again` the card keeps the same prompt, so it will not update.
-    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " The card updates in a moment." };
+    permissionNote[t.id] = { ask, note: res.again ? msg : msg + " " + window.t("The card updates in a moment.") };
     setStatus(msg);
   } catch (e) {
-    const msg = "Could not answer: " + e.message + ". Copy the attach command from the ⋯ menu to answer it in a terminal.";
+    const msg = window.t("Could not answer: {error}. Copy the attach command from the ⋯ menu to answer it in a terminal.", { error: window.t(e.message) });
     permissionNote[t.id] = { ask, note: msg };
     setStatus(msg, true);
   }
@@ -2312,16 +2312,16 @@ async function answerPermission(t, choice, ask) {
 // The server types a canned message into the card's session; its logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
   const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
-  setStatus(action === "run" ? "Asking Claude to run the app…" : "Asking Claude to merge…");
+  setStatus(action === "run" ? window.t("Asking Claude to run the app…") : window.t("Asking Claude to merge…"));
   refreshAgent(t); render();
   try {
     await post("/api/agent/worktree", { p: P, taskId: t.id, action });
     pm.state = "sent";
-    setStatus(action === "run" ? "Asked Claude to run the app from the worktree" : "Asked Claude to merge the worktree");
+    setStatus(action === "run" ? window.t("Asked Claude to run the app from the worktree") : window.t("Asked Claude to merge the worktree"));
     if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);
-    setStatus(label + " failed: " + e.message, true);
+    setStatus(action === "run" ? window.t("Run app from worktree failed: {error}", { error: window.t(e.message) }) : window.t("Merge worktree to main failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
@@ -2337,32 +2337,32 @@ function busy(msg) {
   $("#busy").classList.toggle("open", !!msg);
 }
 async function deleteWorktree(t, force) {
-  busy("Deleting the worktree…");
+  busy(window.t("Deleting the worktree…"));
   try { await deleteWorktreeNow(t, force); } finally { busy(false); }
   if (wtdelOpen()) $("#wtdel-no").focus();  // inert while busy, so focus only now
 }
 async function deleteWorktreeNow(t, force) {
   $("#d-wt-del").disabled = $("#wtdel-yes").disabled = true;
-  setStatus("Deleting the worktree…");
+  setStatus(window.t("Deleting the worktree…"));
   closeWtdel();
   try {
     await post("/api/agent/worktree/delete", { p: P, taskId: t.id, force });
     if (agents[t.id]) agents[t.id].worktree = false;
     gitInfo.at = 0; delete taskGit[P + ":" + t.id]; loadTaskGit(t, true);
-    setStatus("Worktree deleted");
+    setStatus(window.t("Worktree deleted"));
   } catch (e) {
     if (e.unsaved && !force) {
       const u = e.unsaved, n = u.changes.length, parts = [];
-      if (u.commits) parts.push(`${u.commits} saved change${u.commits > 1 ? "s" : ""} (commit${u.commits > 1 ? "s" : ""}) that are on no other branch`);
-      if (n) parts.push(`${n} file${n > 1 ? "s" : ""} changed but not saved`);
-      $("#wtdel-text").textContent = `This worktree holds ${parts.join(" and ")}. Deleting it loses ${u.commits + n > 1 ? "them" : "it"} for good.`;
-      $("#wtdel-list").innerHTML = u.changes.slice(0, 50).map((x) => `<li>${esc(x)}</li>`).join("") + (n > 50 ? `<li>… ${n - 50} more</li>` : "");
+      if (u.commits) parts.push(u.commits > 1 ? window.t("{n} saved changes (commits) that are on no other branch", { n: u.commits }) : window.t("1 saved change (commit) that are on no other branch"));
+      if (n) parts.push(n > 1 ? window.t("{n} files changed but not saved", { n }) : window.t("1 file changed but not saved"));
+      $("#wtdel-text").textContent = u.commits + n > 1 ? window.t("This worktree holds {what}. Deleting it loses them for good.", { what: parts.join(" " + window.t("and") + " ") }) : window.t("This worktree holds {what}. Deleting it loses it for good.", { what: parts.join(" " + window.t("and") + " ") });
+      $("#wtdel-list").innerHTML = u.changes.slice(0, 50).map((x) => `<li>${esc(x)}</li>`).join("") + (n > 50 ? `<li>… ${window.t("{n} more", { n: n - 50 })}</li>` : "");
       $("#wtdel-list").hidden = !n;
       $("#wtdel-no").onclick = closeWtdel;
       $("#wtdel-yes").onclick = () => deleteWorktree(t, true);
       $("#wtdel-modal").classList.add("open");
       setStatus("");
-    } else setStatus("Delete worktree failed: " + e.message, true);
+    } else setStatus(window.t("Delete worktree failed: {error}", { error: window.t(e.message) }), true);
   } finally { $("#d-wt-del").disabled = $("#wtdel-yes").disabled = false; }
   refreshAgent(t); render();
   await pollAgents();
@@ -2384,7 +2384,7 @@ async function sendReply() {
   if (!t || (!text && !replyImages.length) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
-  setStatus(busy ? "Sending note…" : "Sending reply…");
+  setStatus(busy ? window.t("Sending note…") : window.t("Sending reply…"));
   const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
   setReplyDraft(t.id, ""); replyImages = []; renderReplyImages();
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
@@ -2399,7 +2399,7 @@ async function sendReply() {
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
     pm.state = "sent";
-    setStatus(res.queued ? "Note sent — Claude reads it as soon as it can" : "Reply sent — Claude is back at work");
+    setStatus(res.queued ? window.t("Note sent — Claude reads it as soon as it can") : window.t("Reply sent — Claude is back at work"));
   } catch (e) {
     dropPending(t, pm);
     if (t.column !== fromCol) { moveTask(t.id, fromCol, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
@@ -2407,7 +2407,7 @@ async function sendReply() {
     // The text goes back to the card's draft even if you moved on; images only to the open card's box.
     if (text && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, text, pid);
     if (openId === t.id && P === pid && !replyImages.length) { replyImages = images; renderReplyImages(); }
-    setStatus("Reply failed: " + e.message, true);
+    setStatus(window.t("Reply failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t);
   await pollAgents();
@@ -2435,7 +2435,7 @@ async function pollAgents() {
     // (its PUT will 409 and reload) or we saved since this poll left (then the header is just older than rev).
     const diskRev = r.headers.get("X-Board-Rev");
     if (rev !== null && diskRev !== null && diskRev !== rev && rev === revBefore && !saveTimer && !saving
-        && await reloadBoard()) setStatus("Board updated from another window");
+        && await reloadBoard()) setStatus(t("Board updated from another window"));
     if (pid !== P) return;
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
@@ -2469,7 +2469,7 @@ async function pollAgents() {
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
   } catch (e) {
-    setStatus("Claude status check failed: " + e.message, true);
+    setStatus(t("Claude status check failed: {error}", { error: t(e.message) }), true);
   }
   pollTimer = setTimeout(pollAgents, wait);
 }
@@ -2477,10 +2477,10 @@ async function pollAgents() {
 function updateWaiting() {
   const waiting = state.tasks.filter((t) => t.agent && agents[t.id] && agents[t.id].phase === "needs_you");
   const name = project() ? project().name + " · Task Board" : "Task Board";
-  document.title = waiting.length ? `(${waiting.length}) Claude needs you · ${name}` : name;
+  document.title = waiting.length ? `(${waiting.length}) ${t("Claude needs you")} · ${name}` : name;
   const b = $("#waiting");
   b.style.display = waiting.length ? "inline-block" : "none";
-  b.textContent = `${waiting.length} waiting on you`;
+  b.textContent = t("{n} waiting on you", { n: waiting.length });
   b.onclick = () => waiting.length && openDetail(waiting[0].id);
 }
 
@@ -2513,7 +2513,7 @@ function renderObsButton() {
   const d = obs.pid === P && obs.data, n = d ? obsList().length : 0;
   $("#obs-btn").style.display = d && (d.installed || n) ? "inline-flex" : "none";
   $("#obs-n").textContent = n || "";
-  $("#obs-due").textContent = d && reviewDue() ? "review due" : "";
+  $("#obs-due").textContent = d && reviewDue() ? t("review due") : "";
 }
 // The source whose full review is most overdue, or null when none is due.
 function reviewDue() {
@@ -2537,8 +2537,8 @@ new ResizeObserver(() => document.documentElement.style.setProperty("--hdr-h", $
 
 function renderObs() {
   const d = obs.data || { sources: [], observations: [] }, list = obsList();
-  $("#obs-note").textContent = d.installed ? "" : "The task-observer skill is not installed. Re-run the installer to add it.";
-  const scopes = [["project", "This project"], ["user", "All projects (~/.claude)"]];
+  $("#obs-note").textContent = d.installed ? "" : t("The task-observer skill is not installed. Re-run the installer to add it.");
+  const scopes = [["project", t("This project")], ["user", t("All projects (~/.claude)")]];
   const html = scopes.map(([scope, name]) => {
     const rows = list.filter((o) => o.scope === scope), dirs = (d.sources || []).filter((s) => s.scope === scope);
     if (!rows.length && !dirs.length) return "";
@@ -2548,9 +2548,9 @@ function renderObs() {
         <span class="t"><b>#${esc(o.id)}</b>${esc(o.title)}</span>
         <span class="c">${esc([(o.skill || []).join(", "), o.date].filter(Boolean).join(" · "))}</span>
         ${obsOpenRows.has(o.key) ? `<div class="obs-body md">${fmtMsg(o.body || "")}</div>` : ""}</li>`).join("")
-        : `<li class="obs-empty">None open.</li>`}</ul></section>`;
+        : `<li class="obs-empty">${t("None open.")}</li>`}</ul></section>`;
   }).join("");
-  $("#obs-list").innerHTML = html || `<div class="obs-empty">No open observations.</div>`;
+  $("#obs-list").innerHTML = html || `<div class="obs-empty">${t("No open observations.")}</div>`;
   $("#obs-list").querySelectorAll("li[data-key]").forEach((li) => {
     const k = li.dataset.key;
     li.querySelector("input").onchange = (e) => { e.target.checked ? obsSel.add(k) : obsSel.delete(k); renderObsFoot(); };
@@ -2567,13 +2567,13 @@ function renderObsFoot() {
   const n = obsSel.size, all = obsList().length;
   $("#obs-all").checked = !!all && n === all;
   $("#obs-all").disabled = !all;
-  $("#obs-apply").textContent = `Apply (${n})`;
+  $("#obs-apply").textContent = t("Apply ({n})", { n });
   $("#obs-apply").disabled = !n;
   $("#obs-review").disabled = !(obs.data && obs.data.installed);
   const due = reviewDue();
   $("#obs-due-line").textContent = !due ? "" : due.reviewDays != null
-    ? `Skill review due: last run ${due.lastReview} (${due.reviewDays} days ago)`
-    : !due.lastReview || due.lastReview === "never" ? "Skill review due: never run" : "Skill review due";
+    ? t("Skill review due: last run {date} ({n} days ago)", { date: due.lastReview, n: due.reviewDays })
+    : !due.lastReview || due.lastReview === "never" ? t("Skill review due: never run") : t("Skill review due");
 }
 
 // The card's notes are the prompt: they name each observation and its file so the session edits the right ones.
@@ -2644,16 +2644,16 @@ const clOpen = () => $("#cl-modal").classList.contains("open");
 async function openChangelog() {
   closeObs();
   $("#cl-modal").classList.add("open");
-  $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? "Loading…" : "The changelog needs server.py."}</div>`;
+  $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? t("Loading…") : t("The changelog needs server.py.")}</div>`;
   if (!useServer) return;
   let html;
   try {
     const r = await fetch("/api/changelog", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-        html = (d.pending.length ? `<div class="h h1">Coming when you press Update</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">Already here</div>` : "")
-      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">Nothing written here yet.</div>`);
-  } catch (e) { html = `<div class="obs-empty">Could not load the changelog.</div>`; }
+        html = (d.pending.length ? `<div class="h h1">${t("Coming when you press Update")}</div>${fmtChangelog(d.pending)}<div class="gap"></div><div class="h h1">${t("Already here")}</div>` : "")
+      + (d.entries.length ? fmtChangelog(d.entries) : `<div class="obs-empty">${t("Nothing written here yet.")}</div>`);
+  } catch (e) { html = `<div class="obs-empty">${t("Could not load the changelog.")}</div>`; }
   if (clOpen()) $("#cl-body").innerHTML = html;
 }
 function closeChangelog() { $("#cl-modal").classList.remove("open"); }
@@ -2669,7 +2669,7 @@ const fileDir = (sub) => (useServer ? `/files/${P}/${sub}/` : sub + "/");
 let replyImages = [];            // uploaded, waiting for Send reply
 
 function thumbItems(names, dir, removable) {
-  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="Open full size"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="Remove">✕</button>` : ""}</a>`).join("");
+  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="${t("Open full size")}"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="${t("Remove")}">✕</button>` : ""}</a>`).join("");
 }
 function bindRemove(box, list, after) {
   box.querySelectorAll(".x").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); list.splice(+b.dataset.i, 1); after(); }));
@@ -2678,8 +2678,8 @@ function renderImages(t) {
   const box = $("#d-images");
   box.innerHTML = thumbItems(t.images, fileDir("images"), !t.agent);
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
-  $("#d-img-hint").textContent = t.agent ? "Sent to Claude — the task is locked. Add anything new as a reply."
-    : useServer ? "Paste (⌘V) or drop an image to attach it — Claude gets it with the task." : "Attaching images needs server.py.";
+  $("#d-img-hint").textContent = t.agent ? window.t("Sent to Claude — the task is locked. Add anything new as a reply.")
+    : useServer ? window.t("Paste (⌘V) or drop an image to attach it — Claude gets it with the task.") : window.t("Attaching images needs server.py.");
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
@@ -2703,11 +2703,11 @@ async function attachFiles(files, toReply) {
   files = files.filter((f) => f.type.startsWith("image/"));
   if (!t || !files.length) return false;
   if (!toReply && t.agent) {   // a sent task is locked; images go to the reply instead
-    if (!replyOpen(t)) { setStatus("This task was sent to Claude — attach images to a reply", true); return true; }
+    if (!replyOpen(t)) { setStatus(window.t("This task was sent to Claude — attach images to a reply"), true); return true; }
     toReply = true;
   }
-  if (!useServer) { setStatus("Attaching images needs server.py", true); return true; }
-  setStatus(`Uploading ${files.length} image${files.length > 1 ? "s" : ""}…`);
+  if (!useServer) { setStatus(window.t("Attaching images needs server.py"), true); return true; }
+  setStatus(files.length > 1 ? window.t("Uploading {n} images…", { n: files.length }) : window.t("Uploading 1 image…"));
   try {
     for (const f of files) {
       const name = await uploadImage(f, toReply ? "log" : "task");
@@ -2715,9 +2715,9 @@ async function attachFiles(files, toReply) {
       else { t.images = t.images || []; if (!t.images.includes(name)) t.images.push(name); touch(t); }
     }
     toReply ? renderReplyImages() : (renderImages(t), render());
-    setStatus(toReply ? "Image added to your reply" : "Image attached to the task");
+    setStatus(toReply ? window.t("Image added to your reply") : window.t("Image attached to the task"));
   } catch (e) {
-    setStatus("Image upload failed: " + e.message, true);
+    setStatus(window.t("Image upload failed: {error}", { error: window.t(e.message) }), true);
   }
   return true;
 }
@@ -2804,11 +2804,11 @@ $("#lang").addEventListener("change", (e) => {
   location.reload();
 });
 // Theme: "" follows the system; the <head> script applies the saved choice before first paint.
-const THEMES = { "": ["◐", "System"], light: ["☀", "Light"], dark: ["☾", "Dark"] };
+const THEMES = { "": ["◐", t("System")], light: ["☀", t("Light")], dark: ["☾", t("Dark")] };
 function showTheme() {
   const [icon, name] = THEMES[document.documentElement.dataset.theme || ""];
-  $("#theme").innerHTML = `<span>Theme</span><span class="v">${icon} ${name}</span>`;
-  $("#theme").title = `Theme: ${name} (click to change)`;
+  $("#theme").innerHTML = `<span>${t("Theme")}</span><span class="v">${icon} ${name}</span>`;
+  $("#theme").title = t("Theme: {name} (click to change)", { name });
 }
 $("#theme").addEventListener("click", () => {
   const order = ["", "light", "dark"];
@@ -2822,14 +2822,14 @@ showTheme();
 // Update: server.py compares the installed commit with GitHub; the button is green when an update can be installed.
 let upd = null, updBusy = false;
 const short = (s) => (s ? s.slice(0, 7) : "?");
-const again = (s) => s.replace(/\.?$/, ". Click to check again");
+const again = (s) => s.replace(/\.?$/, ". " + t("Click to check again"));
 function showUpdate(label, cls, title) {
   const b = $("#update");
   Object.assign(b, { hidden: false, textContent: label, className: "btn " + cls, title, disabled: updBusy });
 }
 async function checkUpdate(force) {
   if (!useServer || updBusy) return;
-  if (force) showUpdate("Checking…", "", "Checking GitHub for updates");
+  if (force) showUpdate(t("Checking…"), "", t("Checking GitHub for updates"));
   try {
     const r = await fetch("/api/update" + (force ? "?force=1" : ""), { cache: "no-store" });
     if (r.status === 404) { $("#update").hidden = true; return; }
@@ -2838,21 +2838,21 @@ async function checkUpdate(force) {
   } catch (e) { upd = { error: e.message }; }
   // Shown only when GitHub has something newer; up to date or a failed check shows nothing.
   const u = upd;
-  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate("Update", "new", `${u.behind} new update${u.behind > 1 ? "s" : ""} on GitHub (${short(u.installed)} → ${short(u.latest)}). Click to install and restart.`);
-  else if (!u.error && u.behind > 0) showUpdate("Update available", "blocked", again(u.reason || "Cannot update automatically"));
+  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate(t("Update"), "new", u.behind > 1 ? t("{n} new updates on GitHub ({from} → {to}). Click to install and restart.", { n: u.behind, from: short(u.installed), to: short(u.latest) }) : t("1 new update on GitHub ({from} → {to}). Click to install and restart.", { from: short(u.installed), to: short(u.latest) }));
+  else if (!u.error && u.behind > 0) showUpdate(t("Update available"), "blocked", again(u.reason ? t(u.reason) : t("Cannot update automatically")));
   else $("#update").hidden = true;
 }
 // After a restarting update, wait for the old server to go down and the new one to answer, then reload.
 async function runUpdate() {
   updBusy = true;
-  showUpdate("Updating…", "new", "Installing the update");
+  showUpdate(t("Updating…"), "new", t("Installing the update"));
   try {
     const r = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     for (let t0 = Date.now(), down = false; d.restarting; ) {
       await new Promise((ok) => setTimeout(ok, 500));
-      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      if (Date.now() - t0 > 30000) throw new Error(t("The board server did not come back within 30 s"));
       let up = false;
       try { up = (await fetch("/api/update", { cache: "no-store" })).ok; } catch (_) {}
       if (!up) down = true;
@@ -2861,7 +2861,7 @@ async function runUpdate() {
     location.reload();
   } catch (e) {
     updBusy = false; upd = null;
-    showUpdate("Update failed", "", again(e.message));
+    showUpdate(t("Update failed"), "", again(t(e.message)));
   }
 }
 // Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
@@ -2877,24 +2877,24 @@ async function checkAppCopy() {
   const cur = copies.copies.find((c) => c.path === copies.current);
   sel.hidden = copies.copies.length < 2 && (!cur || cur.main);
   sel.classList.toggle("away", !cur || !cur.main);
-  sel.title = cur && cur.main ? "The board runs from the main copy. Pick a worktree to try a task's changes"
-    : "The board runs from a worktree, not from main: " + copies.current;
+  sel.title = cur && cur.main ? t("The board runs from the main copy. Pick a worktree to try a task's changes")
+    : t("The board runs from a worktree, not from main: {path}", { path: copies.current });
   const name = (c) => (c.main ? "main" : "⎇ " + (c.name || c.branch));
   sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
-    + esc(name(c)) + (c.canSwitch ? "" : " (too old)") + "</option>").join("");
+    + esc(name(c)) + (c.canSwitch ? "" : " (" + t("too old") + ")") + "</option>").join("");
   if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);
 }
 $("#app-copy").addEventListener("change", async (e) => {
   const sel = e.target, path = sel.value;
   sel.disabled = true;
-  setStatus("Restarting the board from " + path + "…");
+  setStatus(t("Restarting the board from {path}…", { path }));
   try {
     const r = await fetch("/api/app-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     for (let t0 = Date.now(), down = false; ; ) {
       await new Promise((ok) => setTimeout(ok, 500));
-      if (Date.now() - t0 > 30000) throw new Error("The board server did not come back within 30 s");
+      if (Date.now() - t0 > 30000) throw new Error(t("The board server did not come back within 30 s"));
       // Any answer counts once it went down: an older main copy has no /api/app-copy (404).
       let q = null;
       try { q = await fetch("/api/app-copy", { cache: "no-store" }); } catch (_) {}
@@ -2904,7 +2904,7 @@ $("#app-copy").addEventListener("change", async (e) => {
     location.reload();
   } catch (err) {
     sel.disabled = false;
-    setStatus("Could not switch: " + err.message, true);
+    setStatus(t("Could not switch: {error}", { error: t(err.message) }), true);
     checkAppCopy();
   }
 });
@@ -2962,9 +2962,9 @@ document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", 
 }));
 
 load().then(() => {
-  render(); if (!useServer) setStatus("Saving in this browser"); pollAgents(); checkUpdate(); checkAppCopy();
+  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); checkUpdate(); checkAppCopy();
 })
-  .catch((e) => setStatus("Could not load the board: " + e.message, true));
+  .catch((e) => setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true));
 </script>
 </body>
 </html>
