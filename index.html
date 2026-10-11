@@ -1095,11 +1095,17 @@ function tagSuggestions(t, max = 8) {
   }
   return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).slice(0, max).map((c) => c.name);
 }
+// Tags after picking suggestion `g` with `typed` in the field: a half-typed last word that starts `g` is replaced by it.
+function addSuggestedTag(typed, g) {
+  const tags = parseTags(typed), last = typed.split(",").pop().trim().toLowerCase();
+  if (last && g.toLowerCase().startsWith(last)) tags.pop();
+  return [...tags, g];
+}
 function renderTagSuggestions(t) {
   const box = $("#d-tag-sugg");
   box.innerHTML = t.agent ? "" : tagSuggestions(t).map((g) => `<button type="button" class="tag" title="${esc(window.t("Add this tag"))}">${esc(g)}</button>`).join("");
   box.querySelectorAll("button").forEach((b) => (b.onclick = () => {
-    t.tags = [...t.tags, b.textContent]; touch(t);
+    t.tags = addSuggestedTag($("#d-tags").value, b.textContent); touch(t);
     $("#d-tags").value = t.tags.join(", ");
     renderTagSuggestions(t);
   }));
