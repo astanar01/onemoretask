@@ -83,8 +83,36 @@ def js_keys():
     return keys
 
 
+# Board data the page renders through t(col.name): the default column names and the name of an added column.
+DATA_KEYS = ["To Do", "In Progress", "Review", "Done", "New column"]
+
+# Fixed sentences server.py sends and the page shows through t(ag.reason) / t(u.reason). Each must still be
+# in server.py verbatim (the check below), so a reworded server line shows up here, not as silent English.
+SERVER_SENTENCES = [
+    "Moved to done: sessions closed, recap saved. A reply starts a new session from the recap.",
+    "Session was removed",
+    "Waiting on a permission prompt or a question in the session — attach to answer",
+    "Stopped without reporting — reply to check on it",
+    "Stopped without reporting — attach or reply to check on it",
+    "Stopped after a progress note without reporting done — reply to check on it",
+    "Claude Code's safety check kept failing, so Claude stopped. ",
+    "The board tries again in a minute.",
+    "Reply to try again.",
+    "Not installed from git — reinstall to get updates.",
+    "Git is not installed — install git to get updates.",
+    "Local changes in the app folder — update by hand with git pull.",
+    "This copy has commits that are not on GitHub.",
+    "Could not check GitHub — try again later.",
+    "Nothing to update.",
+]
+
+
 def server_keys():
-    return re.findall(r'"error":\s*"((?:[^"\\]|\\.)+)"', SERVER)
+    keys = re.findall(r'"error":\s*"((?:[^"\\]|\\.)+)"', SERVER)
+    for s in SERVER_SENTENCES:
+        assert s in SERVER, "server.py no longer holds the sentence: " + s
+        keys.append(s)
+    return keys + DATA_KEYS
 
 
 def fr_dict():
