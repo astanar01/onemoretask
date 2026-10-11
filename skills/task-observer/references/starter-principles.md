@@ -1,6 +1,6 @@
 # Starter Cross-Cutting Principles (optional seed)
 
-Starter set version: 2
+Starter set version: 3
 
 This file is NOT the adopter's principles file. It is an optional seed:
 a curated set of generic methodology principles, accumulated over a long
@@ -90,6 +90,8 @@ prevent.
 - 25. One verified reason beats two, where the second is unchecked
 - 26. A companion skill must declare its coverage boundary
 - 27. Every skill ships as a bundle and is structured for progressive disclosure, regardless of size
+- 28. Absence is never established by a summarising instrument
+- 29. A skill holds method; dated values live in a workspace file the skill names
 
 ---
 
@@ -104,10 +106,14 @@ author; the requirement is that there *be* a licence.
 
 ### 2. Open-source skills must include author attribution and a feedback pathway
 **Applies to:** all open-source skills
-**Requirement:** Include an attribution block at the top of the skill with
-author name, contact link, licence statement, and a feedback and support
-pathway (an issue tracker, a repository, a contact address). A published
-skill without a route back to its author cannot improve from its readers.
+**Requirement:** Carry author and licence in the frontmatter (`license:`
+plus `metadata:` with author and source) and repeat them in a one-line
+footer at the end of the skill, which survives tools that strip frontmatter.
+Open the body with what the skill does, not credits. Give the canonical
+source and a feedback pathway (an issue tracker, a repository, a contact
+address) as an offer to draft a report, in a short section just before the
+footer. A published skill without a route back to its author cannot
+improve from its readers.
 
 ### 3. Skills with rules must include a pre-flight verification step
 **Applies to:** all skills with explicit rules or requirements
@@ -147,7 +153,7 @@ reference file and point to it.
 **Requirement:** Use subagents for speed, but never let them guess at data
 values. Safe delegations: validation, formatting checks, cross-reference
 checks — anything where every required input can be passed in the brief.
-Unsafe without safeguards: anything requiring live data. For data-bearing
+Unsafe unless guarded: anything requiring live data. For data-bearing
 tasks, the parent gathers the raw data first and passes it complete; a
 subagent lacking a value writes a `[VERIFY: value not confirmed]`
 placeholder rather than a plausible invention. After the return, the
@@ -401,3 +407,38 @@ new or substantially revised work. Rationale: a rule that switches on
 artefact size creates two formats for one thing and a boundary every
 consumer must re-derive, and one format removes the bare-SKILL.md
 truncation class of install failures outright.
+
+### 28. Absence is never established by a summarising instrument
+**Applies to:** all skills that make claims about the contents of an
+artefact — a sheet, a page, a listing file, a repository, a report, a
+tool surface
+**Requirement:** No statement of the form "X is not in Y" may rest on an
+instrument that summarises, samples, renders or answers a question about
+Y — a document connector's table view, a fetch tool's answer, a search
+result, a rendered summary. Presence can be established by such an
+instrument (it found the thing); absence cannot, because "the thing is
+absent" and "the instrument did not look" produce identical output and
+read as equally confident prose. Absence needs the raw artefact — the full
+sheet, the raw HTML or listing file, the complete export — and a literal
+match run over it; the claim names the instrument that produced it or
+does not ship, and a claim whose instrument is a summariser is removed,
+never softened. Where an instrument returns both a declared size and a
+rendering (a table range and its rows, a count and a page), compare the
+two before reading anything out of it; a mismatch means a sample, not the
+population. Prefer the interface that returns the artefact to the one
+that returns a summary of it, because only the latter can silently
+shorten.
+
+### 29. A skill holds method; dated values live in a workspace file the skill names
+**Applies to:** all skills, open-source and internal
+**Requirement:** A skill holds method, rules and workflow — what is as
+true next year as today. Anything with a date or a current value —
+goals, figures, rates, schedules, client and source mappings, logs —
+lives in a workspace file the skill names (in its reference index,
+entry 13). The skill is the single owner of the method; the file is
+the single owner of the values. When two skills need the same value,
+both point at the file and neither copies it. Rationale: a dated value
+inside a skill goes stale silently — the skill is loaded as if it were
+current, changing a number takes a skill review, and copies held by two
+skills diverge. A value in a workspace file is updated without a review
+and lives in one place.

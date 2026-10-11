@@ -50,6 +50,9 @@ the counter continues from where the single-file log left off.
 ## Procedure
 
 Run from the workspace folder. Python 3.8+, no dependencies.
+`<skill directory>` below is the installed skill's own directory (the one
+holding `SKILL.md`); where `python3` is not a real interpreter (on Windows
+it can be the Microsoft Store alias), use `py -3`.
 
 1. **Make sure nothing else is writing.** Close parallel sessions and
    check for a scheduled review due in the next hour. The conversion
@@ -70,9 +73,9 @@ Run from the workspace folder. Python 3.8+, no dependencies.
    you do not intend to convert:
 
    ```bash
-   python3 scripts/migrate-log.py --check skill-observations/log.md
+   python3 "<skill directory>/scripts/migrate-log.py" --check skill-observations/log.md
    find skill-observations/archive -maxdepth 1 -name '*.md' -exec \
-     python3 scripts/migrate-log.py --check {} +
+     python3 "<skill directory>/scripts/migrate-log.py" --check {} +
    ```
 
    Two invocations rather than one glob: the archive directory may not
@@ -105,7 +108,7 @@ Run from the workspace folder. Python 3.8+, no dependencies.
 5. **Convert the live log:**
 
    ```bash
-   python3 scripts/migrate-log.py --convert skill-observations/log.md \
+   python3 "<skill directory>/scripts/migrate-log.py" --convert skill-observations/log.md \
      --out skill-observations/observation-log \
      --id-floor-from skill-observations/archive \
      --overrides overrides.json

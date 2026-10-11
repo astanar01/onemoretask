@@ -15,6 +15,8 @@ empty.
 ## Contents
 
 - Layout
+  - Workspace creation
+  - Snippets take a spaced path and run under bash
 - Frontmatter fields
   - Unquoted `: ` in a prose value — how far it drifts before anyone notices
   - A list entry holding a colon is not portable
@@ -61,6 +63,8 @@ skill-observations/
   skill-families.md      # declared families: members, shared vs member-specific,
                          #   coherence model (created when the first family is named)
   last-review-date.txt
+  reviews/               # one record per review run: reviews/YYYY-MM-DD/REVIEW.md
+                         #   (weekly-review.md Step 8; kept, never pruned by a step)
   checkpoints.log        # append-only acknowledgement markers (optional)
 ```
 
@@ -70,25 +74,115 @@ directory listing is the index, and the frontmatter is the metadata.
 "The observation log", wherever this skill or any other skill says it,
 means this directory.
 
+### Workspace creation
+
+One idempotent command, then an assertion. Session Start step 1 points
+here: run this, do not work down the tree above by hand.
+
+```bash
+d="[ABSOLUTE PATH]/skill-observations"   # the pinned path, quoted: it may contain a space; bash, not sh
+[ -e "$d/log.md" ] && [ ! -d "$d/observation-log" ] && { echo "LEGACY log.md — run the migration (references/migration.md) before creating anything"; exit 1; }
+c=; for x in observation-log observation-log/archive last-review-date.txt cross-cutting-principles.md; do [ -e "$d/$x" ] || c="$c${c:+,}$x"; done   # what this run creates
+mkdir -p "$d/observation-log/archive"
+[ -e "$d/last-review-date.txt" ] || printf 'never\n' > "$d/last-review-date.txt"   # the literal `never`, never a date: a date means a review actually ran
+[ -e "$d/cross-cutting-principles.md" ] || printf '# Cross-Cutting Principles\n\nPrinciples that apply to all skills. Read as a mandatory checklist during\nany skill creation or regeneration.\n\n---\n\n## Active Principles\n' > "$d/cross-cutting-principles.md"
+for x in observation-log observation-log/archive last-review-date.txt cross-cutting-principles.md; do
+  [ -e "$d/$x" ] || { echo "WORKSPACE SETUP INCOMPLETE: $x"; exit 1; }
+done
+printf '%s [%s] workspace: created=%s\n' "$(date '+%F %H:%M')" "${PWD##*/}" "${c:-none}" >> "$d/checkpoints.log"   # step 1's trace
+```
+
+`mkdir -p` creates the parent, so `observation-log/` needs no separate line;
+the `[ -e ]` guards make the command safe to re-run on an existing
+workspace, which is what lets step 1 run it unconditionally rather than
+deciding first whether setup is needed. The legacy guard runs first
+because a created `observation-log/` would hide the one condition that
+identifies a pre-3.0 install. The principles stub is the header of the
+template in `skill-authoring.md` ("Principle Propagation"); change the two
+together.
+
+**Step 1 leaves a trace.** The last line appends what this run created to
+`checkpoints.log` — `created=none` on an ordinary session, the artefact
+names on a fresh install or a repaired one. Creation is otherwise the one
+session-start action nothing records: when a review finds the principles
+file missing, a step 1 that never ran and a file deleted later look the
+same, and only the trace tells them apart.
+Other files created at session start on the same terms, for a test plan
+rather than this command: `starter-principles-reviewed.txt` (starter-set
+reconciliation) and `skill-families.md` (created when the first family
+is named).
+
+**A read-only or permission error on an allowlisted path is a missing
+path, not an unwritable log.** When this command fails with `Read-only
+file system` or a permission error on a workspace path the harness's
+write allowlist names, the likely cause is that the path does not exist
+yet and the sandbox cannot create it (`environments.md`, "Anchoring the
+workspace", "A grant names a path"). Say that to the user in one line and
+hand them the fix — create `skill-observations/` and `skill-updates/`
+under the pinned root from outside the sandbox — instead of retrying
+through another interface or falling through to the unwritable-log or
+no-filesystem branches.
+
+**Why a command and not the prose list it replaces.** Observed on a fresh
+user-scope install: a session created `skill-observations/` and
+`observation-log/` and nothing else. The next session could not tell —
+step 1's probe is an `ls` of the pinned path, the path resolved,
+`observation-log/` was there, and nothing re-checks the siblings. The
+workspace looked set up from outside for as long as nobody looked closer.
+
+The assertion loop is the half that matters, because the four artefacts
+fail differently and only one of them complains:
+
+| Missing | How it surfaces |
+|---|---|
+| `observation-log/` | immediately, at the first scan |
+| `archive/` | at the first write, when the id snippet reads `.id-floor` or `mv`s into it |
+| `cross-cutting-principles.md` | at the first review |
+| `last-review-date.txt` | only if step 3 applies its own recreate rule — otherwise the review trigger never fires, and nothing says so |
+
+This is the same shape the skill already solved for archival, and solved
+the same way — a duty written as prose next to another action inherits none
+of that action's enforcement, so the archival sweep was folded *into* the
+id-derivation snippet ("If a step must always accompany a tool call, put it
+inside the same command", Archival on Write). Step 1's creation is the
+remaining place where that reasoning had not been applied.
+
+### Snippets take a spaced path and run under bash
+
+**The substituted path routinely contains a space** — the default
+shared-folder name on at least one common install does — so every
+expansion of it stays double-quoted, and no snippet may feed it through
+word splitting (`for f in $(find …)`): a sweep that splits its own path at
+the space examines zero files, prints errors nobody reads, and lets the
+command it rides inside succeed.
+
+**Every snippet in this skill is bash, not POSIX `sh`** — the id snippet's
+`10#` arithmetic is a bash extension `dash` and `ash` reject, so under `sh`
+the derivation stops before any file exists, and an adapted snippet may
+fail more quietly than that. A `bash` code fence states that to a human
+reader and to nothing else, so invoke the snippets with bash explicitly; a
+block that happens to be POSIX-safe too (the sweep) is incidental, not a
+promise about the rest.
+
 ## Frontmatter fields
 
 | Field | Meaning |
 |---|---|
 | `id` | Integer; matches the `NNNN-` filename prefix — four digits, zero-padded (`printf '%04d'`, as the snippet and the script write it), so a listing sorts numerically and a clash is visible in it; `63-` beside `0063-` is one id written by something other than the snippet. Never reused. |
-| `title` | Short descriptive title. |
+| `title` | Short descriptive title. It is the summary every restatement check and frontmatter scan matches against, and an edit to the body does not update it: when an appended instance widens the finding, rewrite the title in the same edit, or the next restatement of the wider finding misses it and is filed as new. |
 | `status` | `open`, `actioned`, `declined`, `superseded` (a later observation found this one's mitigation does not work; `resolution` names it) or `parked`. A missing status is read as `open`, never as nonexistent. |
 | `parked` (status value) | Decided, but blocked on an external precondition: the entry is sound and no longer awaiting a judgement, so reviews drop it from the work queue and never re-escalate it. It is not resolved, so it does not archive — see Archival below. It stays in `observation-log/` until its `parked_until:` condition is met (set it back to `open`) or it is genuinely resolved. Recording a park as free text while leaving `status: open` does not work: nothing classifies on prose, so the entry stays in the queue and is re-raised at every review. |
 | `parked_until` | **Mandatory whenever status is `parked`**, empty otherwise. One line naming the condition that unparks the entry ("the X scheduled task is re-enabled"), phrased so a later review can answer yes or no without reopening the original decision. |
 | `type` | `open-source` or `internal` (see Taxonomy in the core skill). |
-| `skill` | **Always a list**, even with one entry, so no consumer ever branches on string-vs-list. First entry is primary. May be empty. A plugin-scoped name is quoted: `["plugin:skill", other-skill]` (below). |
+| `skill` | **Always a list**, even with one entry, so no consumer ever branches on string-vs-list. First entry is primary. May be empty. Write each name in its bare form — the part after the last colon of the listed name — and qualify it as `plugin:skill` only where two installed skills share that bare name; a qualified entry is quoted: `["plugin:skill", other-skill]` (below). Bare is the canonical form because it is what writers produce in practice (0 of 40 entries were qualified when the two rules were compared) and one skill in two spellings is two review buckets. Every lookup BY skill name — a grep with a skill-name slot, `scripts/skill-load.sh` — reduces a `plugin:name` to the part after the last colon before matching: the bare pattern matches both spellings, while a qualified one misses every entry filed under the bare name and returns a clean zero. |
 | `proposes_skill` | List of new-skill candidates by working name. Independent of `skill`; either may be empty, both may be filled. |
 | `target_file` | List of paths, for observations whose right home is not a skill: an instructions file, a memory note, an agent brief, the register a routine reads. Name the file the fix will actually be written to, so a review can go there instead of remapping the entry onto the nearest skill. Measured on a first review of 27 legacy entries: 15 named a non-skill in `skill:` ("browser verification protocol", "documentation hygiene") and every one had to be resolved to a path by hand before the review could start. |
 | `siblings_checked` | **Mandatory, never blank.** Records that the sibling check happened and what it concluded: the family name, the members evaluated, and the verdict per member (propagated / excluded). Every **exclusion** carries its ground — the file and section (or line) read in that sibling showing it does not apply — or the literal token `assumed`; inclusions need no ground, because including a sibling is the safe error. An `assumed` exclusion is a review item, not a settled verdict. `none` only where the target belongs to no family. Missing or empty = logged without a sibling check, and reviews count it as such. |
 | `area` | The part of the skill or workflow concerned. |
 | `date` | Date logged, `YYYY-MM-DD`. |
 | `session_context` | What was being worked on. |
-| `resolved` | Resolution date; set only when status is `actioned` or `declined`. Archival is gated on it. |
-| `resolution` | What was done, or why declined. |
+| `resolved` | Resolution date; set only when status is `actioned`, `declined` or `superseded`. Archival is gated on it. |
+| `resolution` | What was done, or why declined. When the fix is a prescription (a rule, a check, a form to use), an `actioned` resolution names where it now lives — a file and section, a staged skill copy, or a registered backlog entry. If no such place can be named, the prescription has been described, not applied: leave the entry `open`, or resolve the part that landed and carry the rest in a carrier observation (below). A review's own resolution already names the staged copy (`weekly-review.md`, Step 6); this is the rule for a resolution set outside a review. |
 | `reference` | Optional path to saved session-local evidence. |
 | `commands_verified` | One clause per executable command the body quotes: `run`, with what it returned, or `NOT RUN` with why; the literal `none` where the body quotes no command. Blank on a body that quotes a command means the command was never run. See "Commands inside an observation" below. |
 | `skill_qualifiers` | Optional map: skill name → the section or part of that skill meant. |
@@ -107,6 +201,12 @@ sat four days under `skills:`, with `status: OPEN` and no `type:`,
 `siblings_checked:` or `area:`, beside a scan that reported every header
 parsed). The failure produces a smaller number, never an error, which is
 why a near-miss name is flagged rather than skipped wherever a check runs.
+
+**An entry is UTF-8 without a byte order mark.** Every header reader tests
+line 1 for `---`, and a BOM in front of it hides the header: the scan
+skips the entry with `parsed` one below `files`, and the archival sweep
+never moves it (`environments.md`, "Windows hosts: what reaches the shell
+and the file").
 
 ### Unquoted `: ` in a prose value — how far it drifts before anyone notices
 
@@ -129,17 +229,34 @@ principle #8 extended…". Every one of the 27 had been written by following
 the template as it then stood, which carried the value unquoted. The
 template taught the defect, and each author complied with it.
 
-The scan's `suspect` count is the early warning: it reports headers whose
-value contains an unquoted `: ` beside the file count, so a log drifting
-into this state announces itself at session start rather than at the review
-that trips over it. Re-verify by running a real YAML parse over the
+The scan's `suspect` count is the early warning: it reports headers that
+look invalid by shape — an unquoted `: `, text after a closing quote
+(either style), a value opening with a backtick, `@` or `%`, an escape a
+double-quoted YAML string does not define (`\x`, `\u`, `\U` need 2, 4
+and 8 hex digits) — beside the file count, for the active directory and
+for `archive/`, so a log drifting into this state announces itself at
+session start rather than at the review that trips over it. The awk
+program resets its state on each file's first line, so an unterminated
+header cannot leak into the next file under `find -exec … {} +`; it
+allows any number of spaces after the colon and an `&anchor` or `!tag`
+before the value, and it never treats a value opening with `{` or `#`
+as prose, which is what kept the template's own `reference:` comment
+line from being flagged. It is a floor, not a parse: a `[…]` list is
+checked only for a colon in an unquoted entry, a `{…}` mapping not at all,
+and a plain value followed by a `# comment: x` still counts. It also misses an unterminated quote, a tab in
+place of the space after a colon, a value ending in a colon or opening
+with `: `, a `: ` on a continuation line, a key outside `[a-z_]+`, and an
+empty value under a typed tag (`!!int`). Re-verify by running a real YAML parse over the
 frontmatter of every file, not by re-reading the template.
 
 The typographic quote is the other common break, and it is quieter. A
 value that opens with „ or “ is a plain scalar: the quote characters
 become part of the text, an unquoted `: ` inside it still breaks the
 file, and nothing looks wrong in an editor. A value that opens with an
-ASCII `"` and closes with a typographic one never closes. Quote with the
+ASCII `"` and closes with a typographic one never closes. Inside an
+ASCII-quoted value, a „…" closed with an ASCII `"` ends the value at that
+`"`, and the rest of the line is text after a closing quote, which the
+scan flags. Quote with the
 ASCII pair; for a quotation inside the value use »…« or `\"`.
 
 ### A list entry holding a colon is not portable
@@ -172,9 +289,16 @@ once namespaced skills were observed. `scripts/migrate-log.py` already
 writes the quoted form, so a migrated log is portable; entries written
 by hand from the template are the ones to check.
 
-The scan's `suspect` count does not see this class — it excludes
-`[`-values by design — so a suspect count of zero says nothing about
-flow lists. Re-verify with two parsers, not one: a check that agrees
+The scan's `suspect` count sees this class through one rule of its own:
+in a value opening with `[`, it drops every quoted string and any
+trailing comment and flags what is left if it still holds a colon. So
+`[plugin:name]` counts and `["plugin:name"]` does not. The rule has one
+accepted false positive, `[a: b]` — valid YAML under both readings, a
+one-entry mapping — which the template never produces. The count is
+labelled `suspect (awk, a floor)` because it is a shape check by one
+instrument and a lower bound: "8 suspect" never means "8 invalid", and
+zero says nothing about a parser on the other rule. Re-verify with two
+parsers, not one: a check that agrees
 with the parser you already trust is the one to distrust
 (`skill-authoring.md`, "A verification command that AGREES with you").
 
@@ -201,6 +325,13 @@ change took to get there.
 The same applies to any vehicle standing in for a result: a ticket
 resolved, a build green, a message replied to. Park on what you actually
 need to be true.
+
+A condition phrased as text in the target is checked by a phrase search,
+and hard-wrapped Markdown breaks a line-oriented one: the phrase spans a
+line break and `grep` reports no match. Search within a Markdown block with
+whitespace normalised (join the lines of a paragraph, collapse runs of
+spaces), and test the search once against a known wrapped hit and a known
+cross-block non-match before trusting a "not present".
 
 For a skill the user does not maintain, the target artefact is the LOCAL
 INSTALL, not the upstream tree. An upstream report is not resolved when it
@@ -255,31 +386,9 @@ run.)
 Read only the frontmatter — the header block between the first two `---`
 lines — never the bodies. This is what keeps the session-start scan and
 the review's work-queue pass cheap once hundreds of observations exist.
-The core skill's Session Start Protocol holds the authoritative copy of
-this snippet; the copy below is reproduced for reading in context, and if
-the two ever disagree, the core wins:
-
-```bash
-d="[ABSOLUTE PATH]/skill-observations/observation-log"   # the pinned workspace path — re-derive in EVERY call, never relative to the cwd; run under bash, not sh
-n=$(find "[ABSOLUTE PATH]/skill-observations/observation-log" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')  # literal path: independent of $d
-parsed=$(find "$d" -maxdepth 1 -name '*.md' -exec awk 'FNR==1 {if (/^---[[:space:]]*$/) print FILENAME; nextfile}' {} + | wc -l | tr -d ' ')
-suspect=$(find "$d" -maxdepth 1 -name '*.md' -exec awk 'FNR==1 && /^---[[:space:]]*$/ {fm=1; next}
-  fm && /^---[[:space:]]*$/ {fm=0; nextfile}
-  fm && /^[a-z_]+: [^"\047[|>].*: / {print FILENAME; nextfile}' {} + | wc -l | tr -d ' ')   # values with an unquoted ": " — invalid YAML
-find "$d" -maxdepth 1 -name '*.md' | LC_ALL=C sort | while IFS= read -r f; do  # quote + IFS=: never word-split a path containing a space
-  awk 'NR==1 && /^---[[:space:]]*$/ {fm=1; next}
-       fm && /^---[[:space:]]*$/ {exit}
-       fm' "$f"
-  printf -- '---\n'
-done
-if [ "$n" -gt 0 ] && [ "$parsed" -eq 0 ]; then
-  echo "SCAN COMMAND BROKEN — $n files present, 0 headers parsed"; exit 1
-fi
-[ "$suspect" -gt 0 ] && echo "NOTE: $suspect of $n headers carry an unquoted ': ' in a value — quote those values (File format)"
-printf 'files: %s  parsed: %s  suspect: %s\n' "$n" "$parsed" "$suspect"
-printf '%s [%s] session-start scan: files=%s parsed=%s\n' "$(date '+%F %H:%M')" "${PWD##*/}" "$n" "$parsed" \
-  >> "[ABSOLUTE PATH]/skill-observations/checkpoints.log"   # date+time+source: one line per session, not per day
-```
+The scan is `scripts/session-start-scan.sh`, the one copy: SKILL.md's
+Session Start Protocol (step 2) runs it, and a reader reviews it there.
+The notes below explain its parts.
 
 **Why the line carries a time and a source, not just a date.** The
 workspace is deliberately shared across every project that observes the
@@ -296,10 +405,16 @@ per-project token the harness exposes) disambiguates the project.
 
 The final append is the session-start run's own trace (see "The scan ends
 in a write, not only a print"); a review's work-queue pass over the same
-frontmatter can drop it. The enumeration is a `find | sort | while IFS=
-read -r` loop rather than `for f in $(find …)`: the unquoted command
-substitution word-splits any path containing a space, which is a live
-hazard on every workspace whose folder name has one.
+frontmatter can drop it. The content print is one `awk` over `*.md`
+inside `( cd "$d" && … )`, never `for f in $(find …)`: the unquoted
+command substitution word-splits any path containing a space, a live
+hazard on every workspace whose folder name has one, while a glob in the
+directory itself hands `awk` bare file names that nothing splits. It
+prints each header followed by one `---` line, the output the earlier
+per-file loop produced, with one process for the whole set instead of
+one per file; `LC_ALL=C` inside the subshell sorts the glob the way the
+loop's `sort` did. Do not rebuild the file list with `$(ls … | xargs …)`:
+that reintroduces the word split.
 
 **Guard the read, not just the write.** A query that returns nothing is
 reporting on two possibilities at once — the data is absent, or the
@@ -314,7 +429,7 @@ the file count comes from a literal path, not from the variable the parse
 loop uses, and the assertion compares two numbers derived by different
 means. Empty output has to earn the status of evidence.
 
-Three properties of the snippet's form are load-bearing, and each was
+Three properties of the scan's form are load-bearing, and each was
 learned from a report. The guard's `parsed` count is derived by its own
 command, never by a counter incremented inside the printing loop: a
 counter that rides the output stream lives in a subshell the moment the
@@ -369,15 +484,29 @@ Retrieval has to happen where the decision is made.
 
 **An empty scan in a log known to be non-empty is a broken command until
 proven otherwise**, never the finding "no relevant observations". The
-snippet's guard is what settles which of the two it is, and both halves of
+scan's guard is what settles which of the two it is, and both halves of
 its independence are load-bearing: the file count comes from a literal
 path rather than from the variable the parse loop uses, and the assertion
 compares two numbers derived by different means — halt if files exist and
-nothing parsed. Keep that independence when adapting the snippet, and keep
+nothing parsed. Keep that independence when adapting the scan, and keep
 every path re-derived inside the same tool call. The reasoning and the
 reports each rule came from are in "Guard the read, not just the write"
 and "Snippets spanning several tool calls must re-derive their own paths"
 above.
+
+**A partial parse is lost entries, not a smaller log.** The guard halts
+only when nothing parsed. A numbered file with no header — zero bytes,
+or text with no opening `---` — is named on the scan's `LOST ENTRIES`
+line instead: it is the trace of a write interrupted between the
+`noclobber` create and the body (a denied write, a context cut, a session
+ending), and it holds an id nobody may reuse. Report each in the start-up
+lines. If the observation can be reconstructed — this session wrote it,
+or the slug and the session record say enough — write the body into
+that file now; otherwise give it a minimal header (`id` from the prefix,
+a `title` naming the slug, `status: declined`, `resolved:` today,
+`resolution: "write interrupted; body lost"`, `siblings_checked:
+"none — lost entry"`) so the archival sweep closes it. Never delete it:
+the id stays issued, and the floor already sits above it.
 
 ### Every instrument gets the same guard
 
@@ -398,11 +527,16 @@ as a property of instruments covers the one nobody has written yet.
 **A guard that separates "empty" from "non-empty" cannot catch a
 partial read, and partial reads are the common failure of text-shaped
 tool output.** A listing that returns some of the directory passes every
-zero-check and yields a plausible, wrong maximum. Where a monotonic
-invariant is already in the same computation — a floor file is by
-definition never above the highest id issued — assert against it rather
-than against a sentinel: a computed maximum below the recorded floor is
-proof the read was partial, whatever the cause. And never write a
+zero-check and yields a plausible, wrong maximum. Assert the listing
+against a second count of the same population taken by different means
+— the id snippet counts the prefixes it listed against `find`'s count of
+prefixed files — rather than against a sentinel. A monotonic invariant
+already in the computation is a weaker check: a floor file is never above
+the highest id *issued*, but an id can be issued without its file ever
+being created (an older snippet wrote the floor before the create, and a
+legacy monolithic archive holds ids no filename carries), so a computed
+maximum below the floor is reported, and the id taken above the floor,
+rather than halted on. And never write a
 suspect reading back into the persistent source it came from; a guard
 placed after that write has protected nothing, and the floor that exists
 to stop the counter rewinding becomes the thing that rewinds it.
@@ -498,6 +632,34 @@ a claim about the corpus only once the instrument is known to see the
 corpus (the timelessness scan in `skill-authoring.md` records which
 patterns ran for exactly this reason).
 
+**A populated result gets the guard too, and is questioned less than a
+zero because it looks like evidence.** Five shapes pass every
+empty-result check above: a verdict identical for the whole population
+(every expected file reported `MISSING`, because a path-conversion step
+failed to an empty string on every iteration and turned the later
+`[ -f ]` test into a constant); a small, plausible minority of findings
+that are all false positives of the instrument itself; two instruments
+over one population that disagree, hidden by a third "any left?" check
+that validates neither; a complete-looking response whose termination
+metadata says it was cut off; and an exit status read from the wrong
+command. So: a verdict that is uniform across the population is a claim
+about the instrument, probed like an empty one, with one element whose
+answer is known by other means. Where a check transforms its input
+(parse, path conversion, decode), print the transformed value before
+judging it. Where two instruments measure one population, assert
+`before - fixed = after` rather than checking only the final state.
+Before reporting a list of findings, open one of them in its original
+context. Read termination metadata (`finish_reason`, `done_reason`,
+`truncated`, an exit code) next to the content it qualifies, because
+looking complete is exactly what truncated output does. Capture an exit
+status in the statement right after the command (`cmd; rc=$?`), never
+inside a string that also runs a command substitution: in
+`echo "$(basename "$d") exit=$?"` bash reports the substitution's
+status, not the command's, and other shells differ. And for a new alarm
+or error branch, count the real inputs that reach it today: zero means
+the input is missing or the branch is unnecessary, and a green unit test
+does not tell the two apart.
+
 **A claim about how an external system behaves is an instrument reading,
 and gets the same guard — whatever produced it.** Whether it comes from a
 delegated agent's report, from a tool written this session, or from the
@@ -519,10 +681,11 @@ two apart from outside.
 
 ### A refused print is not an empty log
 
-The session-start scan does two different jobs in one block, and they have
+The session-start scan does two different jobs in one script, and they have
 different appetites. Everything up to and including the `checkpoints.log`
 write asks only for *facts about* the files: how many exist, how many have a
-parseable header, how many carry a suspect value. The trailing loop asks for
+parseable header, how many — in the directory and in `archive/` — look
+like invalid YAML. The trailing loop asks for
 the **contents** — it reads instruction-shaped text out of files and puts it
 into the agent's context, which is what builds awareness of the backlog.
 
@@ -542,7 +705,7 @@ This is why the counts and the trace run first. Three consequences:
   name the reason the classifier gave, and give the counts.
 - **The counts-only form is the documented fallback**, not a degraded
   improvisation. It still satisfies the `SCAN COMMAND BROKEN` guard, because
-  `n` and `parsed` both come from the half that ran. Ordering the block the
+  `n` and `parsed` both come from the half that ran. Ordering the script the
   other way round would put the guard's own inputs downstream of the half
   that can be refused — the guard would go quiet exactly when it is needed.
 - **Awareness is genuinely reduced, and that is worth one line to the user.**
@@ -571,7 +734,12 @@ a protocol that found nothing leaves.
 **The snippet is one implementation of the step; the STEP is the
 requirement.** When the harness declines a command as unverifiable, do
 not rewrite it into a cleverer compound — the refusal is about shape, and
-a cleverer compound is the same shape. Degrade to flat, single-purpose
+a cleverer compound is the same shape. This ladder answers a refusal of a
+command's *shape* only, where the flat form is exactly what the policy
+layer can check. A refusal that names the content or the target — the
+print refusal above, a denied path — is a denial: report it in its own
+words and do not fetch the same content another way. Degrade to flat,
+single-purpose
 commands over the absolute path, one per call, and do the combining
 yourself: list the directory and the archive, extract the frontmatter
 fields with one `grep`, read `.id-floor`, and take the maximum by hand
@@ -581,9 +749,38 @@ with no ids extracted is a broken read, not an empty log — and the
 ran, so a later reader can tell a degraded run from a skipped one. For a
 write, the flat form already exists: `scripts/new-observation.sh`,
 invoked by absolute path, is one command with no shell operators, and it
-is the only write path wherever it can run. Every mandatory step that
+is the only write path wherever it can run. The scan has the same flat
+form, `scripts/session-start-scan.sh` invoked by absolute path, so it is
+the ladder's first rung; the flat reads follow it, for when it is refused
+too or cannot run. Every mandatory step that
 ships a command owns a sentence saying what remains mandatory when the
 command is unavailable; this is that sentence for the scan.
+
+The ladder, one command per call, each with no shell operator a shape
+classifier could decline:
+
+```bash
+bash "<skill directory>/scripts/session-start-scan.sh" "[ABSOLUTE PATH]"
+find "[ABSOLUTE PATH]/skill-observations/observation-log" -maxdepth 1 -name '*.md' -exec grep -H -E '^(id|title|status|skill|proposes_skill|siblings_checked):' {} +
+ls "[ABSOLUTE PATH]/skill-observations/observation-log"
+ls "[ABSOLUTE PATH]/skill-observations/observation-log/archive"
+cat "[ABSOLUTE PATH]/skill-observations/observation-log/archive/.id-floor"
+```
+
+From the flat reads, combine by hand: `files` is the number of `.md`
+names in the first listing, `parsed` the number of distinct files the
+`grep` printed an `id:` line for, and the id maximum the largest prefix
+across both listings and the floor. Then write the `checkpoints.log` line, and say
+"degraded form" in the session. If `-exec … +` is itself refused as a
+compound, the fallback is
+`grep -H -E '…' "[ABSOLUTE PATH]/skill-observations/observation-log"/*.md`
+under bash — the one glob this tree tolerates, and only here, because
+the command it replaces was refused. On an empty log that `grep` reports
+"No such file" beside an empty `ls`, and on a log that has never issued
+an id the `cat` reports the same: each pair is the expected answer, not
+a broken read. The
+`ls` in this ladder is a read for a human-combined count, not an input
+to a snippet, so a rebound `ls` shows itself in the listing.
 
 ## Skill families and the sibling check
 
@@ -707,6 +904,27 @@ says of targets. Enumerate the scopes by glob rather than a recursive
 trees runs for minutes, and guard the enumeration: an empty result tells
 you about the instrument before it tells you about the library.
 
+```bash
+root="[PROJECTS ROOT]"   # absolute path of the directory holding the user's repositories
+[ -d "$root" ] || { echo "SWEEP BROKEN — projects root $root does not exist"; exit 1; }
+list=$(for d in "$root"/*/.claude/skills/*/ "$root"/*/*/.claude/skills/*/; do [ -f "$d/SKILL.md" ] && echo "${d%/}"; done)
+n=$(printf '%s\n' "$list" | grep -c .); p=$(for d in "$root"/*/ "$root"/*/*/; do [ -d "$d" ] && echo; done | wc -l | tr -d ' ')
+echo "project skills: $n (in $p directories under $root, two levels deep)"
+printf '%s\n' "$list" | grep "/<skill-name>$"                                            # by name: the bare name, any plugin: prefix dropped
+printf '%s\n' "$list" | while IFS= read -r d; do if [ -n "$d" ]; then grep -Il -i -- "<term from the body>" "$d/SKILL.md" || :; fi; done   # by problem; a non-match is not an error
+```
+
+Globs two levels under the root, one `grep` per project skill — bounded
+by the skills found, never by the tree beneath them. `project skills: 0`
+over a root that holds directories is an answer about this machine only
+if those directories are the repositories you meant; `0 directories` is
+a wrong root. Add the equivalent directory of any other tool the user
+runs skills from (its project-level skills directory, in place of
+`.claude/skills`); the activation block pins the root as
+`[PROJECTS ROOT]`, substituted at install like `[ABSOLUTE PATH]`. Run the
+sweep before a `proposes_skill:` write, and name its root and count in
+`siblings_checked:`.
+
 **3. Record the verdict** in `siblings_checked:`. The field exists because
 the two states of a one-entry `skill:` list — siblings evaluated and
 correctly excluded, versus siblings never considered — are byte-identical,
@@ -766,39 +984,37 @@ two ever disagree, the core wins:
 ```bash
 d="[ABSOLUTE PATH]/skill-observations/observation-log"   # the pinned workspace path, never relative to the cwd; it may contain a space, so keep it quoted; bash, not sh
 today=$(date +%F)          # archival rides inside this command (see below):
-n_files=$(find "$d" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
-seen=$(find "$d" -maxdepth 1 -name '*.md' -print0 | { n=0   # -print0/-d '': never word-split a path containing a space — `read -d` is a bash extension, so this loop requires bash
-  while IFS= read -r -d '' f; do   # stale resolved files move before the id is read
-    n=$(( n + 1 ))
-    hdr=$(awk 'NR==1 && /^---[[:space:]]*$/ {fm=1; next}
-               fm && /^---[[:space:]]*$/ {exit} fm' "$f")
-    case $hdr in   # patterns parenthesised: required inside $( ) on bash 3.2
-      (*"status: actioned"*|*"status: declined"*|*"status: superseded"*) ;;
-      (*) continue ;;
-    esac
-    r=$(printf '%s\n' "$hdr" | sed -n 's/^resolved:[[:space:]]*//p' | head -1)
-    case $r in ([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; (*) continue ;; esac
-    [ "$r" != "$today" ] && \
-      [ "$(printf '%s\n%s\n' "$r" "$today" | sort | head -1)" = "$r" ] && \
-      mv "$f" "$d/archive/"
-  done; printf %s "$n"; })
+n_files=$(find "$d" -maxdepth 1 -name '[0-9]*.md' ! -empty | wc -l | tr -d ' ')   # a zero-byte file gives awk no line to count
+seen=$(cd "$d" && awk 'FNR==1 {n++; nextfile} END {print n+0}' [0-9]*.md 2>/dev/null)   # files the sweep's glob reaches, counted apart from the sweep
 [ "$n_files" -gt 0 ] && [ "${seen:-0}" -eq 0 ] && { echo "ARCHIVAL SWEEP BROKEN — $n_files files present, 0 examined"; exit 1; }
-hi=$( { ls "$d" "$d/archive" 2>/dev/null | grep -oE '^[0-9]+'; cat "$d/archive/.id-floor" 2>/dev/null; } \
-     | sed 's/^0*\([0-9]\)/\1/' | sort -n | tail -1); : "${hi:=0}"
-[ "$hi" -eq 0 ] && [ -n "$(find "$d" -maxdepth 1 -name '*.md')" ] && { echo "ID COMMAND BROKEN — log is non-empty but no ids extracted"; exit 1; }
-next_id=$(( hi + 1 )); echo "$next_id" > "$d/archive/.id-floor"
+( cd "$d" && LC_ALL=C awk -v today="$today" 'FNR==1 {st=""; r=""; sub(/^\357\273\277/, ""); fm=/^---[[:space:]]*$/; if (!fm) nextfile; next}
+    fm && /^---[[:space:]]*$/ {if (st ~ /^(actioned|declined|superseded)$/ && r ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ && r < today) print FILENAME; nextfile}
+    fm && /^status:/ {st=$2}
+    fm && /^resolved:/ {r=$2}' [0-9]*.md 2>/dev/null | while IFS= read -r x; do mv -n "$x" archive/ 2>/dev/null; if [ -e "$x" ]; then echo "NOTE: $x not archived — archive/$x exists or the move failed"; fi; done )   # one awk for the set, one mv per stale resolved file, never over an archived one; bash
+floor=$(sed '1!d; s/[^0-9]//g' "$d/archive/.id-floor" 2>/dev/null); floor=$((10#${floor:-0}))   # digits only: a CRLF or padded floor still reads
+ids=$(for p in "$d"/[0-9]*.md "$d"/archive/[0-9]*.md; do [ -e "$p" ] && printf '%s\n' "${p##*/}"; done | grep -oE '^[0-9]+')   # globs and builtins: no `ls` a profile alias can rebind
+[ "$(printf '%s' "$ids" | grep -c .)" -eq "$(find "$d" "$d/archive" -maxdepth 1 -name '[0-9]*.md' | wc -l)" ] || { echo "ID COMMAND BROKEN — the listing and find disagree on the prefixed files"; exit 1; }
+hi=$(printf '%s\n' "$ids" | sort -n | tail -1); hi=$((10#${hi:-0}))   # from the files alone; 10#: a zero-padded prefix is not octal
+[ "$hi" -lt "$floor" ] && echo "NOTE: highest file id $hi is below .id-floor $floor — ids issued without a file; the new id goes above the floor"
+next_id=$(( (hi > floor ? hi : floor) + 1 ))      # never below the floor, whatever the listing saw
 f="$d/$(printf '%04d' "$next_id")-<slug>.md"      # the target path, built from the id just derived
 [ -n "$(find "$d" -maxdepth 2 -name "$(printf '%04d' "$next_id")-*.md")" ] && { echo "COLLISION — id $next_id already used; re-derive"; exit 1; }   # guard the id PREFIX across active + archive, not the path
 (set -C; : > "$f") || exit 1                        # noclobber: create, never truncate an existing file
+printf '%s\n' "$next_id" > "$d/archive/.id-floor"   # AFTER the create: an id check that writes no file never moves the floor
 ```
 
 The snippet leaves the derived number in `$next_id` and the target path in
 `$f`; append `printf '%04d\n' "$next_id"` if you also want the filename
 prefix echoed.
 
-**`scripts/new-observation.sh <slug> [workspace-root]` is this snippet as
+**`bash scripts/new-observation.sh <slug> [workspace-root]` is this snippet as
 one command.** It performs the same steps in the same order — sweep, id,
-floor write, prefix guard, noclobber create — takes the pinned workspace
+prefix guard, noclobber create, floor write — plus one the inline snippet
+lacks: before the prefix guard it claims the number with a noclobber
+create of an empty marker in `archive/.id-claims/`, moving up one when the
+claim is taken, so two runs at the same moment never share an id. Markers
+are never removed (no delete permission needed); one left by an
+interrupted run only leaves a gap. It takes the pinned workspace
 root as its second argument or from `TASK_OBSERVER_WORKSPACE`, refuses a
 relative root, a malformed slug or a missing `observation-log/archive/`
 (halt and re-probe; never recreate from a writer), and prints the created
@@ -808,40 +1024,56 @@ earlier read to a later write, which is the drift every rule in this
 section is trying to prevent. The inline snippet remains for harnesses
 where a script cannot be invoked.
 
-The `sed` strips the filename prefixes' zero-padding before the
-arithmetic. It is load-bearing, not cosmetic: shell arithmetic reads a
-leading-zero number as octal, so `$(( 0105 + 1 ))` yields 70 — a silently
-wrong id — and a prefix containing an 8 or 9 (e.g. `0108`) is an invalid
-octal constant and errors the whole derivation.
+The `10#` prefix in the arithmetic is load-bearing, not cosmetic: shell
+arithmetic reads a leading-zero number as octal, so `$(( 0105 + 1 ))`
+yields 70 — a silently wrong id — and a prefix containing an 8 or 9
+(e.g. `0108`) is an invalid octal constant and errors the whole
+derivation. `sort -n` needs no stripping; the arithmetic does. The floor
+is read as digits only, so a floor file written with a CRLF, padding or
+spaces still reads as its number instead of as nothing.
 
-`ls`, `awk`, `sed -n`, `grep -oE`, `sort -n`, `mv` and `printf` are POSIX,
-and the one non-POSIX construct is deliberate: `read -r -d ''` over
-`find -print0` is a bash extension, taken because it is the only form that
-cannot word-split a path containing a space — so run the snippet under
-`bash`, not `sh`. It runs unchanged on macOS, Linux and Git Bash. The date
-comparison relies on ISO dates sorting lexically, so it needs no `date`
-arithmetic. A skill that hands the agent a
+`awk`, `sed -n`, `grep -oE`, `sort -n`, `mv` and `printf` are POSIX,
+and the one non-POSIX construct is deliberate: `10#` in the arithmetic
+is a bash extension, the shortest form that keeps a zero-padded prefix out
+of octal — so run the snippet under `bash`, not `sh` (under `dash` the
+derivation stops with an arithmetic error before any file exists). It runs
+unchanged on macOS, Linux and Git Bash. The sweep's date comparison is an
+`awk` string comparison of ISO dates, which sort lexically, so it needs no
+`date` arithmetic. A skill that hands the agent a
 shell command owns that command's portability: lead with the portable
 form, never offer it as a footnote the agent reaches for after the primary
 has failed — and make any command that derives a number from a file fail
 loudly on an empty result, because a command that fails to empty rather
-than to error may never announce that it failed at all. A snippet that
+than to error may never announce that it failed at all. A snippet meant
+to run in an agent harness calls core utilities by names a profile cannot
+rebind — the harness commonly initialises its shell from the user's
+profile, and an alias or function named `ls` (`eza`, `lsd`, a wrapper with
+default flags) changes what that word runs while the snippet reports
+nothing wrong. Prefer shell globbing and builtins; where a utility is
+unavoidable, it is `find`, or `command <name>`. And a guard tests its own
+inputs: the listing is asserted against a file count before the floor is
+merged in, because a cached counter must never be able to satisfy a check
+whose purpose is to prove the log was read. A snippet that
 spawns one process per file carries an undeclared upper bound on the log
 it can read: per-file spawning degrades linearly with a large constant —
 seconds for a hundred files on Linux, past a two-minute tool timeout on
 Windows — so it never warns, it stops completing, and a backgrounded scan
 is indistinguishable from a slow one until something downstream consumes
 a partial answer. The counts in the session-start scan are batched
-(`-exec … {} +`); the content print and the archival sweep are per-file
-loops. Treat a scan that does not return as a broken instrument, never as
+(`-exec … {} +`), and the content print and the archival sweep are one
+`awk` each over the directory's glob; the only per-file process left is
+the `mv` of a file due for archival, bounded by the files due rather than
+by the log. Treat a scan that does not return as a broken instrument, never as
 a slow one to wait on — the BROKEN guard cannot fire for a command that
 never finished.
 
 ### Shell portability of the id snippet — why the case patterns are parenthesised
 
-Both `case` statements in the snippet sit inside the command substitution
-`seen=$( … )`, and both are written `(pattern)` rather than `pattern)`. The
-leading parenthesis is not style.
+The single-pass sweep has no `case` statement left, but the loop it
+replaced put two inside the command substitution `seen=$( … )`, and the
+rule they taught stands for any snippet that does the same: a `case`
+pattern inside `$( )` is written `(pattern)`, not `pattern)`. The leading
+parenthesis is not style.
 
 Bash 3.2 — which is what `/bin/bash` still is on a stock macOS install — ends
 a command substitution at the first unbalanced `)`, and an unparenthesised
@@ -853,8 +1085,8 @@ can fire, because those guards are inside the block that never started. A
 guard cannot report a failure that happens before it exists.
 
 Parenthesised patterns are valid in every POSIX shell and in every bash
-version, so the portable form costs nothing. Keep it in every copy of the
-snippet, here and in SKILL.md.
+version, so the portable form costs nothing. Keep it in every snippet that
+puts a `case` inside `$( )`.
 
 **If you are porting the snippet or writing a new one:** run it once under
 `/bin/bash` on macOS, not only under the shell your session happens to have.
@@ -863,11 +1095,25 @@ run against a snippet that would otherwise write to the log.
 
 ### The guard line, the sweep's count and the noclobber create
 
-The guard line distinguishes "the log says zero" from "I could not read
+The listing guard distinguishes "the log says zero" from "I could not read
 the log": a command that fails to empty rather than to error would
-otherwise propose id 1 in a populated log. The sweep carries the same
-guard in its own right — it counts the files it actually examined and
-halts if that count is zero while `find` reports files present. An
+otherwise propose id 1 in a populated log. It compares the number of ids
+the glob listed with `find`'s count of prefixed files in the same two
+directories, so it fires on a partial listing as well as an empty one,
+and it runs on the listing alone, before the floor enters — an earlier
+form merged the floor into the maximum first, and a listing broken to
+nothing then returned the floor and passed. The highest file id is kept
+apart from the floor for the same reason: the new id is the larger of
+the two plus one, and a file maximum below the floor is a NOTE (ids
+issued without a file), not a halt, because older snippets left exactly
+that state behind on every run that stopped after its floor write. The
+floor is written last, after the create, so a run that creates no file —
+a check, a collision, a failed create — never moves it. The sweep carries the same
+guard in its own right — a separate `awk` counts the files the sweep's
+glob reaches, and the block halts if that count is zero while `find`
+reports files present. The count comes from its own command because the
+sweep is a single `awk` with no loop counter to read, and a count riding
+the sweep's output would share its failure. An
 archival loop that never enters its body moves nothing and exits
 successfully, so without the count "nothing was due for archival" and
 "the loop never ran" are the same output. The `noclobber` create covers
@@ -887,11 +1133,14 @@ path, the invariant is a unique number, and a guard on the path passes
 every violation of the number that uses a different slug — which is all
 of them. So the guard now asks whether any file with the derived prefix
 exists in `observation-log/` or `archive/` (`find … -name 'NNNN-*.md'`,
-never a bare glob), and halts if one does. It fires only when the
-derivation is stale — a correct max-of-three cannot produce a number that
-is already in use — so a COLLISION here means the id came from somewhere
-other than a snippet run immediately before this write. Re-run the
-snippet; never adjust the number by hand.
+never a bare glob), and halts if one does. It fires when the derivation
+is stale — the id came from somewhere other than a snippet run
+immediately before this write. It cannot see a writer running at the same
+moment, whose file does not exist yet: both derive the same correct
+number from the same listing. The script closes that window with its
+number claim; the inline snippet does not, and the review's duplicate-id
+check catches what slips through. Re-run the snippet; never adjust the
+number by hand.
 
 ### Run the snippet immediately before every write
 
@@ -959,7 +1208,8 @@ one block, for latency. Observation writes look independent (different
 files, no shared variable) and are not: each one's id depends on the state
 the previous one leaves behind, so two writes dispatched in the same block
 both read the same maximum and mint the same number. This is a third source
-of collision, alongside a parallel session and a subagent of this session,
+of collision, alongside a parallel session and a subagent of this session
+— which inherits the same activation instruction and the same log —
 and it is the only one that lives entirely inside a single agent's own
 turn — which makes it the one no amount of caution about "other writers"
 prevents. When several observations are due, write them one at a time, each
@@ -978,13 +1228,13 @@ with the floor left three behind). The scan may assert it; the check is one
 line, and it belongs after the scan's counts, before the content print:
 
 ```bash
-floor=$(sed 's/^0*\([0-9]\)/\1/' "$d/archive/.id-floor" 2>/dev/null | tr -d ' \n')
-top=$(ls "$d" 2>/dev/null | grep -oE '^[0-9]+' | sed 's/^0*\([0-9]\)/\1/' | sort -n | tail -1)
-[ -n "${floor:-}" ] && [ -n "${top:-}" ] && [ "$floor" -lt "$top" ] && echo "NOTE: .id-floor ($floor) below highest active id ($top) — an issuer skipped the floor write"
+floor=$(sed '1!d; s/[^0-9]//g' "$d/archive/.id-floor" 2>/dev/null)
+top=$(for p in "$d"/[0-9]*.md; do [ -e "$p" ] && printf '%s\n' "${p##*/}"; done | grep -oE '^[0-9]+' | sort -n | tail -1)
+[ -n "${floor:-}" ] && [ -n "${top:-}" ] && [ "$((10#$floor))" -lt "$((10#$top))" ] && echo "NOTE: .id-floor ($floor) below highest active id ($top) — an issuer skipped the floor write"
 ```
 
-The line is optional in the core's scan snippet (the core is at its
-ceiling); `scripts/new-observation.sh` runs the same check on every write
+`scripts/session-start-scan.sh` does not run it (the line is optional
+there); `scripts/new-observation.sh` runs the same check on every write
 and corrects the floor as its own floor write. A NOTE here is evidence that
 some writer bypassed the snippet — log that as the observation, not the
 number.
@@ -1023,7 +1273,8 @@ write-back once silently erased entries appended minutes earlier. None of
 those failure modes exist when each file is isolated. In the rare case two
 parallel sessions pick the same id, the result is two files sharing a
 number — harmless, distinct files, nothing lost, as long as the slugs
-differ; the snippet's prefix guard catches that case at write time when the
+differ; the script's number claim prevents it for runs at the same moment,
+the snippet's prefix guard catches it at write time when the
 derivation is stale, an identical id AND slug is one path, which is what the
 `noclobber` create guards against, and the review's duplicate-id check (Step
 1, re-run at Step 6) renumbers whatever slips past both and logs a
@@ -1130,7 +1381,13 @@ it: the file is created, it looks superficially right, and parts of its
 content have been replaced by the output of commands. Quote the delimiter
 (`<<'OBS'`) whenever a shell write is genuinely the only path — a
 `set -C` noclobber create has no editing-tool equivalent — and prefer the
-editing tool everywhere else. Where the shell is that only path, write the
+editing tool everywhere else. Where the editing tool refuses to write a
+file it has not read in the session, read the empty file the create just
+made before writing the body: the refusal is keyed on that state, and it
+reads like a harness fault rather than a consequence of the create. A quoted heredoc is exact only where the
+shell receives the command as typed; on a host whose shell tool rewrites
+it in transit (`environments.md`, "Windows hosts: what reaches the shell
+and the file"), the body goes through the editing tool. Where the shell is that only path, write the
 frontmatter with `printf` and the body with a QUOTED heredoc: quoting the
 delimiter disables every substitution, so the body cannot carry
 variables, and the id and the dates go in the `printf` above it —
@@ -1301,11 +1558,13 @@ actioned, declined or superseded.
 
 Archival is a set of plain `mv` operations, one file at a time. Moving one
 resolved file cannot affect any other observation. The safe form is the
-sweep as shipped — one `find -print0` enumeration drives the loop, and the
-loop opens and moves only the path it was just handed; a moved file lands
-in `archive/`, which `-maxdepth 1` never descends into. To archive without
-writing an observation (the review's Step 1), run that sweep block on its
-own, from `today=` through the `ARCHIVAL SWEEP BROKEN` guard. Do not
+sweep as shipped — one `awk` pass over the directory's `*.md` names the
+stale resolved files, and the loop behind it moves only the name it was
+just handed; a moved file lands in `archive/`, which the glob never
+descends into. To archive without writing an observation (the review's
+Step 1), run that sweep block on its own, from `today=` through the `mv`
+loop. A header with no closing `---` is never archived: the pass decides
+at the closing line, which such a file does not have. Do not
 improvise a bulk move; where one is unavoidable, two rules:
 
 **Read the set once.** Either a single enumeration drives the moves, as
@@ -1329,7 +1588,7 @@ needed, make one call per path.
 
 ```bash
 d="[ABSOLUTE PATH]/skill-observations/observation-log"
-total() { echo $(( $(find "$d" -maxdepth 1 -name '*.md' | wc -l) + $(find "$d/archive" -maxdepth 1 -name '*.md' | wc -l) )); }
+total() { echo $(( $(find "$d" -maxdepth 1 -name '[0-9]*.md' | wc -l) + $(find "$d/archive" -maxdepth 1 -name '[0-9]*.md' | wc -l) )); }
 before=$(total)
 # ... the moves ...
 after=$(total)
@@ -1383,6 +1642,21 @@ a file, rendering a deck, completing a todo batch) means the write happens
 as a side effect of work you were doing anyway, rather than depending on a
 separate act of memory. The count need not be precise; roughly every third
 completion is the rule.
+
+**A claimed write is not a write.** Every rule above binds on the write;
+the summary that reports it needs its own rule, because a closing line
+can name ids and titles in exactly the form a true one takes, discharge
+the felt obligation, and leave nothing on disk. That is worse than
+forgetting: a forgotten write leaves a gap the next checkpoint catches,
+a narrated one reads as a checkpoint already passed, and an invented id
+can later coincide with a real one and become indistinguishable from it
+on audit (observed: a closing summary named two ids that no create had
+printed; the gap surfaced only when the next real write's id snippet
+reported fewer files than the claimed ids implied). So the Surfacing
+self-check binds on the narration: each id a summary names is one the
+snippet or `scripts/new-observation.sh` printed in this session's tool
+record, and the summary is rendered from a listing of `observation-log/`
+taken in the same turn, never from memory of having written it.
 
 ### The scan ends in a write, not only a print
 

@@ -129,6 +129,20 @@ a script that performs the step so it cannot be performed differently. What
 does not count: a bolder warning, the same rule moved somewhere more
 prominent, a checklist item, or a promise to be careful.
 
+**A barrier counts once it is armed, not once it is written** — and a
+change to an existing one, including a new branch added behind an entry
+point that is already registered, is a new barrier for this purpose.
+Arm it the way `observation-log.md` arms any enforcement trigger ("Two
+gaps the checkpoint pairing still leaves — and the rule behind both"): the
+real command it must refuse, and a legitimate one from the real tool
+record, both run through it. Passing synthetic payloads are evidence about
+the author's model of the input, not about the input, and the proof of the
+other triggers in the same file says nothing about the added one. For a
+barrier on shell commands, this skill's own snippets are legitimate
+commands it will meet early — the id derivation is a compound script with
+command substitution, the session-start scan a bundled script's
+invocation — so include them.
+
 **Where this matters most** is the class where the absence of an error is
 not evidence of success — silent corruption, a command that exits 0 having
 done the wrong thing, a check that cannot come out negative. There, a
@@ -166,7 +180,11 @@ adds nothing (act now). A criterion you *can* name must also be able to occur:
 ask who or what would have to act for it to fire, and whether that party has a
 reason to do exactly the opposite — a deferral whose criterion cannot occur is
 indistinguishable from a silent drop, only more expensive, and it looks better
-than a vague one because it is precisely phrased. Then ask what the delay
+than a vague one because it is precisely phrased. Probe the action as well
+as the evidence: when deferring, check read-only that the deferred action
+can be taken at all (the feature exists, the plan includes it, the
+permission is there) and record the result; a failed probe means deciding
+now and naming the substitute. Then ask what the delay
 costs — if a known-defective
 state stays live meanwhile, the burden of proof is on deferring, not on acting.
 A deferral is a decision and needs the same justification as acting; "more
