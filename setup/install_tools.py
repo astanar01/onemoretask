@@ -2,7 +2,8 @@
 
 Usage: python3 setup/install_tools.py [--bin-dir DIR] [--claude-dir DIR] [--dry-run]
 install.sh and install.ps1 run this. It never fails the install: every problem prints a "Note: ... skipped"
-line and the script still exits 0. A tool you already have is kept as is.
+line and the script still exits 0. A tool you already have is kept as is. After main(), FAILED names the steps a
+later run may fix (a failed download or plugin command); setup/run_setup.py runs it again then.
 Skip it all with ONEMORETASK_NO_TOOLS=1.
 """
 import argparse
@@ -30,6 +31,7 @@ OLLAMA_LINE = "MUNINN_OLLAMA_URL=ollama://localhost:11434/nomic-embed-text"
 PLUGIN = "context-mode@context-mode"
 PLUGIN_CMDS = [["plugin", "marketplace", "add", "mksglu/context-mode"],
                ["plugin", "install", PLUGIN, "--scope", "user"]]
+FAILED = []
 
 
 def platform_tag():
@@ -162,6 +164,7 @@ def install_binary(name, bin_dir, dry):
         os.replace(binary, target)
     except Exception as e:
         print(f"Note: could not install {name} ({e}) — skipped.")
+        FAILED.append(name)
         return None
     finally:
         for p in tmps:
@@ -315,6 +318,7 @@ def setup_context_mode(claude_dir, dry):
         ok, out = run([claude] + args, timeout=300)
         if not ok and "already" not in out.lower():
             print(f"Note: claude {' '.join(args)} failed ({out[-200:]}) — context-mode plugin skipped.")
+            FAILED.append("context-mode")
             return
     if not dry:
         print("Installed the context-mode plugin")
@@ -330,6 +334,7 @@ def main(argv=None):
     if os.environ.get("ONEMORETASK_NO_TOOLS") == "1":
         print("Skipped the Claude Code tools (ONEMORETASK_NO_TOOLS=1).")
         return 0
+    FAILED.clear()
     steps = [("codebase-memory-mcp", []), ("muninn", ["mcp"])]
     servers = {}
     for name, args in steps:
@@ -337,6 +342,7 @@ def main(argv=None):
             path = install_binary(name, a.bin_dir, a.dry_run)
         except Exception as e:
             print(f"Note: {name} failed ({e}) — skipped.")
+            FAILED.append(name)
             path = None
         if path:
             servers[name] = {"type": "stdio", "command": os.path.abspath(path), "args": args, "env": {}}
@@ -348,6 +354,7 @@ def main(argv=None):
             step()
         except Exception as e:
             print(f"Note: {label} failed ({e}) — skipped.")
+            FAILED.append(label)
     return 0
 
 

@@ -3,7 +3,8 @@
 Usage: python3 setup/install_hooks.py [--claude-dir DIR] [--dry-run]
 The Claude dir defaults to $CLAUDE_CONFIG_DIR, else ~/.claude. ONEMORETASK_NO_TOOLS=1 skips everything.
 A file we installed earlier is replaced by the new version unless it was edited since; any other file
-already there is the user's own and is kept. Never fails the install: always exits 0.
+already there is the user's own and is kept. Never fails the install: always exits 0. After main(), FAILED names
+the steps that did not finish; setup/run_setup.py runs it again then.
 """
 import argparse
 import hashlib
@@ -18,6 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 MANIFEST = ".onemoretask-install-sums"
 SKILLS = ("cmm-rules", "ctx-rules")
+FAILED = []
 
 
 def sha256(path):
@@ -152,17 +154,20 @@ def main(argv=None):
     if os.environ.get("ONEMORETASK_NO_TOOLS") == "1":
         print("ONEMORETASK_NO_TOOLS=1: skipped the Claude Code hooks, rules and skills.")
         return 0
+    FAILED.clear()
     claude = Path(os.path.expanduser(args.claude_dir or os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
     try:
         install_files(claude, args.dry_run)
     except Exception as e:
         # Registering hooks whose scripts did not land would break every session: stop here.
         print(f"Note: could not install the Claude Code hooks ({e}) — skipped.")
+        FAILED.append("files")
         return 0
     try:
         merge_settings(claude, args.dry_run)
     except Exception as e:
         print(f"Note: could not register the hooks in settings.json ({e}) — skipped.")
+        FAILED.append("settings")
     return 0
 
 

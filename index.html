@@ -2900,7 +2900,10 @@ async function checkUpdate(force) {
   const u = upd;
   if (!u.error && u.behind > 0 && u.canUpdate) showUpdate(t("Update"), "new", u.behind > 1 ? t("{n} new updates on GitHub ({from} → {to}). Click to install and restart.", { n: u.behind, from: short(u.installed), to: short(u.latest) }) : t("1 new update on GitHub ({from} → {to}). Click to install and restart.", { from: short(u.installed), to: short(u.latest) }));
   else if (!u.error && u.behind > 0) showUpdate(t("Update available"), "blocked", u.reason ? t(u.reason) : t("Cannot update automatically"));
+  else if (u.settingUp) showUpdate(t("Setting up tools…"), "", t("Installing the tools Claude works with. The board works meanwhile."));
   else $("#update").hidden = true;
+  // The server sets up the tools in the background after a start; look again until it is done.
+  if (u.settingUp) setTimeout(() => checkUpdate(false), 5000);
 }
 // After a restarting update, wait for the old server to go down and the new one to answer, then reload.
 async function runUpdate() {

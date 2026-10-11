@@ -474,6 +474,8 @@ const I18N = {
     "Installing the update": "Installation de la mise à jour",
     "The board server did not come back within 30 s": "Le serveur du tableau n’est pas revenu dans les 30 s",
     "Update failed": "Échec de la mise à jour",
+    "Setting up tools…": "Installation des outils…",
+    "Installing the tools Claude works with. The board works meanwhile.": "Installation des outils avec lesquels Claude travaille. Le tableau fonctionne pendant ce temps.",
     "The board runs from the main copy. Pick a worktree to try a task's changes": "Le tableau tourne depuis la copie principale. Choisissez un worktree pour essayer les modifications d’une tâche",
     "The board runs from a worktree, not from main: {path}": "Le tableau tourne depuis un worktree, pas depuis main : {path}",
     "too old": "trop ancien",

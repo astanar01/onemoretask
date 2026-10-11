@@ -263,8 +263,17 @@ memories. The rules (`claude/rules/`) and the `cmm-rules` / `ctx-rules` skills e
 session. `claude/NOTICE.md` lists where the hooks come from.
 
 Re-running the install updates the files it installed before, unless you edited them: then it keeps your
-version and says so. To redo it alone: `python3 ~/.onemoretask/setup/install_tools.py` and
-`python3 ~/.onemoretask/setup/install_hooks.py` (`--dry-run` shows what would change).
+version and says so. To redo it alone: `python3 ~/.onemoretask/setup/run_setup.py`, or each part with
+`python3 ~/.onemoretask/setup/install_tools.py` and `python3 ~/.onemoretask/setup/install_hooks.py`
+(`--dry-run` shows what would change).
+
+The board keeps this current by itself: each time it starts, it checks whether the setup files changed since
+the last finished setup (a stamp in `~/.claude/.onemoretask-setup`) and, if so, runs the setup in the
+background. So an **Update**, a `git pull`, or a copy installed before the tools existed gets them on the next
+start, and the Update button reads "Setting up tools…" meanwhile. A setup where a download or the plugin
+command failed is tried again at the next start. Installed with `ONEMORETASK_NO_TOOLS=1`? The stamp says
+`off` and the board leaves the tools alone until you install again without it. A board started from a task's
+worktree never runs it.
 
 To see a session in the terminal: `claude agents` lists them and `claude attach <id>` opens one.
 
@@ -395,7 +404,8 @@ What does leave your computer, and why:
 ## Update
 
 The **Update** button in the top bar turns green when GitHub has a newer version. Click it:
-the board pulls the new version (`git pull --ff-only`), restarts its server and reloads the page.
+the board pulls the new version (`git pull --ff-only`), restarts its server and reloads the page. When the
+new version brings new Claude Code tools, hooks or skills, the restarted board sets them up in the background.
 It stays grey when your copy is current, and says why when it can't update by itself (local
 changes, or commits that are not on GitHub).
 

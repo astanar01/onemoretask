@@ -73,14 +73,12 @@ if [ "${ONEMORETASK_NO_OBSERVER:-}" != 1 ]; then
   fi
 fi
 
-# Claude Code tools: setup/install_tools.py downloads pinned codebase-memory-mcp and MuninnDB builds (kept if
-# already installed), registers them as MCP servers, installs the context-mode plugin and starts Muninn;
-# setup/install_hooks.py copies the hooks, rules and skills into ~/.claude and registers the hooks in
-# settings.json. Both keep a user's own files and never fail the install.
-if [ "${ONEMORETASK_NO_TOOLS:-}" != 1 ]; then
-  python3 "$dir/setup/install_tools.py" || echo "Note: the Claude Code tools setup did not finish — skipped."
-  python3 "$dir/setup/install_hooks.py" || echo "Note: the Claude Code hooks setup did not finish — skipped."
-fi
+# Claude Code tools: setup/run_setup.py runs install_tools.py (pinned codebase-memory-mcp and MuninnDB builds, kept
+# if already installed, registered as MCP servers; the context-mode plugin; starts Muninn), then install_hooks.py
+# (hooks, rules and skills into ~/.claude, hooks registered in settings.json). Both keep a user's own files.
+# It always runs, also with ONEMORETASK_NO_TOOLS=1: it then only records the opt-out, so the board's start-up
+# check (run_setup.py --if-needed) never installs the tools behind the user's back.
+python3 "$dir/setup/run_setup.py" || echo "Note: the Claude Code tools setup did not finish — skipped."
 
 # Double-click shortcut. Runs bin/onemoretask by absolute path: a GUI launch may not have ~/.local/bin on PATH.
 # Called only inside `if`, where set -e is off, so every step is chained and a failure never stops the install.

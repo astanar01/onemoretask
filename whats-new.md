@@ -2,6 +2,7 @@
 
 ## 2026-10-11
 
+- The Update button now also brings the helpers Claude works with. If you had an older board without them, they get set up on their own when the board starts again, and the button says "Setting up tools…" while it works.
 - Under Tags, the tags you use most now show up on their own. Click one to add it to the task.
 - Moving a card to Done now always gets it a summary. Before, if you moved it at just the wrong moment, the summary was skipped without a word.
 - The Update button now puts in the new version even when you changed things in your copy, and keeps your changes. If the two don't fit together, it stops, changes nothing and tells you why.

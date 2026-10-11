@@ -85,7 +85,9 @@ GET /api/changelog is the board app's own changelog, whats-new.md in plain words
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
 GET /api/update compares the app's own git clone with GitHub (fetch, cached 10 min, ?force=1 re-checks); POST
-/api/update runs `git pull --ff-only` there and restarts the server with the same arguments.
+/api/update runs `git pull --ff-only` there and restarts the server with the same arguments. Each start runs
+setup/run_setup.py --if-needed in the background, so a pull that changes the Claude Code tools, hooks or skills
+sets them up; GET /api/update says settingUp: true meanwhile.
 
 GET /api/observations?p=<pid> lists the open entries of the task-observer skill's observation logs
 (<project>/skill-observations/ and <claude config dir>/skill-observations/, read-only; see observations.py).
@@ -119,6 +121,7 @@ takes a model (GET /api/codex-models lists the OpenAI ones), so a Codex reviewer
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -2609,7 +2612,7 @@ class Updater:
         with self.lock:
             if force or not self.last or time.time() - self.at > UPDATE_TTL:
                 self.last, self.at = update_status(), time.time()
-            return {k: v for k, v in self.last.items() if k != "upstream"}
+            return {**{k: v for k, v in self.last.items() if k != "upstream"}, "settingUp": SETUP["running"]}
 
     def pull(self):
         """Merge the just-fetched upstream (fast-forward when possible); returns (from, to) short shas.
@@ -2722,6 +2725,36 @@ def reexec():
         subprocess.Popen(cmd)
         os._exit(0)
     os.execv(sys.executable, cmd)
+
+
+# ---------------------------------------------------------------- tool setup
+SETUP = {"running": False}
+
+
+def setup_tools():
+    """Set up the Claude Code tools, hooks, rules and skills when this copy's setup files differ from the last
+    finished run (setup/run_setup.py --if-needed): after an Update or a git pull that changed them, and on a copy
+    installed before the tools existed. Not from a task's worktree (.git is a file there): its hooks are unreviewed."""
+    if os.path.isfile(os.path.join(APP, ".git")):
+        return
+    try:
+        spec = importlib.util.spec_from_file_location("run_setup", os.path.join(APP, "setup", "run_setup.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if not mod.needed(mod.claude_dir()):
+            return
+    except Exception as e:
+        print(f"Note: could not check the Claude Code tools setup ({e}).")
+        return
+    print("Setting up the Claude Code tools (the board works meanwhile)…")
+    SETUP["running"] = True
+    try:
+        subprocess.run([sys.executable, os.path.join(APP, "setup", "run_setup.py"), "--if-needed"],
+                       stdin=subprocess.DEVNULL)
+    except OSError as e:
+        print(f"Note: could not run the Claude Code tools setup ({e}).")
+    finally:
+        SETUP["running"] = False
 
 
 # ---------------------------------------------------------------- http
@@ -3019,6 +3052,7 @@ def main():
         open_project(reports.project_root())
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     threading.Thread(target=WATCH.run, daemon=True).start()
+    threading.Thread(target=setup_tools, daemon=True).start()
     print(f"Task board: http://127.0.0.1:{args.port}  (projects: {', '.join(p.name for p in projects())})")
     try:
         server.serve_forever()
