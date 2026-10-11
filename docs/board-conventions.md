@@ -60,6 +60,25 @@ transcript also picks up the recap runs (`claude -p` in a temp dir, no tools), w
 it: once 158 of 159 matches were recaps and every number on the card was wrong. Before
 reporting numbers, check the sample: does it have `tool_use` calls, and are sizes plausible?
 
+## README screenshots (`docs/screenshots/`)
+
+The cards' live states (working, needs you, permission, subagents) come from running
+sessions, so a plain demo board cannot show them. What worked:
+
+- A script builds a throwaway project: a real git repo with a worktree and commits, board
+  files and an observation log.
+- The real server runs on a spare port with `HOME=<tmp>/home`, so no real data or paths
+  show and the real project registry is untouched.
+- Playwright stubs only the live-state routes (`/api/agents`, `/api/task-git`) with crafted
+  JSON, keeping the server's headers via `route.fetch()`. Everything else is real.
+- Shoot at `deviceScaleFactor: 2` and crop empty space with `clip`.
+- Before committing, scan every shot (and the DOM before the shot) for real usernames and
+  absolute paths, and look at each image.
+
+Keep the builder and shot script in the repo next to the images (e.g.
+`tools/screenshots/`). The first harness lived in a job tmp dir, was deleted, and had to be
+re-derived for the next refresh.
+
 ## Screenshots of the running board
 
 To check a page change from a worktree on REAL data without a second server: a tiny
