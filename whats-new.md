@@ -2,6 +2,7 @@
 
 ## 2026-10-11
 
+- Moving a card to Done now always gets it a summary. Before, if you moved it at just the wrong moment, the summary was skipped without a word.
 - The Update button now puts in the new version even when you changed things in your copy, and keeps your changes. If the two don't fit together, it stops, changes nothing and tells you why.
 - Renaming the Review or In Progress column no longer stops cards from moving there on their own.
 - The board can now talk French. Open the View menu, pick Français under Language, and everything on the page changes. Pick English to go back.

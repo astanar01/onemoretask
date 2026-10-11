@@ -1817,8 +1817,9 @@ class Watcher:
     def poll(self):
         with self.lock:
             expected = dict(self.expected)
-        work, done_cols, unread = [], set(), set()
+        work, done_cols, unread, read_at = [], set(), set(), {}
         for p in projects():
+            read_at[p.id] = time.time()
             try:
                 state = load_tasks(p)
             except (OSError, ValueError):
@@ -1929,9 +1930,11 @@ class Watcher:
                     self.committed[(p.id, t["id"])] = done
             recapped = any(e.get("status") == "recap" for e in log)
             marker = reports.close_path(p.board, t["id"])
+            # A marker newer than this pass's read of the board is a move to done this pass has not seen: keep it.
             if not closed:
                 try:
-                    os.remove(marker)
+                    if os.path.getmtime(marker) < read_at[p.id]:
+                        os.remove(marker)
                 except FileNotFoundError:
                     pass
             with self.lock:
