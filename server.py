@@ -425,7 +425,8 @@ def worktree_lines(wt, main):
             "- Files git does not track (local config, .env, installed dependencies, build output) are not in the "
             "worktree: copy or reinstall what the work needs.",
             f"- Do not merge into `{wt['base']}` and do not remove the worktree yourself. The user tries it with \"Run "
-            "app from worktree\" and merges it with \"Merge worktree to main\" on the card; those arrive as messages.",
+            f"app from worktree\" and merges it with \"{worktree_label('merge', wt['base'])}\" on the card; those "
+            "arrive as messages.",
             f"- In the done report, name the branch `{wt['branch']}` along with the commit shas."]
 
 
@@ -2166,7 +2167,15 @@ def resume(p, info, message):
     return m.group(1)
 
 
-WORKTREE_ACTIONS = {"run": "Run app from worktree", "merge": "Merge worktree to main"}  # the page matches these labels
+WORKTREE_ACTIONS = ("run", "merge")
+
+
+def worktree_label(action, base):
+    """The card's label for a worktree button; the page's worktreeLabel() must give the same text. The merge names
+    the branch the worktree was made from, unless that was a detached HEAD (a sha)."""
+    if action == "run":
+        return "Run app from worktree"
+    return f"Merge worktree to {base}" if base and not re.fullmatch(r"[0-9a-f]{7,40}", base) else "Merge worktree"
 OPEN_URL_CMD = {"darwin": "open", "win32": "start \"\""}.get(sys.platform, "xdg-open")
 
 
@@ -2230,7 +2239,7 @@ def worktree_action(p, task_id, action):
         raise PermissionError("Claude is still working — wait until it stops")
     if action == "merge" and board_runs_from(wt["path"]):
         raise PermissionError(STILL_RUNNING_HERE)
-    reply(p, task_id, WORKTREE_ACTIONS[action], extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
+    reply(p, task_id, worktree_label(action, wt["base"]), extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
 
 
 STILL_RUNNING_HERE = "The board itself runs from this worktree — switch it back to main (the box at the top) first"

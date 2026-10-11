@@ -1729,7 +1729,7 @@ function nextAction(t, ag, g) {
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
   const runApp = () => act(window.t("Run app"), "sec", () => worktreeAction(t, "run"), { icon: "play", title: window.t("Claude starts the app from this task's worktree so you can try the changes") });
-  const merge = (cls = "primary") => act(window.t("Merge worktree to main"), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way") });
+  const merge = (cls = "primary") => act(worktreeLabel(t, "merge", true), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way") });
   const toReply = () => act(window.t("Reply in Conversation"), "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
   const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
@@ -2329,9 +2329,17 @@ async function answerPermission(t, choice, ask) {
   await pollAgents();
   refreshAgent(t);
 }
+// Same text as the server's worktree_label(): the merge names the branch the worktree was made from (not a sha).
+// tr = translated for a button; untranslated it matches the message the server types into the session.
+function worktreeLabel(t, action, tr) {
+  if (action === "run") return tr ? window.t("Run app from worktree") : "Run app from worktree";
+  const base = t.agent && t.agent.worktree && t.agent.worktree.base;
+  if (!base || /^[0-9a-f]{7,40}$/.test(base)) return tr ? window.t("Merge worktree") : "Merge worktree";
+  return tr ? window.t("Merge worktree to {base}", { base }) : `Merge worktree to ${base}`;
+}
 // The server types a canned message into the card's session; its logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
-  const label = action === "run" ? "Run app from worktree" : "Merge worktree to main", pm = addPending(t, "reply", label, []);
+  const label = worktreeLabel(t, action), pm = addPending(t, "reply", label, []);
   setStatus(action === "run" ? window.t("Asking Claude to run the app…") : window.t("Asking Claude to merge…"));
   refreshAgent(t); render();
   try {
@@ -2341,7 +2349,7 @@ async function worktreeAction(t, action) {
     if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);
-    setStatus(action === "run" ? window.t("Run app from worktree failed: {error}", { error: window.t(e.message) }) : window.t("Merge worktree to main failed: {error}", { error: window.t(e.message) }), true);
+    setStatus(action === "run" ? window.t("Run app from worktree failed: {error}", { error: window.t(e.message) }) : window.t("{action} failed: {error}", { action: worktreeLabel(t, action, true), error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
   await pollAgents();
