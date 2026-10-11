@@ -32,6 +32,7 @@ class InstallTools(unittest.TestCase):
         self.calls = []
         self.downloads = []
         self.which = {}
+        self.failing = set()
         self.port = False
         self.platform = ("linux", "amd64")
         env = {"HOME": self.home}
@@ -87,7 +88,10 @@ class InstallTools(unittest.TestCase):
             f.write(self.files[url.replace("https://github.com/", "")])
 
     def fake_run(self, cmd, **kw):
-        self.calls.append([os.path.basename(cmd[0])] + list(cmd[1:]))
+        call = [os.path.basename(cmd[0])] + list(cmd[1:])
+        self.calls.append(call)
+        if " ".join(call) in self.failing:
+            return subprocess.CompletedProcess(cmd, 1, "", "boom")
         out = "tool 1.2.3\n" if cmd[1:] == ["--version"] else ""
         return subprocess.CompletedProcess(cmd, 0, out, "")
 
@@ -222,6 +226,29 @@ class InstallTools(unittest.TestCase):
         out = self.main()
         self.assertFalse(any(c[0] == "claude" for c in self.calls))
         self.assertIn("Kept your context-mode plugin", out)
+
+    def test_claude_found_off_path(self):
+        # A board started from the desktop shortcut may lack ~/.local/bin on PATH.
+        os.makedirs(self.bin)
+        with open(os.path.join(self.bin, "claude"), "w") as f:
+            f.write("")
+        self.main()
+        self.assertIn(["claude", "plugin", "install", "context-mode@context-mode", "--scope", "user"], self.calls)
+        self.assertNotIn("context-mode", it.FAILED)
+
+    def test_skipped_steps_are_failed(self):
+        # run_setup.py writes its stamp only when FAILED is empty, so each of these must land there to be retried.
+        self.which["ollama"] = "/usr/bin/ollama"
+        self.failing = {"muninn start", "ollama pull nomic-embed-text", "codebase-memory-mcp --version"}
+        self.main()
+        self.assertEqual(sorted(it.FAILED), ["codebase-memory-mcp", "context-mode", "muninn start", "ollama pull"])
+        # A download that does not run is removed, so the next run downloads it again.
+        self.assertFalse(os.path.exists(os.path.join(self.bin, "codebase-memory-mcp")))
+        with open(self.cj, "w") as f:
+            f.write("{not json")
+        self.failing = set()
+        self.main()
+        self.assertIn("MCP servers", it.FAILED)
 
     def test_no_tools_env(self):
         os.environ["ONEMORETASK_NO_TOOLS"] = "1"

@@ -7,6 +7,7 @@ later run may fix (a failed download or plugin command); setup/run_setup.py runs
 Skip it all with ONEMORETASK_NO_TOOLS=1.
 """
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -177,6 +178,10 @@ def install_binary(name, bin_dir, dry):
     version = version_of(target)
     if not version:
         print(f"Note: {name} was put in {target} but does not run — skipped.")
+        FAILED.append(name)
+        # Left in place, the next run would keep it as the user's own and never download it again.
+        with contextlib.suppress(OSError):
+            os.remove(target)
         return None
     print(f"Installed {name} (version {version}) in {target}")
     return target
@@ -198,9 +203,11 @@ def register_mcp(claude_dir, servers, dry):
                 data = json.load(f)
         except (OSError, ValueError) as e:
             print(f"Note: could not read {path} ({e}) — MCP servers not added.")
+            FAILED.append("MCP servers")
             return
         if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
             print(f"Note: {path} is not in the expected shape — MCP servers not added.")
+            FAILED.append("MCP servers")
             return
     have = data.setdefault("mcpServers", {})
     added = []
@@ -227,6 +234,7 @@ def register_mcp(claude_dir, servers, dry):
         os.replace(tmp, path)
     except OSError as e:
         print(f"Note: could not write {path} ({e}) — MCP servers not added.")
+        FAILED.append("MCP servers")
         return
     print(f"Added MCP server {', '.join(added)} to {path}")
 
@@ -268,6 +276,8 @@ def setup_muninn(muninn, dry):
         ok, out = run([ollama, "pull", "nomic-embed-text"], timeout=600)
         print("Got the nomic-embed-text model for Muninn" if ok
               else f"Note: ollama pull nomic-embed-text failed ({out[-200:]}) — skipped.")
+        if not ok:
+            FAILED.append("ollama pull")
     if ollama:
         env = os.path.join(os.path.expanduser("~"), ".muninn", "muninn.env")
         try:
@@ -291,6 +301,8 @@ def setup_muninn(muninn, dry):
     else:
         ok, _ = run([muninn, "start"], capture=False)
         print("Started the Muninn server" if ok else "Note: muninn start failed — skipped. Run it yourself later.")
+        if not ok:
+            FAILED.append("muninn start")
 
 
 def plugin_enabled(claude_dir):
@@ -301,15 +313,23 @@ def plugin_enabled(claude_dir):
         return False
 
 
+def find_claude():
+    """The Claude CLI, also when PATH lacks ~/.local/bin (a board started from the desktop shortcut)."""
+    names = ("claude.exe", "claude") if os.name == "nt" else ("claude",)
+    local = [os.path.join(os.path.expanduser("~"), ".local", "bin", n) for n in names]
+    return shutil.which("claude") or next((p for p in local if os.path.isfile(p)), None)
+
+
 def setup_context_mode(claude_dir, dry):
     if plugin_enabled(claude_dir):
         print("Kept your context-mode plugin (already on)")
         return
-    claude = shutil.which("claude")
+    claude = find_claude()
     if not claude:
         print("Note: Claude Code not found — context-mode plugin skipped. Once Claude Code is installed, run:")
         for args in PLUGIN_CMDS:
             print("  claude " + " ".join(args))
+        FAILED.append("context-mode")
         return
     for args in PLUGIN_CMDS:
         if dry:
