@@ -330,6 +330,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .fields label.check input { width: auto; accent-color: var(--accent); }
 #panel.sent .fields { display: none; }
 #d-tags:read-only { color: var(--muted); }
+#d-tag-sugg { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+#d-tag-sugg:empty { display: none; }
+#d-tag-sugg button { border: 0; cursor: pointer; }
+#d-tag-sugg button:hover { background: var(--accent); color: #fff; }
 /* next-action card */
 .next { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 14px 14px; margin-bottom: 16px; }
 .nx-k { display: flex; align-items: center; gap: 6px; font-size: calc(11px * var(--ts)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -585,7 +589,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <div class="row"><span class="ov-ico fl" data-ico="flag" data-s="18"></span><span class="lbl">Priority</span><span class="sel" id="d-prio-slot"><select id="d-prio"><option value="">None</option><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select><span data-ico="chev" data-s="14"></span></span></div>
       </div>
       <div class="fields">
-        <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"></div>
+        <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"><div id="d-tag-sugg"></div></div>
         <div><label class="check" title="The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
         <div><label for="d-submodel">Subagent model</label>
           <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
@@ -1079,6 +1083,33 @@ function deleteTask(id) {
 }
 
 function parseTags(s) { return s.split(",").map((x) => x.trim()).filter(Boolean); }
+// Most used tags on this board, minus the task's own; "observations" is left out because it turns a card into an observations card.
+function tagSuggestions(t, max = 8) {
+  const have = new Set(t.tags.map((g) => g.toLowerCase()));
+  const count = new Map();
+  for (const x of state.tasks) for (const g of x.tags || []) {
+    const k = g.toLowerCase();
+    if (k === "observations" || have.has(k)) continue;
+    const c = count.get(k) || { name: g, n: 0 };
+    c.n++; count.set(k, c);
+  }
+  return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).slice(0, max).map((c) => c.name);
+}
+// Tags after picking suggestion `g` with `typed` in the field: a half-typed last word that starts `g` is replaced by it.
+function addSuggestedTag(typed, g) {
+  const tags = parseTags(typed), last = typed.split(",").pop().trim().toLowerCase();
+  if (last && g.toLowerCase().startsWith(last)) tags.pop();
+  return [...tags, g];
+}
+function renderTagSuggestions(t) {
+  const box = $("#d-tag-sugg");
+  box.innerHTML = t.agent ? "" : tagSuggestions(t).map((g) => `<button type="button" class="tag" title="${esc(window.t("Add this tag"))}">${esc(g)}</button>`).join("");
+  box.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    t.tags = addSuggestedTag($("#d-tags").value, b.textContent); touch(t);
+    $("#d-tags").value = t.tags.join(", ");
+    renderTagSuggestions(t);
+  }));
+}
 
 // ---------------------------------------------------------------- board rendering
 function matches(t, q) {
@@ -1321,6 +1352,7 @@ function renderDetail() {
   $("#d-col").value = t.column;
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
+  renderTagSuggestions(t);
   $("#d-notes").value = t.notes;
   $("#d-delegate").checked = !!t.delegate;
   renderSubmodel(t);
@@ -1363,7 +1395,7 @@ $("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title
 $("#d-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });   // one-line title in a wrapping box
 $("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
-$("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); });
+$("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); renderTagSuggestions(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
 $("#d-delegate").addEventListener("change", (e) => {
   const t = task(openId); t.delegate = e.target.checked; touch(t); rememberDelegateChoice(t);
