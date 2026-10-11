@@ -2828,6 +2828,9 @@ class Handler(SimpleHTTPRequestHandler):
             # Only the page itself: the app folder also holds .git/ and the board data.
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 self._send(200, f.read(), TYPES[".html"])
+        elif path == "/i18n.js":
+            with open(os.path.join(HERE, "i18n.js"), "rb") as f:
+                self._send(200, f.read(), TYPES[".js"])
         else:
             self._send(404)
 
