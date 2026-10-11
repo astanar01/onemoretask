@@ -2932,7 +2932,6 @@ $("#app-copy").addEventListener("change", async (e) => {
 function showUpdateWhy() {
   const b = $("#update"), m = $("#update-pop"), u = upd;
   const lines = [u.reason ? t(u.reason) : t("Cannot update automatically")];
-  if (u.dirty && u.ahead) lines.push(t("This copy has commits that are not on GitHub."));
   m.replaceChildren(Object.assign(document.createElement("div"), { className: "pop-head", textContent: t("Cannot update automatically") }),
     ...lines.map((s) => Object.assign(document.createElement("p"), { className: "upd-why", textContent: s })),
     Object.assign(document.createElement("button"), { className: "pop-row", id: "update-again", textContent: t("Check again"), onclick: () => { closePop(); checkUpdate(true); } }));

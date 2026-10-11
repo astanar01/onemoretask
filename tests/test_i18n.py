@@ -100,8 +100,8 @@ SERVER_SENTENCES = [
     "Claude Code's safety check kept failing, so Claude stopped. Reply to try again.",
     "Not installed from git — reinstall to get updates.",
     "Git is not installed — install git to get updates.",
-    "Local changes in the app folder — update by hand with git pull.",
-    "This copy has commits that are not on GitHub.",
+    "The update clashes with changes made in this copy. Nothing was changed — update by hand with git pull.",
+    "The update changes files that were edited here. Commit or undo those edits, then try again.",
     "Could not check GitHub — try again later.",
     "Nothing to update.",
 ]

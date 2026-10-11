@@ -2552,11 +2552,10 @@ def update_status():
         return st
     except subprocess.SubprocessError as e:
         st["error"] = str(e)[:300]
-    st["canUpdate"] = st["behind"] > 0 and st["ahead"] == 0 and not st["dirty"] and not st["error"]
+    # Own commits are merged and unrelated local edits are kept; Updater.pull backs out if they clash.
+    st["canUpdate"] = st["behind"] > 0 and not st["error"]
     if st["behind"] > 0 and not st["canUpdate"]:
-        st["reason"] = ("Local changes in the app folder — update by hand with git pull." if st["dirty"] else
-                        "This copy has commits that are not on GitHub." if st["ahead"] else
-                        "Could not check GitHub — try again later.")
+        st["reason"] = "Could not check GitHub — try again later."
     return st
 
 
@@ -2601,7 +2600,8 @@ class Updater:
             return {k: v for k, v in self.last.items() if k != "upstream"}
 
     def pull(self):
-        """git pull --ff-only; returns (from, to) short shas. PermissionError = not updatable (409)."""
+        """Merge the just-fetched upstream (fast-forward when possible); returns (from, to) short shas.
+        PermissionError = not updatable (409). A clash is backed out so the copy is left as it was."""
         with self.lock:
             st = self.last = update_status()
             self.at = time.time()
@@ -2609,11 +2609,22 @@ class Updater:
                 return st["installed"], st["installed"]
             if not st["canUpdate"]:
                 raise PermissionError(st["reason"] or st["error"] or "Nothing to update.")
-            remote, _, branch = st["upstream"].partition("/")
-            r = app_git("pull", "--ff-only", "-q", remote, branch, timeout=120)
+            up = st["upstream"]
+            if st["ahead"]:
+                r = app_git("merge", "--no-edit", "-q", "-m", f"Merge {up} (board update)", up, timeout=120)
+            else:
+                r = app_git("merge", "--ff-only", "-q", up, timeout=120)
             self.last = None
             if r.returncode:
-                raise RuntimeError((r.stderr or r.stdout).strip()[:1000] or f"git pull exited with {r.returncode}")
+                out = r.stderr or r.stdout or ""
+                if app_git("rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
+                    app_git("merge", "--abort")
+                    raise RuntimeError(
+                        "The update clashes with changes made in this copy. Nothing was changed — update by hand with git pull.")
+                if "would be overwritten" in out:
+                    raise RuntimeError(
+                        "The update changes files that were edited here. Commit or undo those edits, then try again.")
+                raise RuntimeError(out.strip()[:1000] or f"git merge exited with {r.returncode}")
             return st["installed"], _git_out("rev-parse", "--short", "HEAD")
 
 
