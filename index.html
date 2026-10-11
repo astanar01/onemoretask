@@ -743,7 +743,7 @@ async function load() {
 }
 async function fetchBoard() {
   const r = await fetch(api("/api/tasks"), { cache: "no-store" });
-  if (!r.ok) throw new Error("server said " + r.status);
+  if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
   const board = (await r.json()) || defaultState();
   // Boards saved when a header toggle existed can have extra done columns; only the last one stays done.
   const extra = board.columns.filter((c) => c.done).slice(0, -1);
@@ -764,8 +764,8 @@ async function loadTasks() {
   $("#board").style.display = P ? "" : "none";
   renderProjects();
   updateWaiting();
-  if (p) setStatus("Saving to " + p.board.replace(p.path, p.name) + "/tasks.json");
-  else setStatus("Open a project folder to start");
+  if (p) setStatus(t("Saving to {path}", { path: p.board.replace(p.path, p.name) + "/tasks.json" }));
+  else setStatus(t("Open a project folder to start"));
 }
 // Swaps in the board as saved on disk (another window changed it). force: replace it even if an edit made
 // meanwhile is waiting to save (the 409 path); without it such an edit wins and the reload is dropped.
@@ -781,7 +781,7 @@ async function reloadBoard(force = false) {
     if (openId) { if (task(openId)) renderDetail(); else closeDetail(); }
     return true;
   } catch (e) {
-    setStatus("Could not reload the board: " + e.message, true);
+    setStatus(t("Could not reload the board: {error}", { error: t(e.message) }), true);
     return false;
   }
 }
@@ -803,15 +803,15 @@ function renderProjects() {
     const n = attentionCount(p), name = dup(p.name) ? p.path.replace(/^\/Users\/[^/]+/, "~") : p.name;
     return n ? `${name} * (${n})` : name;
   };
-  const html = (P ? "" : `<option value="" disabled>No project</option>`)
+  const html = (P ? "" : `<option value="" disabled>${t("No project")}</option>`)
     + projects.map((p) => `<option value="${p.id}" title="${esc(p.path)}">${esc(label(p))}</option>`).join("")
-    + `<option disabled>──────────</option><option value=":pick">Open folder…</option><option value=":path">Open a path…</option>`
-    + (P ? `<option value=":forget">Remove this project from the list</option>` : "");
+    + `<option disabled>──────────</option><option value=":pick">${t("Open folder…")}</option><option value=":path">${t("Open a path…")}</option>`
+    + (P ? `<option value=":forget">${t("Remove this project from the list")}</option>` : "");
   if (sel.innerHTML !== html) sel.innerHTML = html;   // rebuilding closes an open menu, so only on change
   sel.value = P || "";
   const others = projects.filter((p) => p.id !== P && attentionCount(p));
   const waiting = others.map((p) => p.name);
-  sel.title = (project() ? project().path : "Project") + (waiting.length ? "\nNeeds you: " + waiting.join(", ") : "");
+  sel.title = (project() ? project().path : t("Project")) + (waiting.length ? "\n" + t("Needs you: {list}", { list: waiting.join(", ") }) : "");
   // The closed picker shows only this project, so a star inside it says another project needs you.
   $("#others-waiting").hidden = !others.length || !useServer;
   $("#project-wrap").classList.toggle("others", others.length > 0);
@@ -822,19 +822,19 @@ async function switchProject(id) {
   await settled();
   openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
   P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
-  try { await loadTasks(); } catch (e) { setStatus("Could not load the board: " + e.message, true); }
+  try { await loadTasks(); } catch (e) { setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true); }
   render(); pollAgents();
 }
 
 async function openFolder(how, path) {
-  setStatus(how === "pick" ? "Choose a folder in the dialog…" : "Opening…");
+  setStatus(how === "pick" ? t("Choose a folder in the dialog…") : t("Opening…"));
   try {
     const res = how === "pick" ? await post("/api/projects/pick", {}) : await post("/api/projects", { path });
     if (res.cancelled) { setStatus(""); return; }
     projects = await (await fetch("/api/projects", { cache: "no-store" })).json();
     await switchProject(res.id);
   } catch (e) {
-    setStatus("Open folder failed: " + e.message, true);
+    setStatus(t("Open folder failed: {error}", { error: t(e.message) }), true);
     if (how === "pick") showPathInput();
   }
 }
@@ -854,7 +854,7 @@ function buildProjectMenu() {
     if (o.disabled) return o.textContent.startsWith("─") ? `<div class="pop-sep"></div>` : "";
     const on = o.value === sel.value, p = projects.find((x) => x.id === o.value);
     const busy = p && ((p.attention || {}).working || []).length;
-    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}${busy ? "\nClaude is working here" : ""}">`
+    return `<button class="pop-row" role="menuitemradio" aria-checked="${on}" data-v="${esc(o.value)}" title="${esc(o.title)}${busy ? "\n" + t("Claude is working here") : ""}">`
       + `<span class="ck">${on ? "✓" : ""}</span>${esc(o.textContent)}${busy ? turning(14) : ""}</button>`;
   }).join("");
 }
@@ -882,7 +882,7 @@ $("#project").addEventListener("change", async (e) => {
 
 let saveTimer = null;
 function save() {
-  setStatus("Saving…");
+  setStatus(t("Saving…"));
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 300);
 }
@@ -893,8 +893,8 @@ function flush(keepalive = false) {
   saveTimer = null;
   if (useServer && !P) return Promise.resolve();
   if (!useServer) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); setStatus("Saved"); }
-    catch (e) { setStatus("Save failed: " + e.message, true); }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); setStatus(t("Saved")); }
+    catch (e) { setStatus(t("Save failed: {error}", { error: t(e.message) }), true); }
     return Promise.resolve();
   }
   if (keepalive) return putBoard(true);   // the page is going away: no time to wait for the queue
@@ -920,16 +920,16 @@ async function putBoard(keepalive) {
     if (r.status === 409) {
       if (!keepalive && pid === P && await reloadBoard(true)) {
         skip = queued;
-        setStatus("The board changed in another window, so it was reloaded. Please redo your last change.", true);
+        setStatus(t("The board changed in another window, so it was reloaded. Please redo your last change."), true);
       }
       return;
     }
-    if (!r.ok) throw new Error("server said " + r.status);
+    if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
     const next = r.headers.get("X-Board-Rev");
     if (next !== null && pid === P) rev = next;
-    setStatus("Saved");
+    setStatus(t("Saved"));
   } catch (e) {
-    setStatus("Save failed: " + e.message, true);
+    setStatus(t("Save failed: {error}", { error: t(e.message) }), true);
   }
 }
 // The task panel covers the header status, so while it is open an error also shows inside it, above its buttons.
@@ -1095,16 +1095,16 @@ function render() {
     const head = document.createElement("div");
     head.className = "col-head";
     head.draggable = true;
-    head.innerHTML = `<input class="name" value="${esc(col.name)}" title="Rename column">
-      ${col.done ? '<span class="done-flag" title="Tasks here count as done">done</span>' : ""}
+    head.innerHTML = `<input class="name" value="${esc(t(col.name))}" title="${t("Rename column")}">
+      ${col.done ? `<span class="done-flag" title="${t("Tasks here count as done")}">${t("done")}</span>` : ""}
       <span class="count">${cards.length}</span>
-      <button class="icon" data-act="del" title="Delete column (only when empty)">✕</button>`;
+      <button class="icon" data-act="del" title="${t("Delete column (only when empty)")}">✕</button>`;
     const name = head.querySelector(".name");
     name.addEventListener("change", () => { col.name = name.value.trim() || col.name; save(); render(); });
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); });
     name.addEventListener("mousedown", (e) => e.stopPropagation());
     head.querySelector('[data-act="del"]').onclick = () => {
-      if (state.tasks.some((t) => t.column === col.id)) { setStatus(`"${col.name}" still has tasks — move them first`, true); return; }
+      if (state.tasks.some((t) => t.column === col.id)) { setStatus(t("\"{col}\" still has tasks — move them first", { col: t(col.name) }), true); return; }
       if (state.columns.length <= 1) return;
       state.columns = state.columns.filter((c) => c !== col); save(); render();
     };
@@ -1131,7 +1131,7 @@ function render() {
 
   const addCol = document.createElement("div");
   addCol.className = "add-col";
-  addCol.innerHTML = `<button class="btn">+ Add column</button>`;
+  addCol.innerHTML = `<button class="btn">${t("+ Add column")}</button>`;
   addCol.firstChild.onclick = () => {
     const doneIdx = state.columns.findIndex((c) => c.done);
     const c = { id: uid(), name: "New column", done: false };
@@ -1169,21 +1169,21 @@ function cardEl(t, top, nestedCount) {
   el.innerHTML = `
     ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
     <div class="row">
-      ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? "Expand" : "Collapse"} subtasks"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
-      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: "High", med: "Medium", low: "Low" }[t.priority]} priority"></span>` : ""}${esc(t.title)}</div>
-      ${nestedCount && shut ? `<span class="hidden-count" title="Hidden subtasks">+${nestedCount}</span>` : ""}
+      ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? window.t("Expand subtasks") : window.t("Collapse subtasks")}"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
+      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: window.t("High priority"), med: window.t("Medium priority"), low: window.t("Low priority") }[t.priority]}"></span>` : ""}${esc(t.title)}</div>
+      ${nestedCount && shut ? `<span class="hidden-count" title="${window.t("Hidden subtasks")}">+${nestedCount}</span>` : ""}
     </div>
     ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length) ? `<div class="meta">
-      ${kids.length ? `<span class="progress" title="${doneKids} of ${kids.length} subtasks done"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
-      ${t.notes ? `<span title="Has notes">≡</span>` : ""}
-      ${t.answerOnly ? `<span title="Answer only: Claude reports back, no file changes">?</span>` : ""}
-      ${(t.images || []).length ? `<span title="${t.images.length} image${t.images.length > 1 ? "s" : ""}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${who(t)} session ${t.agent.id}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? "Code review" : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${kids.length ? `<span class="progress" title="${window.t("{done} of {total} subtasks done", { done: doneKids, total: kids.length })}"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
+      ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
+      ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
+      ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? window.t("Code review") : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
-    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(ag.reason))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="A fresh ${reviewer(t)} session code-reviews this task's commits (${esc(reviewLevel())} budget)">Review code</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="The work is finished — move it to the done column">✓ Mark as done</button>` : ""}`;
+    ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
+    ${canReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits ({level} budget)", { who: reviewer(t), level: esc(reviewLevel()) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1198,7 +1198,7 @@ function addCardEl(col) {
   const wrap = document.createElement("div");
   wrap.className = "add-card";
   const btn = document.createElement("button");
-  btn.textContent = "+ Add task";
+  btn.textContent = t("+ Add task");
   btn.onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
   wrap.appendChild(btn);
   return wrap;
@@ -1297,13 +1297,13 @@ function renderDetail() {
   const chain = [];
   for (let p = t.parent && task(t.parent); p; p = p.parent && task(p.parent)) chain.unshift(p);
   $("#d-crumb").innerHTML = chain.length
-    ? "Subtask of " + chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ")
-    : "Task";
+    ? window.t("Subtask of {chain}", { chain: chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ") })
+    : window.t("Task");
   $("#d-crumb").style.display = t.agent && !chain.length ? "none" : "";
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
-  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(window.t(c.name))}</option>`).join("");
   $("#d-col").value = t.column;
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
@@ -1323,16 +1323,16 @@ function renderDetail() {
   renderImages(t);
 
   const kids = children(t.id);
-  $("#d-subcount").textContent = kids.length ? `(${kids.filter(isDone).length}/${kids.length} done)` : "";
+  $("#d-subcount").textContent = kids.length ? window.t("({done}/{total} done)", { done: kids.filter(isDone).length, total: kids.length }) : "";
   const ul = $("#d-subs");
   ul.innerHTML = "";
   for (const k of kids) {
     const li = document.createElement("li");
     li.className = isDone(k) ? "done" : "";
     const n = children(k.id).length;
-    li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="Done">
-      <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${n} sub</span>` : ""}
-      <span class="c">${esc((column(k.column) || {}).name || "")}</span>`;
+    li.innerHTML = `<input type="checkbox" ${isDone(k) ? "checked" : ""} title="${window.t("Done")}">
+      <span class="t">${esc(k.title)}</span>${n ? `<span class="n">${window.t("{n} sub", { n })}</span>` : ""}
+      <span class="c">${esc(window.t((column(k.column) || {}).name || ""))}</span>`;
     li.querySelector("input").onchange = (e) => { moveTask(k.id, e.target.checked ? doneCol() : firstOpenCol(), null, false); renderDetail(); };
     li.querySelector(".t").onclick = () => { openId = k.id; renderDetail(); };
     ul.appendChild(li);
@@ -1341,7 +1341,7 @@ function renderDetail() {
   $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
   $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (t.agent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
   renderAgent(t);
-  $("#d-dates").textContent = `Updated ${fmt(t.updated)} · Created ${fmt(t.created)}`;
+  $("#d-dates").textContent = window.t("Updated {updated} · Created {created}", { updated: fmt(t.updated), created: fmt(t.created) });
   disarmDelete();
 }
 
@@ -1363,7 +1363,7 @@ function syncWorktreeBox(t) {
   box.checked = t.worktree !== false && !off;   // missing = on (cards made before the option)
   box.disabled = off;
   label.dataset.tip ??= label.title;
-  label.title = t.answerOnly ? "Off: an answer-only task changes nothing, so it needs no worktree" : label.dataset.tip;
+  label.title = t.answerOnly ? window.t("Off: an answer-only task changes nothing, so it needs no worktree") : label.dataset.tip;
 }
 $("#d-worktree").addEventListener("change", (e) => { const t = task(openId); t.worktree = e.target.checked; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
@@ -1386,7 +1386,7 @@ $("#d-more").onclick = () => toggleMenu();
 document.addEventListener("mousedown", (e) => { if (menuOpen() && !e.target.closest("#d-menu, #d-more")) toggleMenu(false); });
 $("#d-copy-attach").onclick = () => {
   const t = task(openId), ag = t && agents[t.id], id = t && t.agent && ((ag && ag.id) || t.agent.id);
-  if (id) { navigator.clipboard.writeText("claude attach " + id); setStatus("Copied claude attach " + id); }
+  if (id) { navigator.clipboard.writeText("claude attach " + id); setStatus(window.t("Copied {text}", { text: "claude attach " + id })); }
   toggleMenu(false);
 };
 
@@ -1404,14 +1404,14 @@ $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overla
 
 // Two-step delete instead of window.confirm (a modal dialog blocks browser automation).
 let deleteArmed = false;
-function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.innerHTML = icon("trash", 14) + "Delete task"; }
+function disarmDelete() { deleteArmed = false; const b = $("#d-delete"); b.classList.remove("armed"); b.innerHTML = icon("trash", 14) + t("Delete task"); }
 $("#d-delete").onclick = () => {
   const t = task(openId);
   if (!deleteArmed) {
     const n = descendants(t.id).length;
     deleteArmed = true;
     $("#d-delete").classList.add("armed");
-    $("#d-delete").textContent = n ? `Delete with ${n} subtask${n > 1 ? "s" : ""}? Click again` : "Really delete? Click again";
+    $("#d-delete").textContent = n ? (n === 1 ? window.t("Delete with 1 subtask? Click again") : window.t("Delete with {n} subtasks? Click again", { n })) : window.t("Really delete? Click again");
     return;
   }
   toggleMenu(false);
@@ -1441,9 +1441,9 @@ let agents = {};                 // task id -> { id, sessionId, state, phase, re
 let pending = {};                // task id -> [{ from, status, message, images, at, state: "sending" | "sent", base }]
 let logFollow = false;           // next renderAgent scrolls the log to the end
 const COG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
-const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="Sending…">${COG}</span>` : `<span class="mark sent" title="Sent">✓</span>`;
-const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· Claude has it</span>`
-  : ` <span class="note-state">· sending to Claude…</span>`;
+const sendMark = (state) => state === "sending" ? `<span class="mark sending" title="${t("Sending…")}">${COG}</span>` : `<span class="mark sent" title="${t("Sent")}">✓</span>`;
+const noteMark = (e, ag) => ag && ag.delivered && e.at <= ag.delivered ? ` <span class="note-state">· ${t("Claude has it")}</span>`
+  : ` <span class="note-state">· ${t("sending to Claude…")}</span>`;
 function addPending(t, status, message, images) {
   const m = { from: "you", status, message, images, at: now(), state: "sending", base: ((agents[t.id] && agents[t.id].log) || []).length };
   (pending[t.id] = pending[t.id] || []).push(m);
@@ -1452,7 +1452,7 @@ function addPending(t, status, message, images) {
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
-const PHASES = { working: "working", needs_you: "needs you", finished: "finished", gone: "removed" };
+const PHASES = { working: t("working"), needs_you: t("needs you"), finished: t("finished"), gone: t("removed") };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
 const reviewing = (a) => { const e = (a.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status)); return !!(e && e.status === "review"); };
@@ -1464,7 +1464,7 @@ function subagentRows(ag) {
   if (!subs.length) return "";
   return `<ul class="card-subs">${subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
-    return `<li title="${esc(s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? "running" : st}</span>
+    return `<li title="${esc(s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
       <span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
   }).join("")}</ul>`;
 }
@@ -1477,13 +1477,13 @@ function tickCache() {
   const nowS = Date.now() / 1000;
   const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + "h" + (m % 60 ? " " + (m % 60) + "m" : "") : m + "m"; };
   for (const el of document.querySelectorAll(".ttl")) {
-    const left = +el.dataset.exp - nowS, tok = Math.round(+el.dataset.tok / 1000) + "k tokens", tier = el.dataset.ttl >= 3600 ? "1h" : "5m";
+    const left = +el.dataset.exp - nowS, tok = t("{n}k tokens", { n: Math.round(+el.dataset.tok / 1000) }), tier = el.dataset.ttl >= 3600 ? "1h" : "5m";
     el.className = "ttl" + (left <= 0 ? " cold" : left < 300 ? " low" : "");
-    el.title = left > 0 ? `Prompt cache (${tier} TTL) expires in ${dur(left)}. A reply before then reads ${tok} from cache.`
-      : `Prompt cache expired ${dur(-left)} ago. A reply re-reads ${tok} at full cost.`;
+    el.title = left > 0 ? t("Prompt cache ({tier} TTL) expires in {left}. A reply before then reads {tokens} from cache.", { tier, left: dur(left), tokens: tok })
+      : t("Prompt cache expired {ago} ago. A reply re-reads {tokens} at full cost.", { ago: dur(-left), tokens: tok });
     el.textContent = el.dataset.long
-      ? (left > 0 ? `cache warm · ${dur(left)} left · ${tok}` : `cache expired ${dur(-left)} ago · reply re-reads ${tok} at full cost`)
-      : (left > 0 ? `cache ${dur(left)}` : "cache cold");
+      ? (left > 0 ? t("cache warm · {left} left · {tokens}", { left: dur(left), tokens: tok }) : t("cache expired {ago} ago · reply re-reads {tokens} at full cost", { ago: dur(-left), tokens: tok }))
+      : (left > 0 ? t("cache {left}", { left: dur(left) }) : t("cache cold"));
   }
   const o = openId && task(openId);
   if (o && o.agent && agents[o.id]) renderCacheNote(agents[o.id]);
@@ -1522,7 +1522,7 @@ const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === run
 const subModelName = (t) => { const m = subModel(t); return ((runsCodex(t) ? codexList : CLAUDE_SUBMODELS).find((x) => x.id === m) || { name: m }).name; };
 function renderSubmodel(t) {
   const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
-  $("#d-submodel").innerHTML = `<option value="">Same as session</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   $("#d-submodel").value = subModel(t);
 }
 async function loadCodexModels() {
@@ -1542,8 +1542,8 @@ async function loadCodexModels() {
 }
 function sendLabel() {
   const cx = isCodexModel($("#d-model").value), send = $("#d-send");
-  send.textContent = cx ? "Send to Codex" : "Send to Claude";
-  send.title = useServer ? `Start a background ${cx ? "Codex" : "Claude"} session on this task` : "Needs server.py";
+  send.textContent = cx ? window.t("Send to Codex") : window.t("Send to Claude");
+  send.title = useServer ? window.t("Start a background {who} session on this task", { who: cx ? "Codex" : "Claude" }) : window.t("Needs server.py");
   const t = openId && state && task(openId);
   if (t) renderSubmodel(t);
 }
@@ -1586,29 +1586,29 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? "You" : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-level").value = reviewLevel();
   $("#d-review-model").value = reviewModel();
-  $("#d-review").title = `Start a fresh ${reviewer(t)} session that code-reviews this task's commits and posts the findings here`;
+  $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
   // from the CLI's record) or on something only `claude attach` can show.
   const said = log.filter((e) => e.status !== "note").pop();
   if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
-    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">Board</span><div class="msg md">${fmtMsg(ag.reason)}</div></li>`);
+    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
   const nm = who(t);
-  $("#d-reply").placeholder = busy ? `Add to what ${nm} is doing — it goes in right away and ${nm} reads it as soon as it can. Cmd+Enter to send, paste images to attach`
-    : `Answer ${nm} — Cmd+Enter to send, paste images to attach`;
-  $("#d-reply-send").textContent = busy ? "Send note" : "Send reply";
+  $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach", { who: nm })
+    : window.t("Answer {who} — Cmd+Enter to send, paste images to attach", { who: nm });
+  $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
   $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
   if (recapping) {
-    $("#d-reply").placeholder = "Writing the recap — you can send once it is posted.";
-    $("#d-reply-send").textContent = "Writing recap…";
+    $("#d-reply").placeholder = window.t("Writing the recap — you can send once it is posted.");
+    $("#d-reply-send").textContent = window.t("Writing recap…");
   }
   renderReplyImages();
   renderCacheNote(ag);
@@ -1620,21 +1620,21 @@ function renderAgent(t) {
   }
 }
 // Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.
-const AGENT_LABELS = { working: "Working", needs_you: "Needs you", finished: "Finished", gone: "Session removed" };
-const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? "Reviewing code" : AGENT_LABELS[ag.phase] || ag.phase) : "Starting…");
+const AGENT_LABELS = { working: t("Working"), needs_you: t("Needs you"), finished: t("Finished"), gone: t("Session removed") };
+const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? t("Reviewing code") : AGENT_LABELS[ag.phase] || ag.phase) : t("Starting…"));
 
 // Compact notice above the composer: a reply after the prompt cache expired re-reads the whole context at full price.
 function renderCacheNote(ag) {
   const box = $("#d-cache-note"), c = ag && ag.cache;
   if (!c || ag.phase === "working" || ag.phase === "gone") { box.hidden = true; return; }
-  const left = c.expires - Date.now() / 1000, tok = c.tokens >= 1000 ? Math.round(c.tokens / 1000) + "k" : String(c.tokens || 0), tier = c.ttl >= 3600 ? "1 hour" : "5 minutes";
+  const left = c.expires - Date.now() / 1000, tok = c.tokens >= 1000 ? Math.round(c.tokens / 1000) + "k" : String(c.tokens || 0), tier = c.ttl >= 3600 ? t("1 hour") : t("5 minutes");
   box.hidden = false;
   box.classList.toggle("warm", left > 0);
   const dur = (s) => { const m = Math.max(1, Math.round(s / 60)), h = Math.floor(m / 60); return h ? h + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min"; };
   box.innerHTML = `<span data-ico="info" data-s="16"></span><details><summary>${left > 0
-    ? `Session cache warm for ${dur(left)}. A reply before then reads ${tok} tokens from cache.`
-    : `Session cache expired. A reply will reload approximately ${tok} tokens.`}</summary>
-    <div class="tech">Cache TTL ${tier} · last API call ${fmt(new Date(c.at * 1000).toISOString())} · expires ${fmt(new Date(c.expires * 1000).toISOString())} · context ${(c.tokens || 0).toLocaleString()} tokens. The number comes from the session transcript's last usage record.</div></details>`;
+    ? t("Session cache warm for {left}. A reply before then reads {tokens} tokens from cache.", { left: dur(left), tokens: tok })
+    : t("Session cache expired. A reply will reload approximately {tokens} tokens.", { tokens: tok })}</summary>
+    <div class="tech">${t("Cache TTL {tier} · last API call {at} · expires {expires} · context {tokens} tokens. The number comes from the session transcript's last usage record.", { tier, at: fmt(new Date(c.at * 1000).toISOString()), expires: fmt(new Date(c.expires * 1000).toISOString()), tokens: (c.tokens || 0).toLocaleString() })}</div></details>`;
   box.querySelector("[data-ico]").innerHTML = icon("info", 16);
 }
 
@@ -1702,69 +1702,71 @@ const permissionNote = {};
 // agent's wording alone. Returns { title, text, actions: [{label, cls, onclick, icon, title}] }.
 function nextAction(t, ag, g) {
   const act = (label, cls, onclick, extra = {}) => ({ label, cls, onclick, ...extra });
-  const markDone = (cls = "primary") => act("Mark as done", cls, () => { moveToDone(t.id); closeDetail(); }, { title: "Move this task to the done column. The worktree and its changes stay as they are." });
-  const askReview = (cls = "primary") => act("Review code", cls, () => startReview(t), { pick: true, title: `A fresh ${reviewer(t)} session code-reviews this task's commits (${reviewLevel()} budget) and posts its findings here` });
+  const nFiles = (k) => k === 1 ? window.t("1 uncommitted file") : window.t("{n} uncommitted files", { n: k });
+  const nCommits = (k) => k === 1 ? window.t("1 commit") : window.t("{n} commits", { n: k });
+  const markDone = (cls = "primary") => act(window.t("Mark as done"), cls, () => { moveToDone(t.id); closeDetail(); }, { title: window.t("Move this task to the done column. The worktree and its changes stay as they are.") });
+  const askReview = (cls = "primary") => act(window.t("Review code"), cls, () => startReview(t), { pick: true, title: window.t("A fresh {who} session code-reviews this task's commits ({level} budget) and posts its findings here", { who: reviewer(t), level: reviewLevel() }) });
   // A finished review by the other agent (Codex on Claude's work, or the reverse): its findings can go back to the worker.
-  const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(`Send findings to ${ag.handback}`, "primary", () => sendFindingsBack(t), { icon: "back", title: `The ${ag.handback} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with` })] : [];
+  const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(window.t("Send findings to {who}", { who: ag.handback }), "primary", () => sendFindingsBack(t), { icon: "back", title: window.t("The {who} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with", { who: ag.handback }) })] : [];
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
-  const runApp = () => act("Run app", "sec", () => worktreeAction(t, "run"), { icon: "play", title: "Claude starts the app from this task's worktree so you can try the changes" });
-  const merge = (cls = "primary") => act("Merge worktree to main", cls, () => worktreeAction(t, "merge"), { icon: "merge", title: "Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way" });
-  const toReply = () => act("Reply in Conversation", "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
+  const runApp = () => act(window.t("Run app"), "sec", () => worktreeAction(t, "run"), { icon: "play", title: window.t("Claude starts the app from this task's worktree so you can try the changes") });
+  const merge = (cls = "primary") => act(window.t("Merge worktree to main"), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way") });
+  const toReply = () => act(window.t("Reply in Conversation"), "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
   const nm = who(t);
-  if (!t.agent) return (pending[t.id] || []).length ? { title: "Starting…", text: "Claude is being started on this task.", actions: [], busy: true }
-    : { title: "Ready to send", text: "Claude has not started this task yet. Pick a model and send it.", actions: [] };
+  if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
+    : { title: window.t("Ready to send"), text: window.t("Claude has not started this task yet. Pick a model and send it."), actions: [] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
     // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).
     const canMerge = wt && useServer && replyOpen(t) && ag.phase !== "working" && !ag.recapping && (ag.closed || ag.archived);
-    return { title: "Done", text: canMerge ? "Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it."
-      : wt ? "Its worktree is not merged yet. The merge button shows here once Claude has written the recap." : ag && ag.recapping ? "Claude is writing the recap." : "Nothing left to do.", actions: canMerge ? [merge()] : [] };
+    return { title: window.t("Done"), text: canMerge ? window.t("Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it.")
+      : wt ? window.t("Its worktree is not merged yet. The merge button shows here once Claude has written the recap.") : ag && ag.recapping ? window.t("Claude is writing the recap.") : window.t("Nothing left to do."), actions: canMerge ? [merge()] : [] };
   }
-  if (!ag) return { title: "Work in progress", text: "Waiting for the first status from the session.", actions: [], busy: true };
+  if (!ag) return { title: window.t("Work in progress"), text: window.t("Waiting for the first status from the session."), actions: [], busy: true };
   if (ag.phase === "working") {
     const subs = (ag.subagents || []).filter((s) => !s.finished).length;
-    return { title: reviewing(ag) ? "Code review in progress" : "Work in progress", text: subs ? `${nm} is working with ${subs} subagent${subs > 1 ? "s" : ""} running. You can add a note below.` : `${nm} is working. You can add a note in Conversation; it reads it as soon as it can.`, actions: [], busy: true };
+    return { title: reviewing(ag) ? window.t("Code review in progress") : window.t("Work in progress"), text: subs ? (subs === 1 ? window.t("{who} is working with 1 subagent running. You can add a note below.", { who: nm }) : window.t("{who} is working with {n} subagents running. You can add a note below.", { who: nm, n: subs })) : window.t("{who} is working. You can add a note in Conversation; it reads it as soon as it can.", { who: nm }), actions: [], busy: true };
   }
   if (ag.phase === "gone") {
     const left = g && g.available && ((g.changed || []).length || (g.ahead || []).length);
-    return { title: "Session removed", text: `The ${nm} session for this task no longer exists, so nothing more can be sent to it.` + (left ? ` Its work (${(g.changed || []).length} uncommitted file${(g.changed || []).length === 1 ? "" : "s"}, ${(g.ahead || []).length} commit${(g.ahead || []).length === 1 ? "" : "s"}) is still in the repository: check Changes before finishing.` : inReview(t) ? " Review what is on the card, then mark it done." : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
+    return { title: window.t("Session removed"), text: window.t("The {who} session for this task no longer exists, so nothing more can be sent to it.", { who: nm }) + (left ? " " + window.t("Its work ({files}, {commits}) is still in the repository: check Changes before finishing.", { files: nFiles((g.changed || []).length), commits: nCommits((g.ahead || []).length) }) : inReview(t) ? " " + window.t("Review what is on the card, then mark it done.") : ""), actions: canFinish(t) ? [markDone(), ...(left ? review() : [])] : [] };
   }
   if (ag.phase === "needs_you") {
     if (ag.permission) {
       const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
       const note = permissionNote[t.id] && permissionNote[t.id].ask === ag.permission ? "\n" + permissionNote[t.id].note : "";
-      return { title: `${nm} asks permission`, text: ag.permission.replace(/^Claude asks permission: /, "It wants to run: ") + "." + note,
-        actions: answering[t.id] ? [] : [answer("Allow", "allow", "primary", "Let it run this once"),
-          answer("Allow always", "always", "sec", "Let it run this, and stop asking about this kind of request in this session"),
-          answer("Deny", "deny", "ghost", "Do not let it run this")], busy: !!answering[t.id] };
+      return { title: window.t("{who} asks permission", { who: nm }), text: ag.permission.replace(/^Claude asks permission: /, () => window.t("It wants to run:") + " ") + "." + note,
+        actions: answering[t.id] ? [] : [answer(window.t("Allow"), "allow", "primary", window.t("Let it run this once")),
+          answer(window.t("Allow always"), "always", "sec", window.t("Let it run this, and stop asking about this kind of request in this session")),
+          answer(window.t("Deny"), "deny", "ghost", window.t("Do not let it run this"))], busy: !!answering[t.id] };
     }
     // Only an unanswered question counts: a reply after it means Claude stopped on something else.
     const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
-    return { title: q ? `${nm} has a question` : stopped ? "Run stopped" : `${nm} needs you`,
-      text: q ? `Answer it in Conversation to let ${nm} continue.` : (ag.reason || `${nm} is waiting on you.`).replace(/([^.!?])$/, "$1.") + (stopped ? " A reply resumes the session; the ⋯ menu copies the attach command." : ""),
+    return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
+      text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
   // Finished (or last message is a done report): what is there to review, merge, or complete?
-  if (!inReview(t)) return { title: "Agent finished", text: "The agent reported done, but the task is not in the review column. Move it there to review and finish it.", actions: colNamed(/review/i) ? [act("Move to " + colNamed(/review/i).name, "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
-  if (!canFinish(t)) return { title: `Waiting for ${nm}`, text: "Your last message has not been answered yet.", actions: [] };
+  if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colNamed(/review/i) ? [act(window.t("Move to {col}", { col: window.t(colNamed(/review/i).name) }), "sec", () => { moveTask(t.id, colNamed(/review/i).id, null); renderDetail(); render(); })] : [] };
+  if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
-  if (g === undefined || g === null) return { title: "Ready for review", text: g === null ? "Checking the repository state…" : "Repository state not loaded yet.", actions: [...review("primary"), ...extra] };
-  if (!g.available) return { title: "Ready for review", text: `Repository state unavailable: ${g.error || "git did not answer"}. Check the changes by hand before finishing.`, actions: [...review("primary"), ...extra, markDone("ghost")] };
+  if (g === undefined || g === null) return { title: window.t("Ready for review"), text: g === null ? window.t("Checking the repository state…") : window.t("Repository state not loaded yet."), actions: [...review("primary"), ...extra] };
+  if (!g.available) return { title: window.t("Ready for review"), text: window.t("Repository state unavailable: {error}. Check the changes by hand before finishing.", { error: g.error ? window.t(g.error) : window.t("git did not answer") }), actions: [...review("primary"), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
-  const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
-  const where = g.shared ? ` in the project folder (shared with other tasks)` : "";
+  const where = g.shared ? " " + window.t("in the project folder (shared with other tasks)") : "";
   if (!has) {
-    const why = g.answerOnly ? "Answer-only task: no changes were expected." : g.merged ? "The worktree branch is already merged. Nothing left to merge." : g.worktree && !g.worktree.exists ? "The worktree is gone and its branch holds nothing unmerged." : "No repository changes to merge.";
-    return { title: "Ready to complete", text: why, actions: [markDone(), ...extra] };
+    const why = g.answerOnly ? window.t("Answer-only task: no changes were expected.") : g.merged ? window.t("The worktree branch is already merged. Nothing left to merge.") : g.worktree && !g.worktree.exists ? window.t("The worktree is gone and its branch holds nothing unmerged.") : window.t("No repository changes to merge.");
+    return { title: window.t("Ready to complete"), text: why, actions: [markDone(), ...extra] };
   }
-  const what = [files ? n(files, "uncommitted file") : "", ahead ? (g.aheadKind === "own" ? n(ahead, "commit") + ` on ${g.branch}` : n(ahead, "commit") + ` ahead of ${g.target}`) : ""].filter(Boolean).join(" and ");
-  const by = claudeReviewed(ag) ? `, ${ag.cli === "codex" ? "Codex" : "Claude"} reviewed them` : "";
+  const commits = ahead ? (g.aheadKind === "own" ? window.t("{commits} on {branch}", { commits: nCommits(ahead), branch: g.branch }) : window.t("{commits} ahead of {target}", { commits: nCommits(ahead), target: g.target })) : "";
+  const what = files && commits ? window.t("{files} and {commits}", { files: nFiles(files), commits }) : files ? nFiles(files) : commits;
+  const by = claudeReviewed(ag) ? window.t(", {who} reviewed them", { who: ag.cli === "codex" ? "Codex" : "Claude" }) : "";
   const hb = handBack(), first = hb.length ? "sec" : "primary";
-  if (wt) return { title: "Ready to merge", text: `${what}${by}. Merging brings them into ${g.target}.` + (files ? " Uncommitted files are committed by the merge step." : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
-  return { title: "Ready to complete", text: (g.aheadKind === "own" ? `${what} are already on ${g.branch}; nothing to merge` : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
+  if (wt) return { title: window.t("Ready to merge"), text: window.t("{what}{by}. Merging brings them into {target}.", { what, by, target: g.target }) + (files ? " " + window.t("Uncommitted files are committed by the merge step.") : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
+  return { title: window.t("Ready to complete"), text: (g.aheadKind === "own" ? window.t("{what} are already on {branch}; nothing to merge", { what, branch: g.branch }) : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
 }
 function renderNext(t) {
   const ag = t.agent && agents[t.id];
@@ -1796,16 +1798,16 @@ function renderSubagents(ag) {
   const subs = (ag && ag.subagents) || [];
   $("#d-subagents").hidden = !subs.length;
   const run = subs.filter((s) => !s.finished && ag.phase === "working").length;
-  $("#d-sa-n").textContent = run ? `${run} running of ${subs.length}` : `${subs.length}`;
+  $("#d-sa-n").textContent = run ? t("{run} running of {total}", { run, total: subs.length }) : `${subs.length}`;
   const dur = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "<1m" : m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
   const html = subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
-      <span class="meta">${s.context ? `<span title="Context now: ${s.context.toLocaleString()} tokens (as in Claude Code's agent list). New tokens over the whole run: ${(s.tokens || 0).toLocaleString()}">${fmtTokens(s.context)}</span>`
-        : s.tokens ? `<span title="${s.tokens.toLocaleString()} tokens">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? "running" : st}</span></span>
-      ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? "Now: " : "Last: "}${esc(s.action)}</span>` : ""}
-      <span class="sks">Skills: ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : "none"}</span></li>`;
+      <span class="meta">${s.context ? `<span title="${t("Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}", { now: s.context.toLocaleString(), total: (s.tokens || 0).toLocaleString() })}">${fmtTokens(s.context)}</span>`
+        : s.tokens ? `<span title="${t("{n} tokens", { n: s.tokens.toLocaleString() })}">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span></span>
+      ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? t("Now:") : t("Last:")} ${esc(s.action)}</span>` : ""}
+      <span class="sks">${t("Skills:")} ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : t("none")}</span></li>`;
   }).join("");
   if ($("#d-sa-list").innerHTML !== html) $("#d-sa-list").innerHTML = html;
 }
@@ -1815,7 +1817,7 @@ function renderSkills(ag) {
   const used = (ag && ag.skills) || [];
   $("#d-skills").hidden = !used.length;
   $("#d-sk-n").textContent = used.length || "";
-  const html = used.map((s) => `<li title="First used ${esc(fmt(s.first))}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
+  const html = used.map((s) => `<li title="${t("First used {date}", { date: esc(fmt(s.first)) })}">${esc(s.name)}${s.count > 1 ? `<b>×${s.count}</b>` : ""}</li>`).join("");
   if ($("#d-sk-list").innerHTML !== html) $("#d-sk-list").innerHTML = html;
 }
 
@@ -1830,13 +1832,13 @@ function renderTokens(ag) {
   const all = tk ? tk.main.map((v, i) => v + tk.subagents[i]) : [0, 0, 0, 0], total = fresh(all);
   $("#d-tokens").hidden = !total;
   $("#d-tok-n").textContent = total ? fmtTokens(total) : "";
-  $("#d-tok-n").title = total.toLocaleString() + " new tokens (cache re-reads not counted)";
+  $("#d-tok-n").title = t("{n} new tokens (cache re-reads not counted)", { n: total.toLocaleString() });
   if (!total) return;
   const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}</dd>`;
-  const html = row("Main agent", fresh(tk.main)) + row(`Subagents (${tk.count})`, fresh(tk.subagents))
-    + row("New input", all[0] + all[1], "Text Claude read for the first time (incl. writing it to the cache)")
-    + row("Written by Claude", all[3])
-    + row("Re-read from cache (not in total)", all[2], "Claude re-reads the whole conversation at every step, so this adds the same text again and again. It is cheap and not counted above.");
+  const html = row(t("Main agent"), fresh(tk.main)) + row(t("Subagents ({n})", { n: tk.count }), fresh(tk.subagents))
+    + row(t("New input"), all[0] + all[1], t("Text Claude read for the first time (incl. writing it to the cache)"))
+    + row(t("Written by Claude"), all[3])
+    + row(t("Re-read from cache (not in total)"), all[2], t("Claude re-reads the whole conversation at every step, so this adds the same text again and again. It is cheap and not counted above."));
   if ($("#d-tok-list").innerHTML !== html) $("#d-tok-list").innerHTML = html;
 }
 
@@ -1848,7 +1850,7 @@ const ctxLevel = (f) => f >= 0.9 ? " full" : f >= 0.7 ? " high" : "";
 function contextChip(ag) {
   const c = ag && ag.context, f = ctxShare(c);
   if (f === null || ag.phase === "gone") return "";
-  return `<span class="ctx${ctxLevel(f)}" title="Context: ${c.tokens.toLocaleString()} of ${c.max.toLocaleString()} tokens (${esc(c.model)})">${Math.round(100 * f)}% ctx</span>`;
+  return `<span class="ctx${ctxLevel(f)}" title="${t("Context: {tokens} of {max} tokens ({model})", { tokens: c.tokens.toLocaleString(), max: c.max.toLocaleString(), model: esc(c.model) })}">${t("{n}% ctx", { n: Math.round(100 * f) })}</span>`;
 }
 function renderContext(ag) {
   const c = ag && ag.context, f = ctxShare(c);
@@ -1860,12 +1862,12 @@ function renderContext(ag) {
     $("#d-ctx-bar").className = "ctx-bar" + ctxLevel(f);
     $("#d-ctx-bar i").style.width = Math.min(100, 100 * f).toFixed(1) + "%";
     $("#d-ctx-bar b").style.left = Math.min(100, 100 * c.peak / c.max).toFixed(1) + "%";
-    $("#d-ctx-bar").title = `Now ${Math.round(100 * f)}% full · peak ${Math.round(100 * c.peak / c.max)}% (the mark)`;
+    $("#d-ctx-bar").title = t("Now {now}% full · peak {peak}% (the mark)", { now: Math.round(100 * f), peak: Math.round(100 * c.peak / c.max) });
   }
   const row = (k, n, title = "") => `<dt${title ? ` title="${esc(title)}"` : ""}>${k}</dt><dd title="${n.toLocaleString()}">${fmtTokens(n)}${c.max ? ` (${Math.round(100 * n / c.max)}%)` : ""}</dd>`;
-  const html = row("Now", c.tokens, "What the agent holds in mind at its last step")
-    + row("Most so far", c.peak, "It drops when the conversation is shortened (compacted)")
-    + (c.max ? `<dt>Model limit</dt><dd title="${c.max.toLocaleString()}">${fmtWindow(c.max)} · ${esc(c.model)}</dd>` : `<dt>Model</dt><dd>${esc(c.model) || "unknown"}</dd>`);
+  const html = row(t("Now"), c.tokens, t("What the agent holds in mind at its last step"))
+    + row(t("Most so far"), c.peak, t("It drops when the conversation is shortened (compacted)"))
+    + (c.max ? `<dt>${t("Model limit")}</dt><dd title="${c.max.toLocaleString()}">${fmtWindow(c.max)} · ${esc(c.model)}</dd>` : `<dt>${t("Model")}</dt><dd>${esc(c.model) || t("unknown")}</dd>`);
   if ($("#d-ctx-list").innerHTML !== html) $("#d-ctx-list").innerHTML = html;
 }
 
@@ -1873,26 +1875,26 @@ function renderContext(ag) {
 function renderTech(t) {
   const g = (gitInfo.pid === P && gitInfo.data) || {}, tg = taskGitFor(t), ag = agents[t.id], wt = t.agent && t.agent.worktree;
   const rows = [];
-  const code = (s, title = "Click to copy") => `<code title="${esc(title)}">${esc(s)}</code>`;
+  const code = (s, title = window.t("Click to copy")) => `<code title="${esc(title)}">${esc(s)}</code>`;
   if (wt) {
-    rows.push(["Worktree", code(wt.path) + (ag && ag.worktree === false ? ` <span class="dirty">(merged or removed)</span>` : "")]);
-    rows.push(["Branch", code(wt.branch) + (wt.base ? ` from ${code(wt.base)}` : "")]);
-  } else if (g.branch) rows.push(["Branch", code(g.branch) + (g.dirty ? ` <span class="dirty" title="Uncommitted changes in the project folder">• uncommitted changes</span>` : "")]);
-  if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push(["Merges into", code(tg.target)]);
-  if (g.tag) rows.push(["Release", code(g.tag)]);
+    rows.push([window.t("Worktree"), code(wt.path) + (ag && ag.worktree === false ? ` <span class="dirty">${window.t("(merged or removed)")}</span>` : "")]);
+    rows.push([window.t("Branch"), code(wt.branch) + (wt.base ? " " + window.t("from {base}", { base: code(wt.base) }) : "")]);
+  } else if (g.branch) rows.push([window.t("Branch"), code(g.branch) + (g.dirty ? ` <span class="dirty" title="${window.t("Uncommitted changes in the project folder")}">• ${window.t("uncommitted changes")}</span>` : "")]);
+  if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push([window.t("Merges into"), code(tg.target)]);
+  if (g.tag) rows.push([window.t("Release"), code(g.tag)]);
   if (t.agent) {
-    rows.push(["Session", code("claude attach " + ((ag && ag.id) || t.agent.id))]);
-    rows.push(["Model", esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? prettyModel(defaultModel.model) + " (default)" : "default"))]);
-    rows.push(["Started", esc(fmt(t.agent.started))]);
-    if (t.delegate) rows.push(["Subagents", "allowed" + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
-    if (t.answerOnly) rows.push(["Mode", "answer only"]);
-    if (t.worktree === false && !t.answerOnly) rows.push(["Worktree", "off (works in the project folder)"]);
+    rows.push([window.t("Session"), code("claude attach " + ((ag && ag.id) || t.agent.id))]);
+    rows.push([window.t("Model"), esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
+    rows.push([window.t("Started"), esc(fmt(t.agent.started))]);
+    if (t.delegate) rows.push([window.t("Subagents"), window.t("allowed") + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
+    if (t.answerOnly) rows.push([window.t("Mode"), window.t("answer only")]);
+    if (t.worktree === false && !t.answerOnly) rows.push([window.t("Worktree"), window.t("off (works in the project folder)")]);
   }
-  rows.push(["Task id", code(t.id)]);
+  rows.push([window.t("Task id"), code(t.id)]);
   const html = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   if ($("#d-tech-list").innerHTML !== html) {
     $("#d-tech-list").innerHTML = html;
-    $("#d-tech-list").querySelectorAll("code").forEach((c) => (c.onclick = () => { navigator.clipboard.writeText(c.textContent); setStatus("Copied " + c.textContent); }));
+    $("#d-tech-list").querySelectorAll("code").forEach((c) => (c.onclick = () => { navigator.clipboard.writeText(c.textContent); setStatus(window.t("Copied {text}", { text: c.textContent })); }));
   }
 }
 
@@ -1928,7 +1930,7 @@ function renderOverview(t) {
   if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;
   const kids = children(t.id), done = kids.filter(isDone).length;
   $("#d-crit").hidden = !kids.length;
-  $("#d-crit-n").textContent = `${done} of ${kids.length}`;
+  $("#d-crit-n").textContent = window.t("{done} of {total}", { done, total: kids.length });
   $("#d-crit .crit-bar i").style.width = kids.length ? (100 * done / kids.length).toFixed(0) + "%" : "0";
   renderNext(t);
   renderSubagents(ag);
