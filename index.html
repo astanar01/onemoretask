@@ -1308,14 +1308,14 @@ function renderDetail() {
   $("#d-delegate").checked = !!t.delegate;
   renderSubmodel(t);
   $("#d-answeronly").checked = !!t.answerOnly;
-  $("#d-worktree").checked = t.worktree !== false && !obsCard(t);   // missing = on (cards made before the option)
+  syncWorktreeBox(t);
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
   const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
   $("#d-delegate").disabled = sent;
   $("#d-submodel").disabled = sent || !t.delegate;
   $("#d-answeronly").disabled = sent;
-  $("#d-worktree").disabled = sent || !!t.answerOnly || obsCard(t);
+  $("#d-worktree").disabled ||= sent;
   $("#d-newsub").style.display = sent ? "none" : "";
   renderImages(t);
 
@@ -1353,7 +1353,15 @@ $("#d-delegate").addEventListener("change", (e) => {
   $("#d-submodel").disabled = !t.delegate;
 });
 $("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); rememberDelegateChoice(t); });
-$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); $("#d-worktree").disabled = e.target.checked; });
+$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); syncWorktreeBox(t); });
+// Answer only never uses a worktree: show the box off but keep t.worktree, so unticking Answer only brings it back.
+function syncWorktreeBox(t) {
+  const off = !!t.answerOnly || obsCard(t), box = $("#d-worktree"), label = box.parentElement;
+  box.checked = t.worktree !== false && !off;   // missing = on (cards made before the option)
+  box.disabled = off;
+  label.dataset.tip ??= label.title;
+  label.title = t.answerOnly ? "Off: an answer-only task changes nothing, so it needs no worktree" : label.dataset.tip;
+}
 $("#d-worktree").addEventListener("change", (e) => { const t = task(openId); t.worktree = e.target.checked; touch(t); });
 $("#d-col").addEventListener("change", (e) => { moveTask(openId, e.target.value, null); renderDetail(); });
 $("#d-newsub").addEventListener("keydown", (e) => {
