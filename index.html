@@ -2506,14 +2506,17 @@ $("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files]
 $("#d-reply").addEventListener("input", (e) => { if (e.target.dataset.task) setReplyDraft(e.target.dataset.task, e.target.value); });
 $("#d-reply").addEventListener("keydown",(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
 
-let pollTimer = null, polledOnce = false;
+let pollTimer = null, polledOnce = false, pollSeq = 0;
 async function pollAgents() {
   clearTimeout(pollTimer);
   if (!useServer || !P) return;
+  const seq = ++pollSeq;   // only the newest poll schedules the next one, so an extra call never starts a second loop
   const pid = P, revBefore = rev;
   let wait = 4000;
   try {
-    const [r, rp] = await Promise.all([fetch(api("/api/agents"), { cache: "no-store" }), fetch("/api/projects", { cache: "no-store" })]);
+    // A request that never answers would end the polling for good: give up on it and poll again.
+    const opt = { cache: "no-store", signal: AbortSignal.timeout(20000) };
+    const [r, rp] = await Promise.all([fetch(api("/api/agents"), opt), fetch("/api/projects", opt)]);
     const next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
@@ -2552,14 +2555,15 @@ async function pollAgents() {
     if (openId) markSeen([openId]);   // news that lands while you have the card open is read
     polledOnce = true;
     updateWaiting();
-    loadObservations();
+    // A session that moved on may have committed or logged an observation: re-read those now, not on the next timer.
+    if (changed) { loadObservations(true); checkUnpushed(); } else loadObservations();
     renderProjects();
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
     if (changed) { render(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
   } catch (e) {
     setStatus(t("Claude status check failed: {error}", { error: t(e.message) }), true);
   }
-  pollTimer = setTimeout(pollAgents, wait);
+  if (seq === pollSeq) pollTimer = setTimeout(pollAgents, wait);
 }
 
 function updateWaiting() {
@@ -2582,7 +2586,7 @@ const obsList = () => (obs.data && obs.data.observations) || [];
 
 async function loadObservations(force) {
   const pid = P;
-  if (!useServer || !pid || (!force && obs.pid === pid && Date.now() - obs.at < 30000)) return;
+  if (!useServer || !pid || (!force && obs.pid === pid && Date.now() - obs.at < 10000)) return;
   obs.at = Date.now();
   let data = null;
   try {
@@ -3088,8 +3092,17 @@ function pushForm(d) {
   setTimeout(() => { inp.focus(); inp.select(); });
   return f;
 }
-setInterval(() => checkUnpushed(), 60000);
+setInterval(() => checkUnpushed(), 15000);
 setInterval(() => checkAppCopy(), 60000);
+// A window left in the back has its timers slowed or frozen by the browser: catch up the moment it is looked at.
+let lastCatchUp = 0;
+function catchUp() {
+  if (document.hidden || Date.now() - lastCatchUp < 2000) return;
+  lastCatchUp = Date.now();
+  pollAgents(); loadObservations(true); checkUnpushed(); checkAppCopy(); checkUpdate();
+}
+document.addEventListener("visibilitychange", catchUp);
+window.addEventListener("focus", catchUp);
 $("#search").addEventListener("input", render);
 $("#show-subs").addEventListener("change", () => {
   try { localStorage.setItem(LS_KEY + ":subs", $("#show-subs").checked ? "1" : "0"); } catch (_) {}
