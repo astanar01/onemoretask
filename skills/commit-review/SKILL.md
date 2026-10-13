@@ -40,14 +40,24 @@ from other work.
    (or `git diff -U8 <a>..<b>` for a range). `-U8` gives enough surrounding lines that most
    questions answer themselves without opening files. Exclude noise with pathspecs, e.g.
    `-- . ':!*.lock' ':!*.min.js' ':!*.png'`. When picking commits from a candidate list, run
-   `git show --stat` on all candidates in this same call.
+   `git show --stat` on all candidates in this same call. In the same call, `cat` the
+   project's rule files if they exist (`CLAUDE.md`, `CLAUDE.local.md` at the root and in the
+   changed folders): a change that breaks an explicit rule there is a finding; the rest of
+   those files is guidance for writing code, not a checklist for review.
 2. Read the diff and write down EVERY question it leaves open (a caller of a changed
    signature, the rest of a changed function, where a value comes from, whether an old name
    is still used). Then answer them all in ONE next turn: parallel Read (offset/limit, just
    the region) / Grep calls, or one Bash with several `grep -n` / `sed -n 'a,bp'`. Use the
    project's code-navigation tools (search_graph / get_code_snippet / search_code) where it
    has them.
-3. Skip generated files, lockfiles, vendored code, binary assets and pure formatting churn.
+3. If you were given what the task asked for (task notes) and what the worker reported,
+   compare both with the diff. A part of the ask that the diff does not do, or that the
+   report claims and the diff does not show, is a finding (major) — the cheapest bug to
+   find and the one a diff-only review misses.
+4. Skip generated files, lockfiles, vendored code, binary assets and pure formatting churn.
+5. Change in another folder (a worktree): never a bare `cd` — use `git -C <dir>` for git
+   and a subshell `( cd <dir> && … )` for the rest. Some environments block a persistent
+   `cd`, and a blocked command costs a whole turn.
 
 ## 3. Hunt — devil's advocate
 
@@ -63,9 +73,22 @@ Look for:
 - Stale state: caches, docs, comments or config that now say something false.
 - Untested paths: behavior the change adds that nothing exercises.
 - Security only where the change touches input from outside (paths, shell, HTML, SQL, auth).
+- Patterns that fooled earlier reviews (text matched across two sources, branches that can
+  never fire, fixtures cut from real logs): `references/hunt-patterns.md`. Read it when the
+  diff touches one of those shapes, not every time.
 
 Do NOT prescribe a checklist up front and do NOT report style, naming or "could be cleaner"
 opinions. Only things that can go wrong.
+
+**Pre-existing bugs.** A bug the diff did not introduce — the broken line is unchanged and
+was broken before the first reviewed commit (`git blame` or `git show <sha>^:<file>` settles
+it) — is not a Finding. Give it one line after the findings ("Pre-existing, not from this
+change: …") unless the commit made it worse or built on it; then it is a Finding that says so.
+
+**A second review of the same work.** If the card already holds a review (an earlier report
+with `Finding N` lines), start the report with one line per old finding — fixed, still open,
+or now moot — and number only NEW findings. Do not re-prove or re-describe what the earlier
+review already proved.
 
 **Budget by level** — counted in TURNS after the diff turn (each turn may hold many
 parallel calls), not counting the final report post. Every level also gets the test turn(s)
@@ -88,8 +111,20 @@ prove it or measure how sure you are.
 1. For EACH candidate finding, write the smallest test that shows the failure: a script
    that imports / calls the changed code with the breaking input, a shell repro on a temp
    copy, a `grep` that proves an old name is still referenced, or the one existing test that
-   covers the path. Put scratch files in a temp dir (`$CLAUDE_JOB_DIR/tmp` if set, else
-   `mktemp -d`), never in the repo.
+   covers the path. **Call the REAL functions under test** — import them and fake only the
+   outside edges (network, clock, files). A repro that copies the code inline proves the bug
+   once but keeps passing the old logic after the fix; one that calls the real code doubles
+   as the regression check. Put scratch files in a temp dir (`$CLAUDE_JOB_DIR/tmp` if set, else
+   `mktemp -d`), never in the repo. Git looks for the repo by walking UP: a scratch
+   folder inside a checkout IS that checkout until it has its own `.git`. Test code that
+   touches git in a scratch repo that ran `git init` itself, and assert
+   `git rev-parse --show-toplevel` is the scratch path before calling the code — or it
+   creates branches and worktrees in the real repo.
+   **Reviewed commits older than the checkout's HEAD:** never check their files out into
+   the checkout under review. Run the repro against HEAD and say so (the bug is usually
+   still live there), or get the old code in a throwaway
+   `git worktree add --detach <tmp> <sha>` and remove it after. A test file outside the
+   repo runs fine as `vendor/bin/phpunit /abs/path/ReproTest.php`.
 2. Run ALL the repro tests in ONE turn (one Bash call that runs each and prints a labeled
    result, or parallel calls). A test that needs a fix to the test itself gets the second
    test turn at high only.
@@ -103,6 +138,13 @@ prove it or measure how sure you are.
      timing. Give
      the confidence and what it rests on (e.g. "high: traced every line, the only unknown is
      X"). A reader should be able to decide from this line whether to trust it.
+     **Arithmetic or geometry is not a test of an API.** When the case rests on a
+     calculation ("N tries × step × cos(pitch) can't clear a 3.4 m gap"), the sum
+     only carries forward a premise about what the engine or API returns next (e.g.
+     "the closest-point query keeps returning the same island on each retry"). Name
+     that premise as `rests on: <assumption>`. If you did not test the premise
+     itself, use confidence low — a reviewed finding of this kind was refuted the
+     moment someone measured the premise, after fix work had started on it.
 
 Never use the word "hypothetical" as a mark. Drop anything you cannot tie to a concrete
 input or state. Fewer real findings beat many guesses. If nothing survives, say so
@@ -124,14 +166,16 @@ Finding 1 (major): short title
 - Breaks when: the concrete input or state, and what goes wrong.
 - Fix: the change you suggest, in a sentence or a tiny snippet.
 - Proof: Reproduced (quote the test output) / Not reproduced — confidence high, medium
-  or low, and why no test could run.
+  or low, and why no test could run; rests on: <the assumption the case depends on>.
 ```
 
 Then: one line listing refuted findings ("checked and fine"), and one line with which
 commits you reviewed, the level, and what you did not check. End by asking which findings
 to fix.
 
-Write for someone reading on a small card: short lines, `- ` bullets, plain words. If you
+Write for someone reading on a small card: short lines, `- ` bullets, plain words, and a
+blank line between every block (each finding, the refuted line, the scope line) — never
+one run-on paragraph, even for a short report. If you
 were told to post the report somewhere (the task board's report.py), post the full report
 there — chat output alone is not seen.
 
@@ -142,7 +186,11 @@ there — chat output alone is not seen.
       `- Proof:` labels.
 - [ ] Every finding has file:line, a concrete "breaks when", and a Proof line: Reproduced with
       quoted output, or Not reproduced with a confidence level and the reason no test ran.
+- [ ] Every arithmetic/geometry case names its `rests on:` premise; untested premise → confidence low.
 - [ ] Every candidate finding had a test run on it, or a stated reason it could not.
-- [ ] No style-only or taste findings.
+- [ ] No style-only or taste findings. Pre-existing bugs are one line, not a Finding.
+- [ ] Task notes and the worker's report were compared with the diff (when given).
+- [ ] An earlier review on the card: each old finding has its one-line status; only new ones are numbered.
+- [ ] Blocks separated by blank lines; no run-on paragraph anywhere in the report.
 - [ ] Stayed inside the level's turn budget (independent reads batched into one turn);
       said what was not checked.
