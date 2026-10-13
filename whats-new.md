@@ -2,6 +2,7 @@
 
 ## 2026-10-13
 
+- When you scroll down a long column, like Done, it now stays where you left it instead of jumping back to the top a few seconds later.
 - The buttons at the top (observations, unpushed work, update) now change by themselves right when Claude's work moves on, and catch up as soon as you come back to the window. No need to reload the page anymore.
 - The Review code button no longer asks you to pick a budget. Every review now uses the same medium one, like it almost always did.
 - Code reviews now also check that the work did what the card asked and follows the project's rules. A bug that was already there before is named in one line, and a second review says what changed since the first.
