@@ -1086,6 +1086,60 @@ def git_info(p):
             "dirty": bool(git("status", "--porcelain")), "repo": repo, "commits": commits}
 
 
+UNPUSHED_MAX = 100
+
+
+def unpushed_commits(p):
+    """{branch, upstream, count, commits: [{sha, subject, at}]}: commits on the project's branch that its upstream
+    (or origin/<branch>) lacks. No fetch: compares with the last known remote state, like `git status`.
+    upstream is None when the branch has nothing to compare with (no remote, never pushed, detached HEAD)."""
+    git = lambda *args: git_try(p.path, *args, timeout=5)
+    out = {"branch": None, "upstream": None, "count": 0, "commits": []}
+    branch = git("symbolic-ref", "--short", "-q", "HEAD")
+    if not branch:
+        return out
+    out["branch"] = branch
+    up = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if not up and git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"):
+        up = f"origin/{branch}"
+    if not up:
+        return out
+    out["upstream"] = up
+    out["count"] = int(git("rev-list", "--count", f"{up}..HEAD") or 0)
+    log = git("log", f"--max-count={UNPUSHED_MAX}", "--format=%h%x09%cI%x09%s", f"{up}..HEAD", "--") or ""
+    for line in log.splitlines():
+        sha, at, subject = (line.split("\t", 2) + ["", ""])[:3]
+        out["commits"].append({"sha": sha, "at": at, "subject": subject})
+    # Push targets the page suggests: every known remote branch (remote/HEAD aliases left out).
+    refs = git("for-each-ref", "--format=%(refname:short)%09%(symref)", "refs/remotes") or ""
+    out["targets"] = [r for r, _, sym in (line.partition("\t") for line in refs.splitlines()) if not sym]
+    return out
+
+
+def push_commits(p, target):
+    """`git push <remote> HEAD:refs/heads/<branch>` for target "<remote>/<branch>" (a new branch is created).
+    Never forced: a remote that moved on refuses, and git's message is passed on. Returns git's output."""
+    remotes = (git_try(p.path, "remote", timeout=5) or "").split()
+    target = (target or "").strip()
+    remote = max((r for r in remotes if target.startswith(r + "/")), key=len, default=None)
+    if not remote:
+        raise ValueError(f"pick a branch on a remote ({', '.join(remotes) or 'none set up'}), like origin/main")
+    branch = target[len(remote) + 1:]
+    if not git_try(p.path, "check-ref-format", "--branch", branch, timeout=5) or branch.startswith("-"):
+        raise ValueError(f"{branch!r} is not a valid branch name")
+    if not git_try(p.path, "symbolic-ref", "-q", "HEAD", timeout=5):
+        raise ValueError("no branch is checked out (detached HEAD)")
+    try:
+        r = subprocess.run(["git", "-C", p.path, "push", "--porcelain", remote, f"HEAD:refs/heads/{branch}"],
+                           capture_output=True, timeout=120, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, **TEXT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("git push took more than 2 minutes and was stopped") from None
+    if r.returncode:
+        raise RuntimeError((r.stderr or r.stdout).strip() or f"git push failed ({r.returncode})")
+    return (r.stdout + r.stderr).strip()
+
+
 class GitUnavailable(Exception):
     """Git cannot answer for a task right now (no git, not a repo, timeout, failed command)."""
 
@@ -2869,6 +2923,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(agents)
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
+        elif path == "/api/unpushed":
+            self._errors(lambda: self._json(200, unpushed_commits(project(pid))))
         elif path == "/api/observations":
             self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
         elif path == "/api/changelog":
@@ -2904,7 +2960,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update", "/api/app-copy")
+                  "/api/update", "/api/app-copy", "/api/push")
         if not self._host_ok():
             return
         if path not in routes:
@@ -2940,6 +2996,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True})
             elif path == "/api/git/init":
                 self._json(200, init_repo(project(body["p"])))
+            elif path == "/api/push":
+                self._json(200, {"ok": True, "output": push_commits(project(body["p"]), body.get("target"))})
             elif path == "/api/agent/review":
                 self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium",
                                               body.get("model") or "")})

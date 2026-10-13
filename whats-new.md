@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-13
+
+- When a project has saved work that is not sent up to GitHub yet, an orange "↑ N unpushed" button shows at the top. Click it to see the list, and use "Push to remote…" there to send it up to the place you pick.
+
 ## 2026-10-11
 
 - The Update button now also brings the helpers Claude works with. If you had an older board without them, they get set up on their own when the board starts again, and the button says "Setting up tools…" while it works.
