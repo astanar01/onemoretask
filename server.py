@@ -1086,6 +1086,33 @@ def git_info(p):
             "dirty": bool(git("status", "--porcelain")), "repo": repo, "commits": commits}
 
 
+UNPUSHED_MAX = 100
+
+
+def unpushed_commits(p):
+    """{branch, upstream, count, commits: [{sha, subject, at}]}: commits on the project's branch that its upstream
+    (or origin/<branch>) lacks. No fetch: compares with the last known remote state, like `git status`.
+    upstream is None when the branch has nothing to compare with (no remote, never pushed, detached HEAD)."""
+    git = lambda *args: git_try(p.path, *args, timeout=5)
+    out = {"branch": None, "upstream": None, "count": 0, "commits": []}
+    branch = git("symbolic-ref", "--short", "-q", "HEAD")
+    if not branch:
+        return out
+    out["branch"] = branch
+    up = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if not up and git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"):
+        up = f"origin/{branch}"
+    if not up:
+        return out
+    out["upstream"] = up
+    out["count"] = int(git("rev-list", "--count", f"{up}..HEAD") or 0)
+    log = git("log", f"--max-count={UNPUSHED_MAX}", "--format=%h%x09%cI%x09%s", f"{up}..HEAD", "--") or ""
+    for line in log.splitlines():
+        sha, at, subject = (line.split("\t", 2) + ["", ""])[:3]
+        out["commits"].append({"sha": sha, "at": at, "subject": subject})
+    return out
+
+
 class GitUnavailable(Exception):
     """Git cannot answer for a task right now (no git, not a repo, timeout, failed command)."""
 
@@ -2869,6 +2896,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(agents)
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
+        elif path == "/api/unpushed":
+            self._errors(lambda: self._json(200, unpushed_commits(project(pid))))
         elif path == "/api/observations":
             self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
         elif path == "/api/changelog":
