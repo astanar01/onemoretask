@@ -229,7 +229,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .btn.to-done:hover { background: var(--ok); color: #fff; }
 .btn.review { border-color: var(--accent); color: var(--accent); }
 .btn.review:hover { background: var(--accent); color: #fff; }
-#d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #busy { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.5); display: none; justify-content: center; align-items: center; cursor: wait; }
 #busy.open { display: flex; }
 #busy .box { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 12px; padding: 16px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
@@ -494,7 +493,6 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 #d-review-wrap { display: flex; align-items: center; gap: 8px; }
 #d-review-wrap[hidden] { display: none; }
 #d-review-model { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 140px; }
-#d-review-level { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .ch-group { margin-bottom: 18px; }
 .ch-group h4 { margin: 0 0 6px; font-size: calc(13px * var(--ts)); color: var(--muted); font-weight: 600; }
 .ch-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
@@ -667,7 +665,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
           <a class="more-link" id="d-sum-conv">View full conversation →</a>
         </div>
         <div class="tabpane" id="d-tab-changes" role="tabpanel">
-          <div class="ch-bar"><span id="d-ch-note"></span><span class="grow"></span><span id="d-review-wrap"><select id="d-review-model" title="Who reviews: the task's own model, or another one (an OpenAI model runs the review in Codex)"><option value="">Task's model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><select id="d-review-level" title="Review budget: every level runs a small test on each finding. Low reads less of the code, Medium also runs compile/lint, High may run the related tests. Higher costs more."><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button class="btn" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button></span></div>
+          <div class="ch-bar"><span id="d-ch-note"></span><span class="grow"></span><span id="d-review-wrap"><select id="d-review-model" title="Who reviews: the task's own model, or another one (an OpenAI model runs the review in Codex)"><option value="">Task's model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><button class="btn" id="d-review" title="Start a fresh Claude session that code-reviews this task's commits and posts the findings here">Review code</button></span></div>
           <div id="d-ch-list"></div>
           <pre class="diff" id="d-diff" hidden></pre>
         </div>
@@ -1242,7 +1240,7 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits ({level} budget)", { who: reviewer(t), level: esc(reviewLevel()) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
+    ${canReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1573,7 +1571,6 @@ const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id
 const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].worktree;
 // "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.
 const canDeleteWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && !!agents[t.id] && !!agents[t.id].worktree && agents[t.id].phase !== "working" && !(pending[t.id] || []).length;
-function reviewLevel() { try { return localStorage.getItem("taskboard.reviewLevel") || "medium"; } catch (e) { return "medium"; } }
 function reviewModel() { try { return localStorage.getItem("taskboard.reviewModel") || ""; } catch (e) { return ""; } }
 // An OpenAI model makes the server run Codex instead of Claude Code.
 const isCodexModel = (m) => /^(gpt-|o1|o3|o4|codex)/i.test(m || "");
@@ -1674,7 +1671,6 @@ function renderAgent(t) {
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
-  $("#d-review-level").value = reviewLevel();
   $("#d-review-model").value = reviewModel();
   $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
@@ -1789,7 +1785,7 @@ function nextAction(t, ag, g) {
   const nFiles = (k) => k === 1 ? window.t("1 uncommitted file") : window.t("{n} uncommitted files", { n: k });
   const nCommits = (k) => k === 1 ? window.t("1 commit") : window.t("{n} commits", { n: k });
   const markDone = (cls = "primary") => act(window.t("Mark as done"), cls, () => { moveToDone(t.id); closeDetail(); }, { title: window.t("Move this task to the done column. The worktree and its changes stay as they are.") });
-  const askReview = (cls = "primary") => act(window.t("Review code"), cls, () => startReview(t), { pick: true, title: window.t("A fresh {who} session code-reviews this task's commits ({level} budget) and posts its findings here", { who: reviewer(t), level: reviewLevel() }) });
+  const askReview = (cls = "primary") => act(window.t("Review code"), cls, () => startReview(t), { pick: true, title: window.t("A fresh {who} session code-reviews this task's commits and posts its findings here", { who: reviewer(t) }) });
   // A finished review by the other agent (Codex on Claude's work, or the reverse): its findings can go back to the worker.
   const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(window.t("Send findings to {who}", { who: ag.handback }), "primary", () => sendFindingsBack(t), { icon: "back", title: window.t("The {who} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with", { who: ag.handback }) })] : [];
   // Review code is always on offer next to merge; it never gates the merge.
@@ -1859,12 +1855,11 @@ function renderNext(t) {
   $("#d-next-text").textContent = n.text;
   const box = $("#d-next-actions");
   const btn = (a, i) => `<button class="btn ${a.cls}" data-i="${i}"${a.title ? ` title="${esc(a.title)}"` : ""}>${a.icon ? icon(a.icon, 16) : ""}${esc(a.label)}</button>`;
-  const html = n.actions.map((a, i) => a.pick ? `<div class="nx-review"><div class="nx-pick"><select class="nx-rmodel" title="${esc($("#d-review-model").title)}">${$("#d-review-model").innerHTML}</select><select class="nx-rlevel" title="${esc($("#d-review-level").title)}">${$("#d-review-level").innerHTML}</select></div>${btn(a, i)}</div>` : btn(a, i)).join("");
+  const html = n.actions.map((a, i) => a.pick ? `<div class="nx-review"><div class="nx-pick"><select class="nx-rmodel" title="${esc($("#d-review-model").title)}">${$("#d-review-model").innerHTML}</select></div>${btn(a, i)}</div>` : btn(a, i)).join("");
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
   box.querySelectorAll("button").forEach((b) => (b.onclick = n.actions[+b.dataset.i].onclick));
-  const rm = box.querySelector(".nx-rmodel"), rl = box.querySelector(".nx-rlevel");
+  const rm = box.querySelector(".nx-rmodel");
   if (rm) { rm.value = reviewModel(); rm.onchange = () => pickReview("taskboard.reviewModel", rm.value); }
-  if (rl) { rl.value = reviewLevel(); rl.onchange = () => pickReview("taskboard.reviewLevel", rl.value); }
 }
 
 // Rows start as one line (plus "Now:" while running); a click shows the rest. Kept across re-renders.
@@ -2337,11 +2332,11 @@ async function sendToClaude(t) {
 }
 
 async function startReview(t) {
-  const level = reviewLevel(), model = reviewModel(), pm = addPending(t, "review", window.t("Starting a code review ({details})", { details: level + (model ? ", " + model : "") }), []);
+  const model = reviewModel(), pm = addPending(t, "review", model ? window.t("Starting a code review ({details})", { details: model }) : window.t("Starting a code review"), []);
   setStatus(window.t("Starting code review…"));
   refreshAgent(t); render();
   try {
-    const res = await post("/api/agent/review", { p: P, taskId: t.id, level, model });
+    const res = await post("/api/agent/review", { p: P, taskId: t.id, model });
     pm.state = "sent";
     setStatus(window.t("Code review session {id} started", { id: res.id }));
   } catch (e) {
@@ -2463,14 +2458,13 @@ async function deleteWorktreeNow(t, force) {
 }
 $("#d-wt-del").onclick = () => { toggleMenu(false); const t = task(openId); if (t) deleteWorktree(t, false); };
 $("#wtdel-modal").addEventListener("mousedown", (e) => { if (e.target.id === "wtdel-modal") closeWtdel(); });
-// The reviewer picks show twice (Next action and Changes) and share one saved value.
+// The reviewer pick shows twice (Next action and Changes) and shares one saved value.
 function pickReview(key, v) {
   try { localStorage.setItem(key, v); } catch (_) {}
   render();
   const t = openId && task(openId);
   if (t) { renderAgent(t); renderNext(t); }
 }
-$("#d-review-level").onchange = (e) => pickReview("taskboard.reviewLevel", e.target.value);
 $("#d-review-model").onchange = (e) => pickReview("taskboard.reviewModel", e.target.value);
 
 async function sendReply() {

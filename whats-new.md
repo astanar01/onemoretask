@@ -2,6 +2,7 @@
 
 ## 2026-10-13
 
+- The Review code button no longer asks you to pick a budget. Every review now uses the same medium one, like it almost always did.
 - Code reviews now also check that the work did what the card asked and follows the project's rules. A bug that was already there before is named in one line, and a second review says what changed since the first.
 - Ticking "Answer only" now picks a quick, cheap helper for you: Haiku, or Luna when only Codex is set up. You can still pick another one.
 - When a project has saved work that is not sent up to GitHub yet, an orange "↑ N unpushed" button shows at the top. Click it to see the list, and use "Push to remote…" there to send it up to the place you pick.

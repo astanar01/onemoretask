@@ -235,15 +235,15 @@ sha = git("rev-parse", "--short", "HEAD")
 reports.append(p.board, "t1", "done", f"Did Y in commit {sha}.", "claude")
 poll()
 assert card()["phase"] == "finished", card()
-rid = server.review(p, "t1", "low", "gpt-5.5")
+rid = server.review(p, "t1", "gpt-5.5")
 assert rid == "cdx-2", rid
 prompt = codex.STARTS[-1]["prompt"]
 assert "commit-review" in prompt and "SKILL.md" in prompt and f'"low {sha}' in prompt, prompt
 assert "the Skill tool, skill" not in prompt, "Codex reviewer got the Claude Skill-tool step"
 assert prompt.endswith(server.codex_note(p)), prompt[-200:]
 log = reports.read(p.board, "t1")
-assert log[-1]["status"] == "review" and log[-1]["message"] == "Code review started (low, gpt-5.5, session cdx-2)", log[-1]
-print("ok  review(low, gpt-5.5): codex.start with a commit-review / SKILL.md step naming", sha)
+assert log[-1]["status"] == "review" and log[-1]["message"] == "Code review started (gpt-5.5, session cdx-2)", log[-1]
+print("ok  review(gpt-5.5): codex.start with a commit-review / SKILL.md step naming", sha)
 
 # ---- (e) tokens of a Codex log
 assert server.tokens([LOG]) == {"main": [1, 2, 3, 4], "subagents": [0] * 4, "count": 0}, server.tokens([LOG])
@@ -300,7 +300,7 @@ with open(p.data, "w", encoding="utf-8") as f:
     json.dump(state, f)
 reports.append(p.board, "t2", "launch", "Sent to Claude (session cl-1, model opus)", "you", session="cl-1")
 reports.append(p.board, "t2", "done", "Did it.", "claude")
-reports.append(p.board, "t2", "review", "Code review started (low, gpt-5.5, session cdx-9)", "you", session="cdx-9")
+reports.append(p.board, "t2", "review", "Code review started (gpt-5.5, session cdx-9)", "you", session="cdx-9")
 LOG9 = os.path.join(p.board, "agent_reports", "codex", "cdx-9.jsonl")
 open(LOG9, "w").close()
 codex.SESSIONS["cdx-9"] = {"id": "cdx-9", "sessionId": "cdx-9", "cli": "codex", "board": p.board, "name": "review",
