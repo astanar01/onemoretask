@@ -1416,7 +1416,11 @@ $("#d-delegate").addEventListener("change", (e) => {
   $("#d-submodel").disabled = !t.delegate;
 });
 $("#d-submodel").addEventListener("change", (e) => { const t = task(openId); t.subagentModel = e.target.value; touch(t); rememberDelegateChoice(t); });
-$("#d-answeronly").addEventListener("change", (e) => { const t = task(openId); t.answerOnly = e.target.checked; touch(t); syncWorktreeBox(t); });
+$("#d-answeronly").addEventListener("change", (e) => {
+  const t = task(openId); t.answerOnly = e.target.checked; touch(t); syncWorktreeBox(t);
+  delete answerPick[t.id];
+  if (!t.agent) { $("#d-model").value = sendModel(t); sendLabel(); }
+});
 // Answer only never uses a worktree: show the box off but keep t.worktree, so unticking Answer only brings it back.
 function syncWorktreeBox(t) {
   const off = !!t.answerOnly || obsCard(t), box = $("#d-worktree"), label = box.parentElement;
@@ -1578,6 +1582,17 @@ const reviewer = (t) => { const m = reviewModel(); return m ? (isCodexModel(m) ?
 // OpenAI models for the model pickers; an older server has no /api/codex-models.
 const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
 let codexList = CODEX_MODELS;
+let clis = { claude: true, codex: false };   // which CLIs the server found (older server: assume Claude)
+// Answer only starts on a cheap model: Haiku when Claude Code is installed, else Codex's Luna.
+// A pick made on an answer-only card stays on that card only, so it does not change the saved default.
+const answerPick = {};
+const answerModel = () => clis.claude ? "haiku" : (codexList.find((m) => /luna/i.test(m.id)) || {}).id || "";
+function sendModel(t) {
+  let saved = "";
+  try { saved = localStorage.getItem("taskboard.model") || ""; } catch (e) {}
+  if (!t || !t.answerOnly) return saved;
+  return t.id in answerPick ? answerPick[t.id] : answerModel() || saved;
+}
 const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
 // The session's family: the card's agent once sent, else the session model picker.
 const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
@@ -1595,12 +1610,13 @@ async function loadCodexModels() {
     const r = await fetch("/api/codex-models", { cache: "no-store" });
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
+    if (res && typeof res.claude === "boolean") clis = { claude: res.claude, codex: !!res.codex };
   } catch (e) { /* built-in list */ }
   codexList = list;
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
   // The saved picks may be OpenAI models that had no option until now.
-  try { $("#d-model").value = localStorage.getItem("taskboard.model") || ""; } catch (e) {}
+  $("#d-model").value = sendModel(openId && state && task(openId));
   $("#d-review-model").value = reviewModel();
   sendLabel();
 }
@@ -1623,8 +1639,12 @@ function renderAgent(t) {
   send.onclick = () => sendToClaude(t);
   const model = $("#d-model");
   model.disabled = !useServer;
-  try { model.value = localStorage.getItem("taskboard.model") || ""; } catch (e) { model.value = ""; }
-  model.onchange = () => { try { localStorage.setItem("taskboard.model", model.value); } catch (e) {} sendLabel(); };
+  model.value = sendModel(t);
+  model.onchange = () => {
+    if (t.answerOnly) answerPick[t.id] = model.value;
+    else try { localStorage.setItem("taskboard.model", model.value); } catch (e) {}
+    sendLabel();
+  };
   sendLabel();
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];

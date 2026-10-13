@@ -38,6 +38,10 @@ def is_model(model):
     return (model or "").lower().startswith(MODEL_PREFIXES)
 
 
+def installed():
+    return os.path.exists(CODEX_CMD[0])
+
+
 def models():
     """The OpenAI models Codex lists, from its own cache; a fixed list when there is none."""
     try:

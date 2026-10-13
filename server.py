@@ -619,8 +619,9 @@ def default_model(p):
 
 
 def codex_models():
-    """GET /api/codex-models: the OpenAI models the pickers offer for Codex."""
-    return {"models": codex.models()}
+    """GET /api/codex-models: the OpenAI models the pickers offer for Codex, and which CLIs are installed."""
+    return {"models": codex.models(), "claude": os.path.exists(CLAUDE_CMD[-1]),
+            "codex": codex.installed()}
 
 
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")

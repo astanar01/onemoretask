@@ -2,6 +2,7 @@
 
 ## 2026-10-13
 
+- Ticking "Answer only" now picks a quick, cheap helper for you: Haiku, or Luna when only Codex is set up. You can still pick another one.
 - When a project has saved work that is not sent up to GitHub yet, an orange "↑ N unpushed" button shows at the top. Click it to see the list, and use "Push to remote…" there to send it up to the place you pick.
 
 ## 2026-10-11

@@ -30,6 +30,9 @@ def is_model(model):
 def models():
     return MODELS
 
+def installed():
+    return True
+
 def log_dir(board):
     return os.path.join(board, "agent_reports", "codex")
 
@@ -340,6 +343,10 @@ server.list_sessions = lambda cwd: []
 print("ok  handback: a Codex review of a Claude task resumes the Claude session with the findings; card follows it")
 
 # ---- (f) the model list route
-assert server.codex_models() == {"models": codex.MODELS}, server.codex_models()
-print("ok  codex_models (GET /api/codex-models) returns codex.models()")
+res = server.codex_models()
+assert res["models"] == codex.MODELS and isinstance(res["claude"], bool) and res["codex"] is True, res
+cmd, server.CLAUDE_CMD = server.CLAUDE_CMD, ["/nonexistent/claude"]
+assert server.codex_models()["claude"] is False, server.codex_models()
+server.CLAUDE_CMD = cmd
+print("ok  codex_models (GET /api/codex-models) returns codex.models() and which CLIs are installed")
 print("PASS")
