@@ -918,9 +918,6 @@ def start_session(p, task_id, name, prompt, model):
     return m.group(1)
 
 
-REVIEW_LEVELS = ("low", "medium", "high")
-
-
 def task_commits(p, since, ref="HEAD"):
     """[(short sha, subject)] on `ref` committed since `since` (ISO time), newest first."""
     r = subprocess.run(["git", "-C", p.path, "log", f"--since={since}", "--format=%h %s", ref, "--"],
@@ -948,12 +945,11 @@ def own_commits(p, log, since, ref="HEAD"):
     return [c for c in commits if any(w.startswith(c[0]) or c[0].startswith(w) for w in words)]
 
 
-def review(p, task_id, level, model=None):
+def review(p, task_id, model=None):
     """Start a fresh session that code-reviews the task's commits and posts the findings on its card. The card
     then follows the reviewer, so a reply ("fix 1 and 3") goes to the session that holds the findings.
-    `model` picks the reviewer's model (a Claude alias or an OpenAI one for Codex); empty = the task's own model."""
-    if level not in REVIEW_LEVELS:
-        raise ValueError(f"bad review level: {level!r}")
+    `model` picks the reviewer's model (a Claude alias or an OpenAI one for Codex); empty = the task's own model.
+    Always the commit-review skill's medium budget: every board review used it, so the board has no level pick."""
     if model and not MODEL.fullmatch(model):
         raise ValueError(f"bad model name: {model!r}")
     state = load_tasks(p)
@@ -979,10 +975,10 @@ def review(p, task_id, level, model=None):
     board_rel = os.path.relpath(p.board, p.path)
     rep = report_cmd(p, task_id)
     skill = shell_path(os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md'))
-    step1 = (f'1. Use the `commit-review` skill with args "{level} {" ".join(sha for sha, _ in commits)}" if it is in '
+    step1 = (f'1. Use the `commit-review` skill with args "medium {" ".join(sha for sha, _ in commits)}" if it is in '
              f"your skills list; otherwise read {skill} and follow it exactly with those args (where it says Skill "
              "tool or Read tool, do the equivalent yourself)." if codex.is_model(use) else
-             f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "{level}" plus the candidate '
+             f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "medium" plus the candidate '
              f"shas above). If that skill is not installed, Read {skill} and follow it.")
     prompt = "\n".join([
         f"Code review for a task on the project task board ({board_rel}).", "",
@@ -1002,7 +998,7 @@ def review(p, task_id, level, model=None):
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep)])
     aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use)
-    reports.append(p.board, task_id, "review", f"Code review started ({level}, {model or 'task model'}, session {aid})",
+    reports.append(p.board, task_id, "review", f"Code review started ({model or 'task model'}, session {aid})",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid
@@ -3000,8 +2996,7 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/push":
                 self._json(200, {"ok": True, "output": push_commits(project(body["p"]), body.get("target"))})
             elif path == "/api/agent/review":
-                self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium",
-                                              body.get("model") or "")})
+                self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("model") or "")})
             elif path == "/api/agent/handback":
                 self._json(200, {"id": handback(project(body["p"]), body["taskId"], body.get("text") or "")})
             elif path == "/api/update":
