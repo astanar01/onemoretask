@@ -2,6 +2,7 @@
 
 ## 2026-10-13
 
+- The buttons at the top (observations, unpushed work, update) now change by themselves right when Claude's work moves on, and catch up as soon as you come back to the window. No need to reload the page anymore.
 - The Review code button no longer asks you to pick a budget. Every review now uses the same medium one, like it almost always did.
 - Code reviews now also check that the work did what the card asked and follows the project's rules. A bug that was already there before is named in one line, and a second review says what changed since the first.
 - Ticking "Answer only" now picks a quick, cheap helper for you: Haiku, or Luna when only Codex is set up. You can still pick another one.
