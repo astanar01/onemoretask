@@ -238,7 +238,7 @@ assert card()["phase"] == "finished", card()
 rid = server.review(p, "t1", "gpt-5.5")
 assert rid == "cdx-2", rid
 prompt = codex.STARTS[-1]["prompt"]
-assert "commit-review" in prompt and "SKILL.md" in prompt and f'"low {sha}' in prompt, prompt
+assert "commit-review" in prompt and "SKILL.md" in prompt and f'"medium {sha}' in prompt, prompt
 assert "the Skill tool, skill" not in prompt, "Codex reviewer got the Claude Skill-tool step"
 assert prompt.endswith(server.codex_note(p)), prompt[-200:]
 log = reports.read(p.board, "t1")
