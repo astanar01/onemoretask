@@ -1110,7 +1110,34 @@ def unpushed_commits(p):
     for line in log.splitlines():
         sha, at, subject = (line.split("\t", 2) + ["", ""])[:3]
         out["commits"].append({"sha": sha, "at": at, "subject": subject})
+    # Push targets the page suggests: every known remote branch (remote/HEAD aliases left out).
+    refs = git("for-each-ref", "--format=%(refname:short)%09%(symref)", "refs/remotes") or ""
+    out["targets"] = [r for r, _, sym in (line.partition("\t") for line in refs.splitlines()) if not sym]
     return out
+
+
+def push_commits(p, target):
+    """`git push <remote> HEAD:refs/heads/<branch>` for target "<remote>/<branch>" (a new branch is created).
+    Never forced: a remote that moved on refuses, and git's message is passed on. Returns git's output."""
+    remotes = (git_try(p.path, "remote", timeout=5) or "").split()
+    target = (target or "").strip()
+    remote = max((r for r in remotes if target.startswith(r + "/")), key=len, default=None)
+    if not remote:
+        raise ValueError(f"pick a branch on a remote ({', '.join(remotes) or 'none set up'}), like origin/main")
+    branch = target[len(remote) + 1:]
+    if not git_try(p.path, "check-ref-format", "--branch", branch, timeout=5) or branch.startswith("-"):
+        raise ValueError(f"{branch!r} is not a valid branch name")
+    if not git_try(p.path, "symbolic-ref", "-q", "HEAD", timeout=5):
+        raise ValueError("no branch is checked out (detached HEAD)")
+    try:
+        r = subprocess.run(["git", "-C", p.path, "push", "--porcelain", remote, f"HEAD:refs/heads/{branch}"],
+                           capture_output=True, timeout=120, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, **TEXT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("git push took more than 2 minutes and was stopped") from None
+    if r.returncode:
+        raise RuntimeError((r.stderr or r.stdout).strip() or f"git push failed ({r.returncode})")
+    return (r.stdout + r.stderr).strip()
 
 
 class GitUnavailable(Exception):
@@ -2933,7 +2960,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update", "/api/app-copy")
+                  "/api/update", "/api/app-copy", "/api/push")
         if not self._host_ok():
             return
         if path not in routes:
@@ -2969,6 +2996,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True})
             elif path == "/api/git/init":
                 self._json(200, init_repo(project(body["p"])))
+            elif path == "/api/push":
+                self._json(200, {"ok": True, "output": push_commits(project(body["p"]), body.get("target"))})
             elif path == "/api/agent/review":
                 self._json(200, {"id": review(project(body["p"]), body["taskId"], body.get("level") or "medium",
                                               body.get("model") or "")})

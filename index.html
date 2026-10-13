@@ -82,6 +82,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #unpushed-pop .unp-list code { color: var(--muted); flex: none; }
 #unpushed-pop .unp-list .subj { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #unpushed-pop .unp-list .at { color: var(--muted); flex: none; font-size: calc(12px * var(--ts)); }
+#unpushed-pop .unp-push { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px 8px; }
+#unpushed-pop .unp-push input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
+#unpushed-pop .unp-push .row { display: flex; gap: 8px; justify-content: flex-end; }
+#unpushed-pop .unp-push .err { margin: 0; max-width: none; color: var(--major); white-space: pre-wrap; overflow-wrap: anywhere; }
 #text-size { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 #banner { display: none; padding: 8px 16px; background: var(--accent-soft); font-size: calc(13px * var(--ts)); }
 /* Header menus (View, Project settings): fixed so the header's overflow-x never clips them. */
@@ -3012,11 +3016,15 @@ async function checkUnpushed() {
   b.textContent = "↑ " + (d.count === 1 ? t("1 unpushed") : t("{n} unpushed", { n: d.count }));
   b.title = d.count === 1 ? t("1 commit on {branch} is not on {upstream} yet. Click to see it.", { branch: d.branch, upstream: d.upstream })
     : t("{n} commits on {branch} are not on {upstream} yet. Click to see them.", { n: d.count, branch: d.branch, upstream: d.upstream });
-  if (popBtn === b) buildUnpushedPop();
+  // The minute refresh only rebuilds an open list when it changed, and never under the push form: a rebuild
+  // scrolls the list back to the top and wipes what was typed.
+  const m = $("#unpushed-pop");
+  if (popBtn === b && m.dataset.sig !== JSON.stringify(d) && !m.querySelector(".unp-push")) buildUnpushedPop();
 }
 function buildUnpushedPop() {
   const d = unpushed.data, m = $("#unpushed-pop");
   if (!d) return;
+  m.dataset.sig = JSON.stringify(d);
   const head = document.createElement("div");
   head.className = "pop-head";
   head.append(t("Not pushed yet"), Object.assign(document.createElement("small"), { textContent: t("On {branch}, not on {upstream}", { branch: d.branch, upstream: d.upstream }) }));
@@ -3029,7 +3037,41 @@ function buildUnpushedPop() {
     ul.append(li);
   }
   const more = d.count - d.commits.length;
-  m.replaceChildren(head, ul, ...(more > 0 ? [Object.assign(document.createElement("p"), { className: "upd-why", textContent: t("… and {n} older", { n: more }) })] : []));
+  const pushRow = Object.assign(document.createElement("button"), { className: "pop-row", id: "unp-push-btn", textContent: t("Push to remote…"),
+    onclick: () => pushRow.replaceWith(pushForm(d)) });
+  m.replaceChildren(head, ul, ...(more > 0 ? [Object.assign(document.createElement("p"), { className: "upd-why", textContent: t("… and {n} older", { n: more }) })] : []),
+    Object.assign(document.createElement("div"), { className: "pop-sep" }), pushRow);
+}
+// Asks which remote branch to push to (the upstream by default; a new name makes a new branch), then pushes. Never forced.
+function pushForm(d) {
+  const f = Object.assign(document.createElement("form"), { className: "unp-push" });
+  const list = Object.assign(document.createElement("datalist"), { id: "unp-targets" });
+  for (const r of d.targets || []) list.append(Object.assign(document.createElement("option"), { value: r }));
+  const inp = Object.assign(document.createElement("input"), { value: d.upstream || "", required: true, spellcheck: false, autocomplete: "off" });
+  inp.setAttribute("list", "unp-targets");
+  const go = Object.assign(document.createElement("button"), { type: "submit", className: "btn primary", textContent: t("Push") });
+  const no = Object.assign(document.createElement("button"), { type: "button", className: "btn", textContent: t("Cancel"), onclick: () => buildUnpushedPop() });
+  const err = Object.assign(document.createElement("p"), { className: "upd-why err", hidden: true });
+  const row = Object.assign(document.createElement("div"), { className: "row" });
+  row.append(go, no);
+  f.append(Object.assign(document.createElement("label"), { textContent: t("Push to which branch?"), htmlFor: "unp-target" }), list,
+    Object.assign(inp, { id: "unp-target" }), row, err);
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const target = inp.value.trim();
+    go.disabled = no.disabled = inp.disabled = true; go.textContent = t("Pushing…"); err.hidden = true;
+    try {
+      const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p: P, target }) });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(res.error || "HTTP " + r.status);
+      closePop(); setStatus(t("Pushed to {target}", { target })); checkUnpushed();
+    } catch (x) {
+      go.disabled = no.disabled = inp.disabled = false; go.textContent = t("Push");
+      err.textContent = t("Push failed: {error}", { error: t(x.message) }); err.hidden = false; inp.focus();
+    }
+  });
+  setTimeout(() => { inp.focus(); inp.select(); });
+  return f;
 }
 setInterval(() => checkUnpushed(), 60000);
 setInterval(() => checkAppCopy(), 60000);

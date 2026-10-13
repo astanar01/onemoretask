@@ -2,7 +2,7 @@
 
 ## 2026-10-13
 
-- When a project has saved work that is not sent up to GitHub yet, an orange "↑ N unpushed" button shows at the top. Click it to see the list.
+- When a project has saved work that is not sent up to GitHub yet, an orange "↑ N unpushed" button shows at the top. Click it to see the list, and use "Push to remote…" there to send it up to the place you pick.
 
 ## 2026-10-11
 

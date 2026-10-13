@@ -90,6 +90,39 @@ for i in range(server.UNPUSHED_MAX + 3):
 u = server.unpushed_commits(p)
 check("capped", (u["count"], len(u["commits"])), (server.UNPUSHED_MAX + 3, server.UNPUSHED_MAX))
 
+# (i) push targets: every remote branch, no origin/HEAD alias
+git(app, "remote", "set-head", "origin", "main")
+check("targets", sorted(u["targets"]), ["origin/feat", "origin/main"])
+check("targets skip HEAD", "origin/HEAD" in server.unpushed_commits(p)["targets"], False)
+
+
+def push_err(target):
+    try:
+        server.push_commits(p, target)
+    except (ValueError, RuntimeError) as e:
+        return type(e).__name__
+    return None
+
+
+# (j) push to the upstream clears the list
+server.push_commits(p, "origin/main")
+check("push upstream", server.unpushed_commits(p)["count"], 0)
+
+# (k) push to a new branch name creates it on the remote, HEAD unchanged
+commit(app, "for review")
+server.push_commits(p, "origin/review/x")
+check("push new branch", git(origin, "rev-parse", "review/x"), git(app, "rev-parse", "HEAD"))
+check("push new: upstream still ahead", server.unpushed_commits(p)["count"], 1)
+
+# (l) bad targets are refused before git runs
+check("no remote prefix", push_err("main"), "ValueError")
+check("unknown remote", push_err("upstream/main"), "ValueError")
+check("bad branch name", push_err("origin/a..b"), "ValueError")
+check("option-like branch", push_err("origin/-f"), "ValueError")
+
+# (m) never forced: a remote branch that moved on refuses, git's message comes back
+check("non-fast-forward", push_err("origin/feat"), "RuntimeError")
+
 # (h) not a git repo
 plain = os.path.join(TMP, "plain")
 os.makedirs(plain)
