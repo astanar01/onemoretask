@@ -1136,6 +1136,9 @@ function render() {
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
   const showSubs = $("#show-subs").checked;
+  // Polls re-render the whole board: keep each column's scroll and the board's sideways scroll.
+  const keep = { x: board.scrollLeft, cols: {} };
+  board.querySelectorAll(".column").forEach((c) => (keep.cols[c.dataset.col] = c.querySelector(".cards").scrollTop));
   board.innerHTML = "";
 
   for (const col of state.columns) {
@@ -1197,6 +1200,8 @@ function render() {
     const inp = document.querySelector(`[data-col="${c.id}"] .name`); inp.focus(); inp.select();
   };
   board.appendChild(addCol);
+  board.scrollLeft = keep.x;
+  board.querySelectorAll(".column").forEach((c) => { if (keep.cols[c.dataset.col]) c.querySelector(".cards").scrollTop = keep.cols[c.dataset.col]; });
 }
 
 function groupEl(t, kidsOf, top) {
