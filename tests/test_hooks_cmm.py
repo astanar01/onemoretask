@@ -94,6 +94,13 @@ CASES = [
     ("cmm-grep-nudge.sh", pre("Bash", command="grep foo src/x.py"), 2, False),
     ("cmm-grep-nudge.sh", pre("Bash", command="grep foo README.md"), 0, False),
     ("cmm-grep-nudge.sh", pre("Grep", pattern="foo", path="src/x.py"), 2, False),
+    # A path counts only as an argument of the nav verb that receives it.
+    ("cmm-grep-nudge.sh", pre("Bash", command="python3 /u/claudeapps/p/t.py | tail -1"), 0, False),
+    ("cmm-grep-nudge.sh", pre("Bash", command="python3 src/x.py 2>&1 | tail -1"), 0, False),
+    ("cmm-grep-nudge.sh", pre("Bash", command="cat /u/claudeapps/notes.txt"), 0, False),
+    ("cmm-grep-nudge.sh", pre("Bash", command="cat > src/new.py <<'EOF'\ndef f(): pass\nEOF"), 0, False),
+    ("cmm-grep-nudge.sh", pre("Bash", command="tail -5 src/notes.txt"), 2, False),
+    ("cmm-grep-nudge.sh", pre("Bash", command="echo hi > out.txt; grep foo src/x.py"), 2, False),
     ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT, subagent_type="general-purpose"), 2, False),
     ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT + " # cmm-exempt"), 0, False),
     ("cwd-guard.sh", pre("Bash", command="cd sub"), 2, False),

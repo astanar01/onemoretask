@@ -2670,6 +2670,7 @@ function obsNotes(list) {
     "Load the task-observer skill first and follow its rules for acting on observations and for editing skills.",
     ...list.map((o) => `- #${o.id} ${o.title}${(o.skill || []).length ? ` (skill: ${o.skill.join(", ")})` : ""} — ${o.file}`),
     "The Apply click also approves the install: stage each change the way the skill says, then in this same session copy the staged file over the live skill (the folder the skill loads from) and check the live file has the change. Only then mark each observation actioned in the file listed (edit its status line in place). A change that is staged but not installed does not count as applied.",
+    "After installing, run task-observer's scripts/validate-skill-bundle.py on each installed skill. A FAIL (a description over 1024 characters, a pointer to a missing heading) is a failed install: fix it before marking anything actioned.",
     "If one needs a decision (new skill, removing content, conflicting), ask on the card instead of guessing."].join("\n");
 }
 // Observations cards edit the live skills and logs, so they always run in the project folder (server.py agrees).

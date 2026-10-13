@@ -26,13 +26,20 @@ d=json.load(sys.stdin)
 print(d.get('tool_input',{}).get('command','') or '')
 " 2>/dev/null)
 
-  # A nav verb whose OWN arguments name a file CMM parses into functions. Checked per pipeline segment,
-  # so `git diff x.py | grep foo` passes. .html is left out: CMM keeps inline JS as one blob.
-  SRC_READ=$(BASH_CMD="$BASH_CMD" omt_py - <<'PY' 2>/dev/null
+  # Every check ties a path to the nav verb that RECEIVES it, per pipeline segment: `python3 t.py | tail`
+  # and `git diff x.py | grep foo` pass. Prints "src <file>" when a nav verb's own arguments name a file
+  # CMM parses into functions (.html left out: CMM keeps inline JS as one blob), else "dir" when they name
+  # a source dir as a whole path component (`claudeapps/` is not `apps/`). Heredoc bodies and redirect
+  # targets are written content, not navigation; a bare `<` input redirect still counts.
+  GATE=$(BASH_CMD="$BASH_CMD" omt_py - <<'PY' 2>/dev/null
 import os, re, shlex
-cmd = os.environ.get("BASH_CMD", "").split("<<")[0].split(">")[0]
+cmd = os.environ.get("BASH_CMD", "").split("<<")[0]
+cmd = re.sub(r"\d*(>&|&>>?|>>?)\|?\s*[^\s|;&()]*", " ", cmd)
 ext = re.compile(r"\.(py|gd|js|jsx|mjs|ts|tsx|go|php|cs|java|kt|c|cc|cpp|h|hpp|cu)$")
+src_dir = re.compile(r"(^|/)(src|app|apps|lib|pkg|internal|hooks|agents|scripts)/")
 nav = {"grep", "egrep", "rg", "cat", "head", "tail", "awk", "less", "nl"}
+dir_nav = {"grep", "rg", "find", "cat", "head", "tail", "wc"}
+dir_hit = False
 for seg in re.split(r"\|\||&&|[|;&\n()]", cmd):
     try:
         w = shlex.split(seg, comments=True)
@@ -46,39 +53,24 @@ for seg in re.split(r"\|\||&&|[|;&\n()]", cmd):
     if verb in nav or (verb == "sed" and "-n" in w):
         hit = next((t for t in w[1:] if ext.search(t)), "")
         if hit:
-            print(os.path.basename(hit))
+            print("src " + os.path.basename(hit))
             break
+    if verb in dir_nav and any(src_dir.search(t) for t in w[1:]):
+        dir_hit = True
+else:
+    if dir_hit:
+        print("dir")
 PY
 )
+  SRC_READ=
+  case $GATE in "src "*) SRC_READ=${GATE#src } ;; esac
 
   # # cmm-exempt bypasses the block, except on a source read (agents had made it the default for those).
   if [ -z "$SRC_READ" ] && echo "$BASH_CMD" | grep -q '# cmm-exempt'; then
     exit 0
   fi
 
-  # Only block when command is a navigation verb against a source path.
-  # Inspect only the command HEAD, dropping the two constructs whose trailing text
-  # is CONTENT/DESTINATION rather than a navigation argument:
-  #   - output redirection (`>`, `>>`): everything from the first `>` is a write
-  #     target, not a path being searched. `cat > x.gd <<'EOF' ... EOF` false-
-  #     positived because the verb (cat) matched and a path token in the written
-  #     body matched the source-path regex.
-  #   - heredoc (`<<`): the body is written content, not a search target.
-  # We cut at the first `>` and the first `<<` ONLY — NOT a bare single `<`. A bare
-  # `<` is an input redirect or process substitution (`grep foo < src/x`,
-  # `diff <(cat src/a.py)`) whose path IS real navigation and must still block
-  # (QA round 1, F-01). `2>/dev/null` is safe: the source path precedes the `2>`,
-  # so it survives in the head.
-  BNAV_HEAD="${BASH_CMD%%>*}"
-  BNAV_HEAD="${BNAV_HEAD%%<<*}"
-  # Match the nav verb only in COMMAND position — at the start of the command or
-  # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
-  # or end. A bare regex like `(grep|...)` matched the verb as a SUBSTRING of an
-  # argument (e.g. `git add hooks/global/cmm-grep-nudge.sh` matched "grep" inside
-  # the filename, and "headers"/"catalog" would match head/cat), false-positiving
-  # on commands that merely name such a file. The path regex stays substring-based
-  # (path fragments legitimately appear mid-argument).
-  if [ -n "$SRC_READ" ] || { echo "$BNAV_HEAD" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; }; then
+  if [ -n "$GATE" ]; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
