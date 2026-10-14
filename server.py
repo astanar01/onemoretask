@@ -2686,7 +2686,22 @@ def spawn(p, task_id, close):
     """The data for a follow-up card that continues this one from a recap of its sessions. `close` also archives
     the old card (recap saved, sessions removed); otherwise the old card and its sessions are left as they are.
     The page creates the new card itself."""
-    r = archive(p, task_id) if close else recap_sessions(p, task_id)
+    if close:
+        # Same guards as Watcher._close: a reply during the recap becomes a note instead of resuming a session
+        # about to be removed, and a move to done at the same moment does not archive it twice.
+        key = (p.id, task_id)
+        with WATCH.lock:
+            if key in WATCH.closing:
+                raise RuntimeError("the recap of this card is already being written")
+            WATCH.closing.add(key)
+        try:
+            with CLOSE_SLOTS:
+                r = archive(p, task_id)
+        finally:
+            with WATCH.lock:
+                WATCH.closing.discard(key)
+    else:
+        r = recap_sessions(p, task_id)
     if not r:
         raise LookupError("no Claude session for this task")
     t, recap, paths = (r[0], r[1], r[2]) if close else (r[0], r[2], r[3])
