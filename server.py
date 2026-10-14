@@ -2486,17 +2486,55 @@ def write_recap(p, t, log, prior, sessions):
     return text
 
 
-TITLE_MODEL = "haiku"
-TITLE_ASK = """Above are the notes of a task-board card that has no title. Write its title: 3 to 8 words saying what \
-the task is about (the thing to do or fix), not the first words of the notes. Same language as the notes. No quotes, \
-no ending period. Output only the title."""
+AUTOFILL_MODEL = "haiku"
+AUTOFILL_TITLE = """"title": 3 to 8 words saying what the task is about (the thing to do or fix), not the first words \
+of the notes. Same language as the notes. No quotes, no ending period."""
+AUTOFILL_TAGS = """"tags": 1 to 3 short lowercase tags for the kind of work and the part it touches (like bug, \
+feature, ui). Reuse a tag from this list, spelled exactly as here, whenever one fits; add a new tag only when none \
+does: {known}"""
 
 
-def make_title(notes):
-    """Ask Claude for a short title that says what the notes are about."""
-    r = run_claude(["-p", "--model", TITLE_MODEL, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+def tag_key(tag):
+    """Tags that are the same word: case, '#', spaces/dashes/underscores and a plural ending don't count."""
+    k = re.sub(r"[\s_-]+", "", tag.strip().lstrip("#").lower())
+    if len(k) > 4 and k.endswith("ies"):
+        return k[:-3] + "y"
+    if len(k) > 3 and k.endswith("s") and not k.endswith("ss"):
+        return k[:-1]
+    return k
+
+
+def pick_tags(tags, known):
+    """Claude's tags, each swapped for the board's spelling of the same word, at most 3, never "observations"
+    (that tag turns a card into an observations card)."""
+    have = {}
+    for g in known:   # most used first: it wins over a rarer twin
+        have.setdefault(tag_key(g), g)
+    out, seen = [], {"observation"}
+    for g in tags if isinstance(tags, list) else []:
+        if not isinstance(g, str):
+            continue
+        g = g.replace(",", " ").strip().lstrip("#").strip()[:30]
+        k = tag_key(g)
+        if k and k not in seen:
+            seen.add(k)
+            out.append(have.get(k, g.lower()))
+    return out[:3]
+
+
+def autofill(notes, want_title, want_tags, known=()):
+    """Ask Claude, in one call, for a short title that says what the notes are about and/or tags for them that reuse
+    the board's existing ones. Returns {"title": ..., "tags": [...]} with only the asked keys."""
+    known = [g for g in (known if isinstance(known, (list, tuple)) else []) if isinstance(g, str) and g.strip()][:80]
+    fields = ([AUTOFILL_TITLE] if want_title else []) + \
+        ([AUTOFILL_TAGS.format(known=", ".join(known) or "(no tags yet)")] if want_tags else [])
+    if not fields:
+        return {}
+    ask = ("Above are the notes of a task-board card. Answer with only a JSON object with these keys:\n- "
+           + "\n- ".join(fields))
+    r = run_claude(["-p", "--model", AUTOFILL_MODEL, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                     "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
-                    TITLE_ASK], input=notes[:6000], cwd=tempfile.gettempdir(), timeout=90)
+                    ask], input=notes[:6000], cwd=tempfile.gettempdir(), timeout=90)
     try:
         out = json.loads(r.stdout)
     except ValueError:
@@ -2504,8 +2542,16 @@ def make_title(notes):
     text = (out.get("result") or "").strip()
     if r.returncode != 0 or out.get("is_error") or not text:
         raise RuntimeError((text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}")
-    title = text.splitlines()[0].strip().strip("\"'“”*#` ").rstrip(".").strip()
-    return title[:80]
+    try:
+        ans = json.loads(text[text.index("{"):text.rindex("}") + 1])
+    except ValueError:
+        raise RuntimeError(f"no JSON in Claude's answer: {text[:200]}")
+    res = {}
+    if want_title and isinstance(ans.get("title"), str):
+        res["title"] = ans["title"].strip().strip("\"'“”*#` ").rstrip(".").strip()[:80]
+    if want_tags:
+        res["tags"] = pick_tags(ans.get("tags"), known)
+    return res
 
 
 def archive(p, task_id):
@@ -2979,7 +3025,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update", "/api/app-copy", "/api/push", "/api/title")
+                  "/api/update", "/api/app-copy", "/api/push", "/api/autofill")
         if not self._host_ok():
             return
         if path not in routes:
@@ -3032,8 +3078,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True, "restarting": True})
                 self.wfile.flush()
                 threading.Thread(target=restart, args=(self.server,), daemon=True).start()
-            elif path == "/api/title":
-                self._json(200, {"title": make_title(body.get("notes") or "")})
+            elif path == "/api/autofill":
+                self._json(200, autofill(body.get("notes") or "", bool(body.get("title")), bool(body.get("tags")),
+                                         body.get("known") or []))
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
