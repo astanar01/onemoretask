@@ -1317,15 +1317,17 @@ def task_diff(p, task_id, path=None, sha=None):
     return out
 
 
-def phase_of(session, log, launched_at):
-    """(phase, reason) from the CLI's session record and the card's message log."""
-    # A note sent after the done report, that Claude has since picked up (it posted again), starts new work: the
-    # old done no longer ends the turn.
+def phase_of(session, log, launched_at, delivered=""):
+    """(phase, reason) from the CLI's session record and the card's message log. `delivered`: the `at` of the last
+    note handed to Claude (reports.delivered)."""
+    # A note sent after the done report, handed to Claude, that it has since picked up (it posted again), starts new
+    # work: the old done no longer ends the turn. A note not handed over yet can't be what Claude posts about: that
+    # line is a quick fix-up of the done.
     rep = next((i for i in range(len(log) - 1, -1, -1)
                 if log[i].get("from") == "claude" and log[i].get("status") in ("done", "answer")), None)
     if rep is not None:
-        note = next((i for i in range(rep + 1, len(log))
-                     if log[i].get("from") == "you" and log[i].get("status") == "note"), None)
+        note = next((i for i in range(rep + 1, len(log)) if log[i].get("from") == "you"
+                     and log[i].get("status") == "note" and log[i].get("at", "") <= delivered), None)
         if note is not None and any(e.get("from") == "claude" for e in log[note + 1:]):
             log = log[note:]
     log = [e for e in log if e.get("status") != "note"]  # a note sent mid-work changes nothing about the turn
@@ -1906,7 +1908,8 @@ class Watcher:
             log = reports.read(p.board, t["id"])
             aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
             s = sessions.get(aid)
-            phase, reason = phase_of(s, log, self.launched.get(aid, 0))
+            delivered = reports.delivered(p.board, t["id"])
+            phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
             said = [e for e in log if e.get("status") != "note"]
             if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
                 # It stopped after a card reply without calling report.py: its answer is only in the chat, which
@@ -1919,8 +1922,7 @@ class Watcher:
                 if text:
                     reports.append(p.board, t["id"], "answer", text, "claude")
                     log = reports.read(p.board, t["id"])
-                    phase, reason = phase_of(s, log, self.launched.get(aid, 0))
-            delivered = reports.delivered(p.board, t["id"])
+                    phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
             busy = bool(s) and s.get("status") == "busy"
             last_claude = next((e["at"] for e in reversed(log) if e.get("from") == "claude"), "")
             if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
