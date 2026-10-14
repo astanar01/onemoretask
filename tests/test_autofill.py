@@ -1,7 +1,7 @@
 """POST /api/autofill: Claude's title and tags for a card's notes, tags folded into the board's existing ones; and the
-board's no-AI first-sentence title.
+board's one-call-per-card autoFill.
 
-Run: python3 tests/test_autofill.py  (stdlib; Claude is faked; node for the board's titleFromNotes)."""
+Run: python3 tests/test_autofill.py  (stdlib; Claude is faked; node for the board's autoFill)."""
 import json
 import os
 import re
@@ -45,7 +45,9 @@ check("plural folds into board tag", server.pick_tags(["bug"], known), ["Bugs"])
 check("singular board tag wins", server.pick_tags(["feature requests"], ["feature-request"]), ["feature-request"])
 check("hash, case and space", server.pick_tags(["#UI", "Feature Request"], known), ["ui", "feature-request"])
 check("ies plural", server.pick_tags(["categories"], ["category"]), ["category"])
-check("ss is not a plural", server.tag_key("css"), "css")
+check("ss is not a plural", server.tag_keys("css"), ["css"])
+for board, claude in [("fix", "fixes"), ("branch", "branches"), ("cookie", "cookies"), ("class", "classes"), ("fixes", "fix")]:
+    check(f"{claude} folds into {board}", server.pick_tags([claude], [board]), [board])
 check("dupes dropped, max 3", server.pick_tags(["bug", "bugs", "a1", "b2", "c3"], known), ["Bugs", "a1", "b2"])
 check("observations never added", server.pick_tags(["observation", "Observations"], known), [])
 check("new tag lowercased, comma removed", server.pick_tags(["Perf,Speed"], []), ["perf speed"])
@@ -66,20 +68,33 @@ try:
 except RuntimeError:
     check("no JSON raises", "raised", "raised")
 
-# The board's first-sentence title.
+# The board: one autoFill per card at a time, so Send waits for the call the title box started when it lost focus.
 node = shutil.which("node")
 if node:
     src = open(os.path.join(os.path.dirname(HERE), "index.html"), encoding="utf-8").read()
-    fn = re.search(r"function titleFromNotes[\s\S]*?\n}\n", src).group(0)
-    cases = {"Mr. Smith asked for x": "Mr. Smith asked for x", "- [ ] buy milk": "Buy milk", "* [x] done thing": "Done thing",
-             "Fix the scroll. It jumps to the top.": "Fix the scroll", "see a.b for it": "See a.b for it",
-             "## \n\nreal line": "Real line", "   ": ""}
-    out = subprocess.run([node, "-e", fn + f"console.log(JSON.stringify({json.dumps(list(cases))}.map(titleFromNotes)))"],
-                         capture_output=True, text=True)
-    for (n, want), got in zip(cases.items(), json.loads(out.stdout or "[]") or [None] * len(cases)):
-        check(f"titleFromNotes {n!r}", got, want)
+    fn = re.search(r"const autoFilling = new Map\(\);[\s\S]*?\n}\n[\s\S]*?\n}\n", src).group(0)
+    check("no first-sentence title left", "titleFromNotes" in src, False)
+    harness = """
+let calls = 0, saved = 0, openId = null, resolveCall;
+const card = { id: "a", title: "", tags: ["x"], notes: "Fix the scroll. It jumps.", agent: null };
+const task = (id) => (id === "a" ? card : null), touch = () => saved++, render = () => {}, $ = () => ({}), tagSuggestions = () => [];
+const post = (url, body) => { calls++; return new Promise((r) => (resolveCall = () => r({ title: "Fix column scroll jump" }))); };
+""" + fn + """
+(async () => {
+  const blur = autoFill(card);                 // the title box lost focus
+  const shown = card.title;
+  const send = autoFill(card);                 // Send right after: must get the same call, not a new one
+  const same = send === blur;
+  resolveCall(); await send;
+  console.log(JSON.stringify([shown, same, calls, card.title]));
+})();
+"""
+    out = subprocess.run([node, "-e", harness], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("Send waits for the running call; Untitled meanwhile; Claude's title after",
+          got, ["Untitled", True, 1, "Fix column scroll jump"])
 else:
-    print("skip titleFromNotes: no node")
+    print("skip autoFill: no node")
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("FAILED" if fails else "all passed")

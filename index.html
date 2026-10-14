@@ -1343,20 +1343,18 @@ function openDetail(id) {
 }
 function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
-// No AI: the notes' first line, first sentence, cut at a word near 60 characters.
-// A sentence ends at . ! ? after a 3+ letter word and before a capital, so "Mr. Smith" and "a.b" stay whole.
-function titleFromNotes(notes) {
-  const line = (notes || "").split("\n").map((l) => l.replace(/^\s*(?:[#>*+-]+|\d+[.)])\s+/, "").replace(/^\[[ xX]\]\s+/, "").trim()).find(Boolean) || "";
-  let s = line.split(/(?<=\S{3}[.!?])\s+(?=\p{Lu})/u)[0].replace(/[.:;,]+$/, "");
-  if (s.length > 60) s = s.slice(0, 60).replace(/\s+\S*$/, "").replace(/[\s.:;,]+$/, "") + "…";
-  return s ? s[0].toUpperCase() + s.slice(1) : "";
-}
 // One Claude call names an untitled task and tags an untagged one from its notes, reusing the board's tags (the
-// server folds twins like bug/bugs into the board's spelling). An untitled task shows its first sentence meanwhile.
-// Returns once Claude answered or failed; a title or tags the user typed meanwhile are kept.
-async function autoFill(t) {
+// server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
+// it when Claude fails. Returns once Claude answered or failed; a title or tags the user typed meanwhile are kept.
+// One call per card at a time: a second caller (Send right after the title box lost focus) waits for the running one.
+const autoFilling = new Map();
+function autoFill(t) {
+  if (!autoFilling.has(t.id)) autoFilling.set(t.id, autoFillOnce(t).finally(() => autoFilling.delete(t.id)));
+  return autoFilling.get(t.id);
+}
+async function autoFillOnce(t) {
   const wantTitle = !t.title.trim(), wantTags = !t.tags.length && !t.agent && !!t.notes.trim();
-  const first = wantTitle ? titleFromNotes(t.notes) || "Untitled" : t.title;
+  const first = wantTitle ? "Untitled" : t.title;
   if (wantTitle) { t.title = first; touch(t); if (openId === t.id) $("#d-title").value = first; }
   if (!t.notes.trim() || (!wantTitle && !wantTags)) return;
   try {
@@ -1373,7 +1371,7 @@ async function autoFill(t) {
       if (openId === cur.id && !$("#d-tags").value.trim()) { $("#d-tags").value = cur.tags.join(", "); renderTagSuggestions(cur); }
     }
     if (changed) { touch(cur); render(); }
-  } catch (e) { /* no server or no Claude: the first sentence stays, no tags */ }
+  } catch (e) { /* no server or no Claude: "Untitled" stays, no tags */ }
 }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content it gets a title and tags from its notes if it lacks them.
@@ -2321,7 +2319,7 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   const model = $("#d-model").value;   // read before the wait below: another card may be open by then
-  if (!t.title.trim() || (!t.tags.length && t.notes.trim())) { setStatus(window.t("Making a title and tags…")); await autoFill(t); t = task(t.id) || t; }
+  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) { setStatus(window.t("Making a title and tags…")); await autoFill(t); t = task(t.id) || t; }
   const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);

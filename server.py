@@ -2494,14 +2494,18 @@ feature, ui). Reuse a tag from this list, spelled exactly as here, whenever one 
 does: {known}"""
 
 
-def tag_key(tag):
-    """Tags that are the same word: case, '#', spaces/dashes/underscores and a plural ending don't count."""
+def tag_keys(tag):
+    """The ways a tag may be spelled as the same word: case, '#' and spaces/dashes/underscores don't count, and a
+    plural ending may be cut (bugs → bug, fixes → fix, categories → category, cookies → cookie)."""
     k = re.sub(r"[\s_-]+", "", tag.strip().lstrip("#").lower())
+    keys = [k]
     if len(k) > 4 and k.endswith("ies"):
-        return k[:-3] + "y"
-    if len(k) > 3 and k.endswith("s") and not k.endswith("ss"):
-        return k[:-1]
-    return k
+        keys += [k[:-3] + "y", k[:-1]]
+    elif len(k) > 4 and k.endswith("es"):
+        keys += [k[:-2], k[:-1]]
+    elif len(k) > 3 and k.endswith("s") and not k.endswith("ss"):
+        keys.append(k[:-1])
+    return keys
 
 
 def pick_tags(tags, known):
@@ -2509,16 +2513,17 @@ def pick_tags(tags, known):
     (that tag turns a card into an observations card)."""
     have = {}
     for g in known:   # most used first: it wins over a rarer twin
-        have.setdefault(tag_key(g), g)
+        for k in tag_keys(g):
+            have.setdefault(k, g)
     out, seen = [], {"observation"}
     for g in tags if isinstance(tags, list) else []:
         if not isinstance(g, str):
             continue
         g = g.replace(",", " ").strip().lstrip("#").strip()[:30]
-        k = tag_key(g)
-        if k and k not in seen:
-            seen.add(k)
-            out.append(have.get(k, g.lower()))
+        keys = [k for k in tag_keys(g) if k]
+        if keys and not seen.intersection(keys):
+            seen.update(keys)
+            out.append(next((have[k] for k in keys if k in have), g.lower()))
     return out[:3]
 
 
