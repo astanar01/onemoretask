@@ -167,12 +167,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
-#trust-modal, #repo-modal, #wtdel-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
-#trust-modal.open, #repo-modal.open, #wtdel-modal.open { display: flex; }
-#trust-modal .box, #repo-modal .box, #wtdel-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-#trust-modal h3, #repo-modal h3, #wtdel-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
-#trust-modal p, #repo-modal p, #wtdel-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
-#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions { justify-content: flex-end; }
+#trust-modal, #repo-modal, #wtdel-modal, #fresh-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open, #repo-modal.open, #wtdel-modal.open, #fresh-modal.open { display: flex; }
+#trust-modal .box, #repo-modal .box, #wtdel-modal .box, #fresh-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3, #repo-modal h3, #wtdel-modal h3, #fresh-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p, #repo-modal p, #wtdel-modal p, #fresh-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions, #fresh-modal .actions { justify-content: flex-end; }
 #obs-btn { display: none; align-items: center; gap: 6px; }
 #obs-modal, #cl-modal { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #obs-modal.open, #cl-modal.open { display: flex; }
@@ -236,6 +236,15 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
+.card .fresh { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
+.card .fresh .btn { padding: 2px 8px; font-size: calc(12px * var(--ts)); }
+.fit { border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); }
+.fit.bad { border-color: var(--wait); color: var(--wait); }
+.fresh-est { flex-basis: 100%; color: var(--muted); }
+#fresh-modal textarea { width: 100%; min-height: 80px; margin: 6px 0 10px; box-sizing: border-box; font: inherit; }
+#fresh-modal .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+#fresh-msg { color: var(--muted); }
+#fresh-msg.err { color: #c0392b; }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: calc(12px * var(--ts)); }
 #d-log li .msg { white-space: pre-wrap; }
@@ -698,6 +707,15 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <p id="wtdel-text"></p>
   <ul id="wtdel-list"></ul>
   <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
+</div></div>
+<div id="fresh-modal" role="dialog" aria-modal="true" aria-labelledby="fresh-title"><div class="box">
+  <h3 id="fresh-title">New task from this</h3>
+  <p>Claude writes a short summary of this card's work, and a new card starts from it.</p>
+  <label for="fresh-text">What should the new task do?</label>
+  <textarea id="fresh-text" placeholder="Optional"></textarea>
+  <label class="toggle"><input type="checkbox" id="fresh-close"> Close the old session</label>
+  <p id="fresh-msg" role="status"></p>
+  <div class="actions"><button class="btn" id="fresh-no">Cancel</button><button class="btn primary" id="fresh-yes">Create</button></div>
 </div></div>
 <div id="busy" role="alertdialog" aria-modal="true" aria-live="assertive"><div class="box"><span id="busy-icon"></span><span id="busy-text"></span></div></div>
 <div id="obs-modal" role="dialog" aria-modal="true" aria-labelledby="obs-title"><div class="box">
@@ -1245,12 +1263,15 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
-    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
+    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}
+    ${freshRow(t, ag)}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
   const rv = el.querySelector(".review");
   if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(t); });
+  const fr = el.querySelector(".fresh .btn");
+  if (fr) fr.addEventListener("click", (e) => { e.stopPropagation(); openFresh(t); });
   const tw = el.querySelector(".twisty");
   if (tw) tw.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapsed(t.id); });
   return el;
@@ -1523,6 +1544,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && trustOpen()) closeTrust(true);
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
+  else if (e.key === "Escape" && freshOpen()) closeFresh();
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
@@ -1587,6 +1609,60 @@ function tickCache() {
   if (o && o.agent && agents[o.id]) renderCacheNote(agents[o.id]);
 }
 setInterval(tickCache, 15000);
+// Cold cache: the server sends fresh_start (fit, reasons, token estimates) so a follow-up card can start from a recap.
+const freshOk = (ag) => useServer && !!(ag && ag.fresh_start) && ag.phase !== "working" && ag.phase !== "gone";
+function freshRow(t, ag) {
+  if (!freshOk(ag)) return "";
+  const f = ag.fresh_start, good = f.fit === "good";
+  const fit = good ? window.t("good fit") : window.t("check first: {reasons}", { reasons: (f.reasons || []).join(", ") });
+  return `<div class="fresh"><button class="btn" title="${window.t("Claude writes a short summary of this card's work, and a new card starts from it.")}">${window.t("New task from this")}</button>
+    <span class="fit ${good ? "good" : "bad"}">${esc(fit)}</span>
+    <span class="fresh-est">${window.t("resume ~{resume} tokens · new task ~{new}", { resume: fmtTokens(f.resume_tokens || 0), new: fmtTokens(f.new_tokens || 0) })}</span></div>`;
+}
+let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
+const freshOpen = () => $("#fresh-modal").classList.contains("open");
+function openFresh(t) {
+  const f = (agents[t.id] && agents[t.id].fresh_start) || {};
+  freshFor = t.id;
+  $("#fresh-text").value = "";
+  $("#fresh-close").checked = f.fit === "good";
+  $("#fresh-msg").textContent = ""; $("#fresh-msg").className = "";
+  $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = false;
+  $("#fresh-modal").classList.add("open");
+  $("#fresh-text").focus();
+}
+// Not while the recap is written: the server has started on it, so the new card must still be made.
+function closeFresh() { if (freshBusy) return; $("#fresh-modal").classList.remove("open"); freshFor = null; }
+async function createFresh() {
+  const id = freshFor, pid = P, text = $("#fresh-text").value.trim(), close = $("#fresh-close").checked;
+  if (!id || freshBusy) return;
+  const lock = (on) => { freshBusy = on; $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = on; };
+  lock(true);
+  $("#fresh-msg").className = ""; $("#fresh-msg").textContent = t("Writing the recap…");
+  try {
+    const res = await post("/api/agent/spawn", { p: pid, taskId: id, close });
+    lock(false);
+    if (pid !== P) { closeFresh(); setStatus(t("The board switched project, so the new task was not added"), true); return; }
+    const nt = withDelegateChoice(addTask(res.title || "", firstOpenCol()));
+    nt.tags = res.tags || [];
+    nt.notes = text ? text + "\n\n" + (res.notes || "") : res.notes || "";
+    // The old session's model, preselected on this card only (like an answer-only pick) when the picker offers it.
+    if (res.model && [...$("#d-model").options].some((o) => o.value === res.model)) answerPick[nt.id] = res.model;
+    touch(nt);
+    closeFresh(); render();
+    openDetail(nt.id);
+    const c = document.querySelector(`.card[data-id="${nt.id}"]`);
+    if (c) c.scrollIntoView({ block: "nearest" });
+    setStatus(t("New task created from the recap"));
+  } catch (e) {
+    lock(false);
+    $("#fresh-msg").className = "err";
+    $("#fresh-msg").textContent = t("Could not create the task: {error}", { error: t(e.message) });
+  }
+}
+$("#fresh-no").onclick = closeFresh;
+$("#fresh-yes").onclick = createFresh;
+$("#fresh-modal").addEventListener("mousedown", (e) => { if (e.target.id === "fresh-modal") closeFresh(); });
 // The Review / In Progress column: found by its role, so renaming it keeps it working; by name on old boards.
 function colRole(role, cols = state.columns) {
   if (!cols.some((c) => c.role === role)) return cols.find((c) => !c.done && ROLE_NAMES[role].test(c.name));
@@ -1624,13 +1700,15 @@ let codexList = CODEX_MODELS;
 let clis = { claude: true, codex: false };   // which CLIs the server found (older server: assume Claude)
 // Answer only starts on a cheap model: Haiku when Claude Code is installed, else Codex's Luna.
 // A pick made on an answer-only card stays on that card only, so it does not change the saved default.
+// A card made by New task from this starts here too, with the old session's model.
 const answerPick = {};
 const answerModel = () => clis.claude ? "haiku" : (codexList.find((m) => /luna/i.test(m.id)) || {}).id || "";
 function sendModel(t) {
   let saved = "";
   try { saved = localStorage.getItem("taskboard.model") || ""; } catch (e) {}
+  if (t && t.id in answerPick) return answerPick[t.id];
   if (!t || !t.answerOnly) return saved;
-  return t.id in answerPick ? answerPick[t.id] : answerModel() || saved;
+  return answerModel() || saved;
 }
 const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
 // The session's family: the card's agent once sent, else the session model picker.
@@ -1680,7 +1758,7 @@ function renderAgent(t) {
   model.disabled = !useServer;
   model.value = sendModel(t);
   model.onchange = () => {
-    if (t.answerOnly) answerPick[t.id] = model.value;
+    if (t.answerOnly || t.id in answerPick) answerPick[t.id] = model.value;
     else try { localStorage.setItem("taskboard.model", model.value); } catch (e) {}
     sendLabel();
   };

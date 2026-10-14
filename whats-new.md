@@ -2,6 +2,7 @@
 
 ## 2026-10-14
 
+- A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.
 - When you press Send to Claude, the card now moves and shows it is sending right away. Its name and tags fill in a moment later, so it no longer looks stuck.
 - If you write to Claude just as it finishes a task, the card now shows it working again while it does what you asked, instead of saying it is ready to merge.
 - A task you leave without a name now gets a short name that says what it is about, written by Claude from what you wrote, instead of "Untitled".
