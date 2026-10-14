@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-14
+
+- A card no longer shows the Review code button once a review was already started, or once its work was merged. It comes back after you send a new message.
+
 ## 2026-10-13
 
 - When you scroll down a long column, like Done, it now stays where you left it instead of jumping back to the top a few seconds later.
