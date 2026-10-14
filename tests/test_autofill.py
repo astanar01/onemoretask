@@ -93,6 +93,42 @@ const post = (url, body) => { calls++; return new Promise((r) => (resolveCall = 
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
     check("Send waits for the running call; Untitled meanwhile; Claude's title after",
           got, ["Untitled", True, 1, "Fix column scroll jump"])
+
+    # Send shows "Sending" and moves the card at once; the launch itself still waits for the title.
+    send_fn = re.search(r"async function sendToClaude\(t\) \{[\s\S]*?\n}\n", src).group(0)
+    harness = """
+let calls = [], openId = null, resolveCall, boardGen = 0, rev = 1, saving = false, P = "p", pending = [];
+const card = { id: "a", title: "", tags: [], notes: "Fix the scroll. It jumps.", agent: null, column: "todo" };
+const task = (id) => (id === "a" ? card : null), touch = () => {}, render = () => {}, tagSuggestions = () => [];
+const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCodexModel = () => false, setStatus = () => {};
+const addPending = (t, status, message) => { const m = { status, message, state: "sending" }; pending.push(m); return m; };
+const dropPending = () => {}, refreshAgent = () => {}, renderAgent = () => {}, pollAgents = async () => {}, settled = async () => {};
+const colRole = () => ({ id: "progress" }), moveTask = (id, col) => { card.column = col; }, now = () => 0;
+const post = (url, body) => { calls.push(url); return url === "/api/autofill"
+  ? new Promise((r) => (resolveCall = () => r({ title: "Fix column scroll jump", tags: ["bug"] })))
+  : Promise.resolve({ id: "s1" }); };
+""" + fn + send_fn + """
+(async () => {
+  const send = sendToClaude(card);
+  await new Promise((r) => setTimeout(r, 0));
+  const before = [card.column, pending.length, calls.slice()];
+  resolveCall(); await send;
+  console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));
+})();
+"""
+    out = subprocess.run([node, "-e", harness], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("Send moves the card and shows Sending before the title comes; launches after it",
+          got, [["progress", 1, ["/api/autofill"]], ["/api/autofill", "/api/agent"], "Fix column scroll jump", ["bug"], "s1"])
+
+    # Another window's board swapped in while the title was coming (the move not on disk yet): Send still launches.
+    reload = (harness.replace("resolveCall(); await send;", 'boardGen++; card.column = "todo"; resolveCall(); await send;')
+                     .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",
+                              "console.log(JSON.stringify([calls, card.column, card.agent && card.agent.id]));"))
+    out = subprocess.run([node, "-e", reload], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("A board reload during the title wait does not stop Send; the card goes back to In Progress",
+          got, [["/api/autofill", "/api/agent"], "progress", "s1"])
 else:
     print("skip autoFill: no node")
 

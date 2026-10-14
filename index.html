@@ -2325,7 +2325,6 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   const model = $("#d-model").value;   // read before the wait below: another card may be open by then
-  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) { setStatus(window.t("Making a title and tags…")); await autoFill(t); t = task(t.id) || t; }
   const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
@@ -2334,6 +2333,12 @@ async function sendToClaude(t) {
   const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); if (openId === t.id) $("#d-col").value = t.column;
+  // The launch needs the title (session name, branch), so it waits for Claude's title and tags; the card fills them in when they come.
+  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) {
+    await autoFill(t); t = task(t.id) || t;
+    // Another window's board may have been swapped in meanwhile, without the move: move the card again.
+    if (prog && task(t.id) && t.column !== prog.id) { moveTask(t.id, prog.id, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
+  }
   const gen = boardGen;
   await settled();   // server builds the prompt from tasks.json
   if (boardGen !== gen) {
