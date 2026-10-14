@@ -1574,8 +1574,10 @@ function canFinish(t) {
 const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
 // The card's own Review code button (the panel keeps it): not once a review was started since the last message,
 // nor once a merge was asked or the worktree is gone (merged or removed; a later reply makes a fresh one).
+// Run app makes no new work, so it does not count as a message here (reviewing() must still count it for the chip).
+const reviewedLast = (ag) => { const e = (ag.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status) && !/^Run app from worktree/.test(x.message || "")); return !!(e && e.status === "review"); };
 const mergeAsked = (t, ag) => (!!t.agent.worktree && !ag.worktree) || /^Merge worktree/.test(((ag.log || []).findLast((x) => x.from === "you" && x.status !== "note") || {}).message || "");
-const cardReview = (t) => canReview(t) && !reviewing(agents[t.id]) && !mergeAsked(t, agents[t.id]);
+const cardReview = (t) => canReview(t) && !reviewedLast(agents[t.id]) && !mergeAsked(t, agents[t.id]);
 // Needs t.agent.worktree (the launch made one) and agents[].worktree (its folder still exists, i.e. not merged yet).
 const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].worktree;
 // "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.

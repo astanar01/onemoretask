@@ -2,7 +2,7 @@
 
 ## 2026-10-14
 
-- A card no longer shows the Review code button once a review was already started, or once its work was merged. It comes back after you send a new message.
+- A card no longer shows the Review code button once a review was already started, or once its work was merged. It comes back after you send a new message, but not when you only try the app.
 
 ## 2026-10-13
 
