@@ -1245,7 +1245,7 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
-    ${canReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
+    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const td = el.querySelector(".to-done");
   if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
@@ -1603,6 +1603,12 @@ function canFinish(t) {
 // A finished task in Review that made a commit (its card names the sha) can be handed to a fresh reviewer
 // session (server: review()). An "Answer only" task gets the button once a later reply had it commit.
 const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
+// The card's own Review code button (the panel keeps it): not once a review was started since the last message,
+// nor once a merge was asked or the worktree is gone (merged or removed; a later reply makes a fresh one).
+// Run app makes no new work, so it does not count as a message here (reviewing() must still count it for the chip).
+const reviewedLast = (ag) => { const e = (ag.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status) && !/^Run app from worktree/.test(x.message || "")); return !!(e && e.status === "review"); };
+const mergeAsked = (t, ag) => (!!t.agent.worktree && !ag.worktree) || /^Merge worktree/.test(((ag.log || []).findLast((x) => x.from === "you" && x.status !== "note") || {}).message || "");
+const cardReview = (t) => canReview(t) && !reviewedLast(agents[t.id]) && !mergeAsked(t, agents[t.id]);
 // Needs t.agent.worktree (the launch made one) and agents[].worktree (its folder still exists, i.e. not merged yet).
 const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].worktree;
 // "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.
