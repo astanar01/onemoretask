@@ -1559,6 +1559,58 @@ def cache_info(session_id):
     return info
 
 
+FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
+TIMER_TOOLS = ("ScheduleWakeup", "Monitor", "CronCreate")
+_fresh_memo = {}  # transcript path -> ((mtime, size, card log length), result)
+
+
+def fresh_start(t, log, session_id, info):
+    """For a cold cache (info = cache_info): is a new card from a recap as good as resuming?
+    {"fit": "good"|"bad", "reasons": [...], "resume_tokens": what a resume re-writes, "new_tokens": a new card's}."""
+    path = transcript_path(session_id)
+    if not path or not info:
+        return None
+    st = os.stat(path)
+    key = (st.st_mtime, st.st_size, len(log))
+    memo = _fresh_memo.get(path)
+    if memo and memo[0] == key:
+        return memo[1]
+    uses = [c for e in transcript_tail(path) if e.get("type") == "assistant"
+            for c in (e.get("message") or {}).get("content") or []
+            if isinstance(c, dict) and c.get("type") == "tool_use" and isinstance(c.get("input"), dict)]
+
+    def last_bash(pattern):
+        return max((i for i, u in enumerate(uses) if u.get("name") == "Bash"
+                    and re.search(pattern, str(u["input"].get("command") or ""))), default=-1)
+
+    reasons = []
+    claude = [e for e in log if e.get("from") == "claude"]
+    if claude and claude[-1].get("status") == "question":
+        reasons.append("open question")
+    if any(u.get("name") in TIMER_TOOLS for u in uses[last_bash(r"report\.py") + 1:]):
+        reasons.append("waiting on a timer")
+    wt = live_worktree(t)
+    if wt and git_try(wt["path"], "status", "--porcelain"):
+        reasons.append("uncommitted work in the worktree")
+    if wt and git_try(wt["path"], "rev-list", f"{wt.get('base') or 'main'}..HEAD"):
+        reasons.append("unmerged commits in the worktree")
+    edited = dict.fromkeys(u["input"].get("file_path") for u in uses[last_bash(r"\bgit\b.*\bcommit\b") + 1:]
+                           if u.get("name") in ("Edit", "Write") and u["input"].get("file_path"))
+    if any(_tracked(f) for f in edited):
+        reasons.append("edits after the last commit")
+    out = {"fit": "bad" if reasons else "good", "reasons": reasons, "resume_tokens": info.get("tokens") or 0,
+           "new_tokens": FRESH_START_TOKENS}
+    _fresh_memo[path] = (key, out)
+    return out
+
+
+def _tracked(f):
+    """A tracked, non-ignored file of a git repo."""
+    d = os.path.dirname(f)
+    return (os.path.isdir(d) and git_try(d, "ls-files", "--error-unmatch", "--", f) is not None
+            and git_try(d, "check-ignore", "-q", "--no-index", "--", f) is None)
+
+
 # Models with a 1M-token context window (Anthropic model table, 2026-10); other Claude models have 200k.
 WIDE_CONTEXT = re.compile(r"fable|mythos|opus-(5|4-[78])|sonnet-5|haiku-5")
 
@@ -1970,7 +2022,11 @@ class Watcher:
             except OSError:
                 cache = None
             try:
-                ctx = codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
+                fit = fresh_start(t, log, s.get("sessionId"), cache) if cache and cache["expires"] < time.time() else None
+            except OSError:
+                fit = None
+            try:
+                ctx =codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
             except OSError:
                 ctx = None
             try:
@@ -2021,7 +2077,7 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "context": ctx, "subagents": subs, "skills": used, "tokens": spent,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                       "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
@@ -2419,7 +2475,7 @@ def deliver_notes(p, task_id, info, waiting=False):
 
 
 # ---------------------------------------------------------------- done: recap, then close the sessions
-RECAP_MODEL = "sonnet"
+RECAP_MODEL = "haiku"
 CLOSE_SLOTS = threading.Semaphore(3)  # recaps written at once: many cards moved to done together queue up
 TRANSCRIPTS = "## Transcripts"  # the recap's last section, added by the board, not the model
 DIGEST_HEAD, DIGEST_TAIL, DIGEST_BLOCK = 30_000, 150_000, 4_000  # characters
@@ -2463,11 +2519,13 @@ RECAP_ASK = """Above is the record of a task done by Claude Code sessions: the t
 messages posted on its task-board card, and the sessions' conversations (tool output left out). The sessions are \
 being closed. Write the recap a NEW session will get if the task is reopened, so it can carry on without them.
 
-Markdown, at most about 700 words, these sections:
+Markdown, at most about 800 words, these sections:
 ## Goal — what was asked, in a sentence or two.
 ## Decisions — each decision made and why (options turned down too, and the user's own choices).
 ## How — what was changed and where: files, functions, commit shas, how it was tested.
 ## Results — what works and how that was checked, what was not verified, what is left open or was deferred.
+## How to run and check it — how the sessions launched, tested or screenshotted the app (commands, ports, scripts, \
+harnesses); "not recorded" if the record shows none.
 
 Use only what the record shows; say "not recorded" rather than guess. Write it in the language of the task notes. \
 Output only the recap."""
@@ -2574,23 +2632,14 @@ def archive(p, task_id):
     """A card moved to done: save a recap of its sessions' work, then remove those sessions (`claude rm` ends the
     process and deletes the job folder with its scratch files; the transcript stays). A Codex session is digested
     from its event log and removed with codex.remove (the log stays); the recap itself is still written by
-    `claude -p`. A reply to the card starts a new session from the recap (reopen)."""
-    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
-    if not t or not t.get("agent"):
-        return
-    log = reports.read(p.board, task_id)
-    since = max((i + 1 for i, e in enumerate(log) if e.get("status") == "recap"), default=0)
-    ids = ([t["agent"]["id"]] if since == 0 else []) + [e["session"] for e in log[since:] if e.get("session")]
-    listed = {s["id"]: s for s in all_sessions(p)}
-    sessions = [listed[i] for i in dict.fromkeys(ids) if i in listed]
-    if not sessions:
-        return
-    prior, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
-    recap = write_recap(p, t, [e for e in log if e.get("status") != "recap"], prior.strip(), sessions)
-    paths = [x for x in (s["log"] if is_codex(s) else transcript_path(s.get("sessionId")) for s in sessions) if x]
-    old = re.findall(r"^- (.+\.jsonl)$", listing, re.M)
-    recap += "\n\n" + TRANSCRIPTS + "\n\nFull conversations, to search for a detail the recap lacks:\n\n" + "\n".join(
-        f"- {shell_path(x)}" for x in dict.fromkeys(old + paths))
+    `claude -p`. A reply to the card starts a new session from the recap (reopen).
+    Returns recap_sessions' (t, recap, transcript paths), or None when there was nothing to close."""
+    r = recap_sessions(p, task_id)
+    if not r:
+        return None
+    t, sessions, text, paths = r
+    recap = text + "\n\n" + TRANSCRIPTS + "\n\nFull conversations, to search for a detail the recap lacks:\n\n" + \
+        "\n".join(f"- {shell_path(x)}" for x in paths)
     path = reports.recap_path(p.board, task_id)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -2610,6 +2659,42 @@ def archive(p, task_id):
             kept.append(s["id"])
     note = f"\n\n(Could not remove session{'s' if len(kept) > 1 else ''} {', '.join(kept)}.)" if kept else ""
     reports.append(p.board, task_id, "recap", recap + note, "claude")
+    return t, text, paths
+
+
+def recap_sessions(p, task_id):
+    """The card's sessions since its last recap and a fresh recap of them: (t, sessions, recap markdown, every
+    transcript path so far), or None when the card has no such session. Writes nothing."""
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    if not t or not t.get("agent"):
+        return None
+    log = reports.read(p.board, task_id)
+    since = max((i + 1 for i, e in enumerate(log) if e.get("status") == "recap"), default=0)
+    ids = ([t["agent"]["id"]] if since == 0 else []) + [e["session"] for e in log[since:] if e.get("session")]
+    listed = {s["id"]: s for s in all_sessions(p)}
+    sessions = [listed[i] for i in dict.fromkeys(ids) if i in listed]
+    if not sessions:
+        return None
+    prior, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
+    recap = write_recap(p, t, [e for e in log if e.get("status") != "recap"], prior.strip(), sessions)
+    paths = [x for x in (s["log"] if is_codex(s) else transcript_path(s.get("sessionId")) for s in sessions) if x]
+    old = re.findall(r"^- (.+\.jsonl)$", listing, re.M)
+    return t, sessions, recap, list(dict.fromkeys(old + paths))
+
+
+def spawn(p, task_id, close):
+    """The data for a follow-up card that continues this one from a recap of its sessions. `close` also archives
+    the old card (recap saved, sessions removed); otherwise the old card and its sessions are left as they are.
+    The page creates the new card itself."""
+    r = archive(p, task_id) if close else recap_sessions(p, task_id)
+    if not r:
+        raise LookupError("no Claude session for this task")
+    t, recap, paths = (r[0], r[1], r[2]) if close else (r[0], r[2], r[3])
+    notes = f'Continues the card "{t["title"]}" ({t["id"]}).\n\n{recap}'
+    if paths:
+        notes += "\n\nFull conversations: " + ", ".join(shell_path(x) for x in paths)
+    return {"ok": True, "title": "Follow-up: " + t["title"], "tags": list(t.get("tags") or []), "notes": notes,
+            "model": t["agent"].get("model") or ""}
 
 
 def reopen(p, task_id, text, images=(), handed=0):
@@ -3039,7 +3124,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         path, _ = self._route()
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
-                  "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
+                  "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy", "/api/push", "/api/autofill")
         if not self._host_ok():
@@ -3075,6 +3160,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/agent/worktree/delete":
                 delete_worktree(project(body["p"]), body["taskId"], bool(body.get("force")))
                 self._json(200, {"ok": True})
+            elif path == "/api/agent/spawn":
+                self._json(200, spawn(project(body["p"]), body["taskId"], bool(body.get("close"))))
             elif path == "/api/git/init":
                 self._json(200, init_repo(project(body["p"])))
             elif path == "/api/push":
