@@ -3,6 +3,8 @@
 ## 2026-10-14
 
 - If you write to Claude just as it finishes a task, the card now shows it working again while it does what you asked, instead of saying it is ready to merge.
+- A task you leave without a name now gets a short name that says what it is about, written by Claude from what you wrote, instead of "Untitled".
+- A new task with no tags now gets a few tags picked by Claude from what you wrote. It reuses the tags you already have, so you don't end up with both "bug" and "bugs", or "fix" and "fixes".
 
 ## 2026-10-13
 

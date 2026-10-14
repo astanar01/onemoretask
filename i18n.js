@@ -123,6 +123,7 @@ const I18N = {
     "Claude is working here": "Claude travaille ici",
     "Saving…": "Enregistrement…",
     "Saved": "Enregistré",
+    "Making a title and tags…": "Création du titre et des étiquettes…",
     "Save failed: {error}": "Échec de l’enregistrement : {error}",
     "The board changed in another window, so it was reloaded. Please redo your last change.": "Le tableau a changé dans une autre fenêtre, il a donc été rechargé. Veuillez refaire votre dernière modification.",
     "Rename column": "Renommer la colonne",

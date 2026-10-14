@@ -1343,13 +1343,44 @@ function openDetail(id) {
 }
 function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
-// A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets "Untitled".
+// One Claude call names an untitled task and tags an untagged one from its notes, reusing the board's tags (the
+// server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
+// it when Claude fails. Returns once Claude answered or failed; a title or tags the user typed meanwhile are kept.
+// One call per card at a time: a second caller (Send right after the title box lost focus) waits for the running one.
+const autoFilling = new Map();
+function autoFill(t) {
+  if (!autoFilling.has(t.id)) autoFilling.set(t.id, autoFillOnce(t).finally(() => autoFilling.delete(t.id)));
+  return autoFilling.get(t.id);
+}
+async function autoFillOnce(t) {
+  const wantTitle = !t.title.trim(), wantTags = !t.tags.length && !t.agent && !!t.notes.trim();
+  const first = wantTitle ? "Untitled" : t.title;
+  if (wantTitle) { t.title = first; touch(t); if (openId === t.id) $("#d-title").value = first; }
+  if (!t.notes.trim() || (!wantTitle && !wantTags)) return;
+  try {
+    const res = await post("/api/autofill", { notes: t.notes, title: wantTitle, tags: wantTags, known: wantTags ? tagSuggestions(t, 80) : [] });
+    const cur = task(t.id);
+    if (!cur) return;
+    let changed = false;
+    if (wantTitle && res.title && cur.title === first) {
+      cur.title = res.title; changed = true;
+      if (openId === cur.id && $("#d-title").value === first) $("#d-title").value = cur.title;
+    }
+    if (wantTags && res.tags?.length && !cur.tags.length) {
+      cur.tags = res.tags; changed = true;
+      if (openId === cur.id && !$("#d-tags").value.trim()) { $("#d-tags").value = cur.tags.join(", "); renderTagSuggestions(cur); }
+    }
+    if (changed) { touch(cur); render(); }
+  } catch (e) { /* no server or no Claude: "Untitled" stays, no tags */ }
+}
+
+// A fresh "+ Add task" draft closed with nothing in it vanishes; with content it gets a title and tags from its notes if it lacks them.
 function settleDraft() {
   const t = draftId && task(draftId);
   draftId = null;
-  if (!t || t.title.trim()) return;
-  if (!t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
-  else { t.title = "Untitled"; touch(t); }
+  if (!t) return;
+  if (!t.title.trim() && !t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
+  else autoFill(t);
 }
 
 function renderDetail() {
@@ -1410,7 +1441,7 @@ function renderDetail() {
 
 $("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value.replace(/\n/g, " "); touch(t); });
 $("#d-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });   // one-line title in a wrapping box
-$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = "Untitled"; e.target.value = t.title; touch(t); } });
+$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) autoFill(t); });
 $("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); renderTagSuggestions(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
@@ -2287,14 +2318,16 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
-  const nm = isCodexModel($("#d-model").value) ? "Codex" : "Claude";
+  const model = $("#d-model").value;   // read before the wait below: another card may be open by then
+  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) { setStatus(window.t("Making a title and tags…")); await autoFill(t); t = task(t.id) || t; }
+  const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
-  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);
+  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
   refreshAgent(t);
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
-  render(); $("#d-col").value = t.column;
+  render(); if (openId === t.id) $("#d-col").value = t.column;
   const gen = boardGen;
   await settled();   // server builds the prompt from tasks.json
   if (boardGen !== gen) {
@@ -2305,7 +2338,6 @@ async function sendToClaude(t) {
     return;
   }
   try {
-    const model = $("#d-model").value;
     const pid = P;
     const res = await post("/api/agent", { p: pid, taskId: t.id, model });
     const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
