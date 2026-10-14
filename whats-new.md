@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-14
+
+- A task you leave without a name now gets one made from the first words of what you wrote, instead of "Untitled". While the name box is empty, it shows in grey the name it will get.
+
 ## 2026-10-13
 
 - When you scroll down a long column, like Done, it now stays where you left it instead of jumping back to the top a few seconds later.
