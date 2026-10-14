@@ -2333,9 +2333,13 @@ async function sendToClaude(t) {
   const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); if (openId === t.id) $("#d-col").value = t.column;
-  const gen = boardGen;
   // The launch needs the title (session name, branch), so it waits for Claude's title and tags; the card fills them in when they come.
-  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) { await autoFill(t); t = task(t.id) || t; }
+  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) {
+    await autoFill(t); t = task(t.id) || t;
+    // Another window's board may have been swapped in meanwhile, without the move: move the card again.
+    if (prog && task(t.id) && t.column !== prog.id) { moveTask(t.id, prog.id, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
+  }
+  const gen = boardGen;
   await settled();   // server builds the prompt from tasks.json
   if (boardGen !== gen) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.

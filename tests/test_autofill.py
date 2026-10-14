@@ -120,6 +120,15 @@ const post = (url, body) => { calls.push(url); return url === "/api/autofill"
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
     check("Send moves the card and shows Sending before the title comes; launches after it",
           got, [["progress", 1, ["/api/autofill"]], ["/api/autofill", "/api/agent"], "Fix column scroll jump", ["bug"], "s1"])
+
+    # Another window's board swapped in while the title was coming (the move not on disk yet): Send still launches.
+    reload = (harness.replace("resolveCall(); await send;", 'boardGen++; card.column = "todo"; resolveCall(); await send;')
+                     .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",
+                              "console.log(JSON.stringify([calls, card.column, card.agent && card.agent.id]));"))
+    out = subprocess.run([node, "-e", reload], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("A board reload during the title wait does not stop Send; the card goes back to In Progress",
+          got, [["/api/autofill", "/api/agent"], "progress", "s1"])
 else:
     print("skip autoFill: no node")
 
