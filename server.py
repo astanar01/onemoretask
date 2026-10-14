@@ -1319,6 +1319,15 @@ def task_diff(p, task_id, path=None, sha=None):
 
 def phase_of(session, log, launched_at):
     """(phase, reason) from the CLI's session record and the card's message log."""
+    # A note sent after the done report, that Claude has since picked up (it posted again), starts new work: the
+    # old done no longer ends the turn.
+    rep = next((i for i in range(len(log) - 1, -1, -1)
+                if log[i].get("from") == "claude" and log[i].get("status") in ("done", "answer")), None)
+    if rep is not None:
+        note = next((i for i in range(rep + 1, len(log))
+                     if log[i].get("from") == "you" and log[i].get("status") == "note"), None)
+        if note is not None and any(e.get("from") == "claude" for e in log[note + 1:]):
+            log = log[note:]
     log = [e for e in log if e.get("status") != "note"]  # a note sent mid-work changes nothing about the turn
     # A progress note sent after the done report (a quick correction) does not undo the done.
     end = len(log)

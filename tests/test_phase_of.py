@@ -1,4 +1,5 @@
-"""A progress note sent right after the done report must not turn a finished card into "Stopped after a progress note".
+"""A progress note sent right after the done report must not turn a finished card into "Stopped after a progress note",
+and a card note Claude picks up after its done report must show it working again.
 
 Run: python3 tests/test_phase_of.py  (stdlib only; a fresh temp HOME, no session calls)."""
 import os
@@ -21,9 +22,9 @@ def entry(frm, status, msg="m"):
 fails = 0
 
 
-def check(name, log, want_phase, want_reason=None):
+def check(name, log, want_phase, want_reason=None, session=BLOCKED):
     global fails
-    phase, reason = server.phase_of(BLOCKED, log, 0)
+    phase, reason = server.phase_of(session, log, 0)
     ok = phase == want_phase and (want_reason is None or reason == want_reason)
     fails += not ok
     print(("PASS" if ok else "FAIL"), name, "->", phase, repr(reason[:70]))
@@ -38,6 +39,17 @@ check("answer then two progress", [entry("claude", "answer", "A"), entry("claude
 check("progress only", [entry("you", "reply"), entry("claude", "progress")], "needs_you")
 check("old done, reply, progress", [entry("claude", "done"), entry("you", "reply"), entry("claude", "progress")], "needs_you")
 check("question then progress", [entry("claude", "question"), entry("claude", "progress")], "needs_you")
+
+# A note sent as Claude finished, that it then works on (the real no-title card): the old done must not end the turn.
+BUSY = {"id": "s1", "state": "working", "status": "busy"}
+NOTE_RUN = [entry("you", "reply"), entry("claude", "done", "Old"), entry("you", "note"), entry("claude", "progress")]
+check("done, note, progress, busy", NOTE_RUN, "working", session=BUSY)
+check("done, note, progress, stopped", NOTE_RUN, "needs_you")
+check("done, note, progress, new done", NOTE_RUN + [entry("claude", "done", "New")], "finished", "New", session=BUSY)
+# Negative controls: a note Claude has not picked up yet leaves the done as it was (the watcher handles delivery).
+check("done, note, nothing yet", [entry("claude", "done", "Old"), entry("you", "note")], "finished", "Old", session=BUSY)
+check("note before done", [entry("you", "note"), entry("claude", "done", "Old"), entry("claude", "progress")],
+      "finished", "Old", session=BUSY)
 
 print("ALL PASS" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

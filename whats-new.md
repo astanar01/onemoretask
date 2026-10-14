@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-14
+
+- If you write to Claude just as it finishes a task, the card now shows it working again while it does what you asked, instead of saying it is ready to merge.
+
 ## 2026-10-13
 
 - When you scroll down a long column, like Done, it now stays where you left it instead of jumping back to the top a few seconds later.
