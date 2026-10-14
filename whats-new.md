@@ -2,7 +2,7 @@
 
 ## 2026-10-14
 
-- A task you leave without a name now gets one made from the first words of what you wrote, instead of "Untitled". While the name box is empty, it shows in grey the name it will get.
+- A task you leave without a name now gets a short name that says what it is about, written by Claude from what you wrote, instead of "Untitled".
 
 ## 2026-10-13
 

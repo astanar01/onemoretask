@@ -1350,17 +1350,29 @@ function titleFromNotes(notes) {
   if (s.length > 60) s = s.slice(0, 60).replace(/\s+\S*$/, "").replace(/[\s.:;,]+$/, "") + "…";
   return s ? s[0].toUpperCase() + s.slice(1) : "";
 }
-function autoTitle(t) { return titleFromNotes(t.notes) || "Untitled"; }
-// The empty title box previews the title the notes would give.
-function syncTitleHint(t) { $("#d-title").placeholder = titleFromNotes(t.notes) || window.t("Task title"); }
+// An untitled task gets the notes' first sentence at once, then Claude's title for what the notes are about.
+// Returns once Claude answered or failed; a title the user typed meanwhile is kept.
+async function autoTitle(t) {
+  const first = titleFromNotes(t.notes) || "Untitled";
+  t.title = first; touch(t);
+  if (openId === t.id) $("#d-title").value = t.title;
+  if (!t.notes.trim()) return;
+  try {
+    const { title } = await post("/api/title", { notes: t.notes });
+    const cur = task(t.id);
+    if (!title || !cur || cur.title !== first) return;
+    cur.title = title; touch(cur); render();
+    if (openId === cur.id && document.activeElement !== $("#d-title")) $("#d-title").value = cur.title;
+  } catch (e) { /* no server or no Claude: the first sentence stays */ }
+}
 
-// A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets one from its notes.
+// A fresh "+ Add task" draft closed with nothing in it vanishes; with content but no title it gets one made from its notes.
 function settleDraft() {
   const t = draftId && task(draftId);
   draftId = null;
   if (!t || t.title.trim()) return;
   if (!t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
-  else { t.title = autoTitle(t); touch(t); }
+  else autoTitle(t);
 }
 
 function renderDetail() {
@@ -1376,7 +1388,6 @@ function renderDetail() {
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
-  syncTitleHint(t);
   $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(window.t(c.name))}</option>`).join("");
   $("#d-col").value = t.column;
   $("#d-prio").value = t.priority;
@@ -1422,8 +1433,8 @@ function renderDetail() {
 
 $("#d-title").addEventListener("input", (e) => { const t = task(openId); t.title = e.target.value.replace(/\n/g, " "); touch(t); });
 $("#d-title").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });   // one-line title in a wrapping box
-$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) { t.title = autoTitle(t); e.target.value = t.title; touch(t); } });
-$("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); syncTitleHint(t); });
+$("#d-title").addEventListener("blur", (e) => { const t = task(openId); if (t && t.id !== draftId && !t.title.trim()) autoTitle(t); });
+$("#d-notes").addEventListener("input", (e) => { const t = task(openId); t.notes = e.target.value; touch(t); });
 $("#d-tags").addEventListener("input", (e) => { const t = task(openId); t.tags = parseTags(e.target.value); touch(t); renderTagSuggestions(t); });
 $("#d-prio").addEventListener("change", (e) => { const t = task(openId); t.priority = e.target.value; touch(t); });
 $("#d-delegate").addEventListener("change", (e) => {
@@ -2299,7 +2310,7 @@ $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "rep
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
-  if (!t.title.trim()) { t.title = autoTitle(t); touch(t); if (openId === t.id) $("#d-title").value = t.title; }
+  if (!t.title.trim()) { setStatus(window.t("Making a title…")); await autoTitle(t); }
   const nm = isCodexModel($("#d-model").value) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + ($("#d-model").value ? ` (${$("#d-model").value})` : ""), []);

@@ -2486,6 +2486,28 @@ def write_recap(p, t, log, prior, sessions):
     return text
 
 
+TITLE_MODEL = "haiku"
+TITLE_ASK = """Above are the notes of a task-board card that has no title. Write its title: 3 to 8 words saying what \
+the task is about (the thing to do or fix), not the first words of the notes. Same language as the notes. No quotes, \
+no ending period. Output only the title."""
+
+
+def make_title(notes):
+    """Ask Claude for a short title that says what the notes are about."""
+    r = run_claude(["-p", "--model", TITLE_MODEL, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                    "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
+                    TITLE_ASK], input=notes[:6000], cwd=tempfile.gettempdir(), timeout=90)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        out = {}
+    text = (out.get("result") or "").strip()
+    if r.returncode != 0 or out.get("is_error") or not text:
+        raise RuntimeError((text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}")
+    title = text.splitlines()[0].strip().strip("\"'“”*#` ").rstrip(".").strip()
+    return title[:80]
+
+
 def archive(p, task_id):
     """A card moved to done: save a recap of its sessions' work, then remove those sessions (`claude rm` ends the
     process and deletes the job folder with its scratch files; the transcript stays). A Codex session is digested
@@ -2957,7 +2979,7 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update", "/api/app-copy", "/api/push")
+                  "/api/update", "/api/app-copy", "/api/push", "/api/title")
         if not self._host_ok():
             return
         if path not in routes:
@@ -3010,6 +3032,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True, "restarting": True})
                 self.wfile.flush()
                 threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+            elif path == "/api/title":
+                self._json(200, {"title": make_title(body.get("notes") or "")})
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
