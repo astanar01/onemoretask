@@ -4,7 +4,8 @@
 
 - The little tag on each card now has its own color for what Claude is doing: working, checking the work, writing the recap, merging, waiting for you, finished or gone. Writing the recap and merging now say so in words too.
 - A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
-- In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone. The new task always lands in To Do, and you see it there even when the filter hides To Do.
+- In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone. The new task always lands in To Do, and you see it there even while you search.
+- In the list, the Filter button is gone. To find tasks, type in the search box at the top.
 - In the list view, the list of tasks is now half as wide, so the open task gets more room. Long names get cut short with "…" instead of spilling out.
 - When Claude asks you to pick, the choices are now buttons: click one to answer, or type your own. When Claude picks for itself, a check mark shows its choice.
 - Turn on Notifications in the View menu to get normal pop-ups from your browser when Claude needs you or is done. Click one to open that card. With the board open in many tabs, you still get just one pop-up, and the board stays quick. The odd "Script Editor" pop-ups are gone.

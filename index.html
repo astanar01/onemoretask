@@ -177,21 +177,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #board.list { flex: 1 1 auto; width: var(--list-w); flex-direction: column; gap: 0; padding: 0; overflow: hidden; align-items: stretch; min-height: 0; border-right: 1px solid var(--line); }
 .ltop { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 4px 20px; }
 .lnew { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-.lfbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.lfbtn[aria-expanded="true"], .lfbtn.on { color: var(--text); border-color: var(--accent); }
-.lfbtn .n { background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: calc(11px * var(--ts)); font-weight: 600; }
-.lfpanel { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 4px 16px 6px 20px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; max-height: 45%; overflow-y: auto; flex: none; }
-.lfpanel[hidden] { display: none; }
-.lf h4 { margin: 0 0 4px 6px; font-size: calc(11px * var(--ts)); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.lopts { display: flex; flex-direction: column; gap: 1px; }
-.lopts.wrap { flex-direction: row; flex-wrap: wrap; gap: 5px; padding-left: 6px; }
-.lf:has(.wrap) { flex-basis: 100%; }
-.lchip { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 6px; cursor: pointer; user-select: none; }
-.lchip:hover { background: var(--col); }
-.lchip input { margin: 0; accent-color: var(--accent); }
-.ltag { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 4px; padding: 1px 7px; font-size: calc(12px * var(--ts)); }
-.ltag:hover { border-color: var(--accent); }
-.ltag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .lmain { flex: 1; overflow-y: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 20px 20px; }
 .lgrp { display: flex; flex-direction: column; gap: 10px; }
 .lgrp-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; }
@@ -228,7 +213,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 @media (max-width: 640px) {
   #board.list { width: 100%; border-right: 0; }
   .ltop { padding: 10px 12px 4px; }
-  .lfpanel { margin: 4px 12px 6px; }
   .lmain { padding: 4px 12px 16px; }
   .lcard .tags { display: none; }
 }
@@ -1200,10 +1184,9 @@ function toggleCollapsed(id) {
   render();
 }
 
-// Board or list layout: per-browser like `collapsed`. The list's filters live only in this page.
+// Board or list layout: per-browser like `collapsed`.
 let view = "board";
 try { if (localStorage.getItem(LS_KEY + ":view") === "list") view = "list"; } catch (_) {}
-const lf = { cols: new Set(), prios: new Set(), tags: new Set(), running: false };   // hidden columns and priorities; tags = only these (none = all)
 
 // Unsent reply text per card (one shared textarea), kept in this browser across reloads.
 // Read fresh on every use: another board tab may have saved its own drafts since.
@@ -1432,9 +1415,7 @@ function addCardEl(col) {
 // No drag and drop here: cards open the task panel, cards change column the same ways as on the board.
 const lfold = new Set();   // columns folded in the list, per browser
 try { JSON.parse(localStorage.getItem(LS_KEY + ":lfold") || "[]").forEach((id) => lfold.add(id)); } catch (_) {}
-let lfOpen = false;        // the Filter panel is shown
 const LICO = {
-  funnel: `<path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/>`,
   plus: `<path d="M12 5v14M5 12h14"/>`,
   chat: `<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/>`,
 };
@@ -1446,12 +1427,11 @@ function renderList() {
   queueMicrotask(tickCache);
   const board = $("#board");
   board.classList.add("list");
-  let rail = board.querySelector(".lfpanel"), main = board.querySelector(".lmain");
-  if (!rail || !main) {
-    board.innerHTML = `<div class="ltop"><button type="button" class="btn primary lnew">${licon("plus", 14)}<span>${t("Create new task")}</span></button><button type="button" class="btn lfbtn">${licon("funnel", 14)}<span>${t("Filter")}</span><span class="n" hidden></span></button></div><div class="lfpanel" hidden></div><div class="lmain"></div>`;
-    rail = board.querySelector(".lfpanel"); main = board.querySelector(".lmain");
-    board.querySelector(".lfbtn").onclick = () => { lfOpen = !lfOpen; render(); };
-    // To Do = the open column with no role (In Progress / Review have one). The draft shows there even under a filter.
+  let main = board.querySelector(".lmain");
+  if (!main) {
+    board.innerHTML = `<div class="ltop"><button type="button" class="btn primary lnew">${licon("plus", 14)}<span>${t("Create new task")}</span></button></div><div class="lmain"></div>`;
+    main = board.querySelector(".lmain");
+    // To Do = the open column with no role (In Progress / Review have one). The draft shows there even under a search.
     board.querySelector(".lnew").onclick = () => {
       settleDraft();
       const col = (state.columns.find((c) => !c.done && !c.role) || { id: firstOpenCol() }).id;
@@ -1460,33 +1440,14 @@ function renderList() {
       render(); openDetail(t.id);
     };
   }
-  // Polls render often: the filters are rebuilt only when their choices change and nobody is using them.
-  const tags = listTags();
-  for (const k of lf.tags) if (!tags.some((g) => g.toLowerCase() === k)) lf.tags.delete(k);
-  const sig = JSON.stringify([LANG, state.columns.map((c) => [c.id, c.name]), tags]);
-  if (rail.dataset.sig !== sig && !rail.contains(document.activeElement)) { buildRail(rail, tags); rail.dataset.sig = sig; }
-  rail.hidden = !lfOpen;
-  const nf = lf.cols.size + lf.prios.size + lf.tags.size + (lf.running ? 1 : 0), fb = board.querySelector(".lfbtn"), fn = fb.querySelector(".n");
-  fb.setAttribute("aria-expanded", lfOpen); fb.classList.toggle("on", !!nf);
-  fn.hidden = !nf; fn.textContent = nf;
-
   const q = $("#search").value.trim().toLowerCase();
   const showSubs = $("#show-subs").checked;
-  const narrowed = !!(q || lf.prios.size || lf.tags.size || lf.running);
-  const pass = (x) => {
-    const ag = x.agent && agents[x.id];
-    return x.id === draftId || matches(x, q) && !lf.prios.has(x.priority || "")
-      && (!lf.tags.size || (x.tags || []).some((g) => lf.tags.has(g.toLowerCase())))
-      && (!lf.running || !!(ag && (ag.phase === "working" || ag.phase === "needs_you")));
-  };
+  const pass = (x) => x.id === draftId || matches(x, q);
   const y = main.scrollTop;
   main.innerHTML = "";
   for (const col of state.columns) {
-    // A hidden group still shows the new task just made, alone.
-    const hid = lf.cols.has(col.id);
-    if (hid && !(draftId && (task(draftId) || {}).column === col.id)) continue;
-    const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && (hid ? x.id === draftId : pass(x))).sort((a, b) => a.order - b.order);
-    if (!rows.length && narrowed) continue;
+    const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && pass(x)).sort((a, b) => a.order - b.order);
+    if (!rows.length && q) continue;
     const shown = new Set(rows.map((x) => x.id));
     const sec = document.createElement("section"), shut = lfold.has(col.id);
     sec.className = "lgrp" + (shut ? " folded" : "");
@@ -1503,49 +1464,9 @@ function renderList() {
   }
   if (!main.children.length) {
     main.innerHTML = `<div class="lempty"><span>${t("No tasks match these filters.")}</span><button class="btn">${t("Clear filters")}</button></div>`;
-    main.querySelector("button").onclick = () => {
-      lf.cols.clear(); lf.prios.clear(); lf.tags.clear(); lf.running = false;
-      $("#search").value = ""; rail.dataset.sig = ""; render();
-    };
+    main.querySelector("button").onclick = () => { $("#search").value = ""; render(); };
   }
   main.scrollTop = y;
-}
-
-// The board's tags, most used first.
-function listTags() {
-  const count = new Map();
-  for (const x of state.tasks) for (const g of x.tags || []) {
-    const k = g.toLowerCase(), c = count.get(k) || { name: g, n: 0 };
-    c.n++; count.set(k, c);
-  }
-  return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).map((c) => c.name);
-}
-
-function buildRail(rail, tags) {
-  const y = rail.scrollTop, x = rail.scrollLeft;
-  const chk = (f, label, on) => `<label class="lchip"><input type="checkbox" data-f="${esc(f)}"${on ? " checked" : ""}>${esc(label)}</label>`;
-  const prios = [["high", t("High")], ["med", t("Medium")], ["low", t("Low")], ["", t("None")]];
-  rail.innerHTML = `
-    <div class="lf"><h4>${t("Status")}</h4><div class="lopts">${state.columns.map((c) => chk("c:" + c.id, t(c.name), !lf.cols.has(c.id))).join("")}</div></div>
-    <div class="lf"><h4>${t("Priority")}</h4><div class="lopts">${prios.map(([p, n]) => chk("p:" + p, n, !lf.prios.has(p))).join("")}</div></div>
-    <div class="lf"><h4>${t("Agent")}</h4><div class="lopts">${chk("a", t("Agent running"), lf.running)}</div></div>
-    ${tags.length ? `<div class="lf"><h4>${t("Tags")}</h4><div class="lopts wrap">${tags.map((g) => {
-      const on = lf.tags.has(g.toLowerCase());
-      return `<button type="button" class="ltag${on ? " on" : ""}" aria-pressed="${on}" title="${esc(t("Show only tasks with this tag"))}">${esc(g)}</button>`;
-    }).join("")}</div></div>` : ""}`;
-  rail.querySelectorAll("input").forEach((i) => (i.onchange = () => {
-    const f = i.dataset.f, v = f.slice(2);
-    if (f === "a") lf.running = i.checked;
-    else { const s = f[0] === "c" ? lf.cols : lf.prios; i.checked ? s.delete(v) : s.add(v); }
-    render();
-  }));
-  rail.querySelectorAll(".ltag").forEach((b) => (b.onclick = () => {
-    const k = b.textContent.toLowerCase();
-    lf.tags.has(k) ? lf.tags.delete(k) : lf.tags.add(k);
-    b.classList.toggle("on", lf.tags.has(k)); b.setAttribute("aria-pressed", lf.tags.has(k));
-    render();
-  }));
-  rail.scrollTop = y; rail.scrollLeft = x;
 }
 
 function listRowEl(x, depth) {
