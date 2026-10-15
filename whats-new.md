@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- The bar at the top no longer gets squashed when the window is short. Its buttons stay whole.
 - In the list view, you can now drag the edge of the list of tasks to make it wider or narrower. Double-click the edge to put it back.
 - The little tag on each card now has its own color for what Claude is doing: working, checking the work, writing the recap, merging, waiting for you, finished or gone. Writing the recap and merging now say so in words too.
 - A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
