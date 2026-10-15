@@ -1562,6 +1562,9 @@ def cache_info(session_id):
 FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
 TIMER_TOOLS = ("ScheduleWakeup", "Monitor", "CronCreate")
 _fresh_memo = {}  # transcript path -> ((mtime, size, card log length), result)
+_QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+# `git [-C dir | -c k=v | --flag]... commit` as a command of its own (not words inside a report), env vars allowed
+_GIT_COMMIT = re.compile(r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*git(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S*)?)*\s+commit\b")
 
 
 def fresh_start(t, log, session_id, info):
@@ -1579,9 +1582,12 @@ def fresh_start(t, log, session_id, info):
             for c in (e.get("message") or {}).get("content") or []
             if isinstance(c, dict) and c.get("type") == "tool_use" and isinstance(c.get("input"), dict)]
 
-    def last_bash(pattern):
-        return max((i for i, u in enumerate(uses) if u.get("name") == "Bash"
-                    and re.search(pattern, str(u["input"].get("command") or ""))), default=-1)
+    def last_bash(pattern, unquote=False):
+        def cmd(u):
+            c = str(u["input"].get("command") or "")
+            return _QUOTED.sub("''", c) if unquote else c
+        return max((i for i, u in enumerate(uses) if u.get("name") == "Bash" and re.search(pattern, cmd(u))),
+                   default=-1)
 
     reasons = []
     claude = [e for e in log if e.get("from") == "claude"]
@@ -1594,7 +1600,7 @@ def fresh_start(t, log, session_id, info):
         reasons.append("uncommitted work in the worktree")
     if wt and git_try(wt["path"], "rev-list", f"{wt.get('base') or 'main'}..HEAD"):
         reasons.append("unmerged commits in the worktree")
-    edited = dict.fromkeys(u["input"].get("file_path") for u in uses[last_bash(r"\bgit\b.*\bcommit\b") + 1:]
+    edited = dict.fromkeys(u["input"].get("file_path") for u in uses[last_bash(_GIT_COMMIT, True) + 1:]
                            if u.get("name") in ("Edit", "Write") and u["input"].get("file_path"))
     if any(_tracked(f) for f in edited):
         reasons.append("edits after the last commit")
@@ -1877,7 +1883,7 @@ class Watcher:
             return True
 
     def _close(self, p, task_id):
-        key, notes = (p.id, task_id), []
+        key = (p.id, task_id)
         try:
             with CLOSE_SLOTS:
                 archive(p, task_id)
@@ -1885,16 +1891,23 @@ class Watcher:
                 os.remove(reports.close_path(p.board, task_id))
             except FileNotFoundError:
                 pass
-            with self.lock:
-                notes, since = reports.take_notes(p.board, task_id)
-                self.closing.discard(key)
         except Exception as e:  # noqa: BLE001 — sessions stay; moving the card to done again retries
+            self.closing.discard(key)
             print("close sessions:", e)
             self.close_failed.add(key)
             reports.append(p.board, task_id, "progress", f"Could not write the recap, so the sessions were kept: {e}",
                            "claude")
-        finally:
-            self.closing.discard(key)
+            return
+        self.hand_notes(p, task_id)
+
+    def hand_notes(self, p, task_id):
+        """The recap is saved and the sessions removed: stop turning replies into notes, and give the notes kept
+        meanwhile to a new session."""
+        with self.lock:  # one lock, so no reply slips in between
+            try:
+                notes, since = reports.take_notes(p.board, task_id)
+            finally:
+                self.closing.discard((p.id, task_id))
         if notes:
             try:
                 reopen(p, task_id, reports.notes_message(p.board, notes), handed=len(notes))
@@ -2697,9 +2710,11 @@ def spawn(p, task_id, close):
         try:
             with CLOSE_SLOTS:
                 r = archive(p, task_id)
-        finally:
+        except BaseException:
             with WATCH.lock:
                 WATCH.closing.discard(key)
+            raise
+        WATCH.hand_notes(p, task_id)
     else:
         r = recap_sessions(p, task_id)
     if not r:

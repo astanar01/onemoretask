@@ -94,6 +94,11 @@ check(r["fit"] == "good", "edit then commit: good", r)
 r = fit("edit-ignored", [bash("git commit -m x"), ("Write", {"file_path": ignored}),
                          ("Write", {"file_path": os.path.join(TMP, "scratch.txt")})])
 check(r["fit"] == "good", "ignored or out-of-repo files written after the commit: good", r)
+r = fit("commit-words", [bash("git commit -m x"), ("Edit", {"file_path": tracked}),
+                         bash("python3 report.py done 'Edited a.txt; did not git commit it yet'")])
+check(r["reasons"] == ["edits after the last commit"], "'git commit' inside a report is not a commit: bad", r)
+r = fit("commit-chained", [("Edit", {"file_path": tracked}), bash("cd /r && git add -A && git commit -m y")])
+check(r["fit"] == "good", "edit then chained git commit: good", r)
 
 wt_task = {"title": "x", "agent": {"id": "a0", "worktree": {"path": repo, "branch": "feat", "base": "main"}}}
 r = fit("wt-clean", [bash("python3 report.py done 'ok'")], t=wt_task)
@@ -154,6 +159,33 @@ check(code == 200 and r == want, "close=true: same follow-up card data", (code, 
 log = reports.read(p.board, "t1")
 check(ran == [["rm", "a0"]] and log[-1]["status"] == "recap" and os.path.exists(reports.recap_path(p.board, "t1")),
       "close=true: archived (recap saved, session removed, recap on the old card)", (ran, log[-1]))
+
+# A reply sent while spawn writes the recap becomes a note; spawn hands it to a new session once archived.
+state = server.load_tasks(p)
+state["tasks"].append({"id": "t2", "title": "Other task", "column": "review", "agent": {"id": "a2"}})
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(state, f)
+reports.append(p.board, "t2", "done", "All done.", "claude")
+transcript("s2", [bash("python3 report.py done 'ok'")])
+server.list_sessions = lambda cwd: [{"id": "a2", "sessionId": "s2", "state": "done"}]
+noted, reopened = [], []
+
+
+def recap_with_reply(*a):
+    noted.append(server.WATCH.note_if_closing(p, "t2", "wait, also do X", []))
+    return "## Goal\nOther thing."
+
+
+server.write_recap = recap_with_reply
+real_reopen, server.reopen = server.reopen, lambda p_, tid, text, images=(), handed=0: reopened.append((tid, text, handed))
+r = server.spawn(p, "t2", True)
+server.reopen = real_reopen
+check(r["ok"] and noted == [True], "spawn close: a reply during the recap is kept as a note", (r, noted))
+check(len(reopened) == 1 and reopened[0][0] == "t2" and "wait, also do X" in reopened[0][1] and reopened[0][2] == 1,
+      "spawn close: the note reopens the card in a new session", reopened)
+check(not reports.take_notes(p.board, "t2")[0] and (p.id, "t2") not in server.WATCH.closing,
+      "spawn close: no note left pending, card no longer closing", (reports.read(p.board, "t2"), server.WATCH.closing))
+server.list_sessions = lambda cwd: [{"id": "a0", "sessionId": "s0", "state": "done"}]
 
 code, r = post({"p": p.id, "taskId": "nope", "close": False})
 check(code == 404, "unknown task: 404", (code, r))
