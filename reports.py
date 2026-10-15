@@ -262,24 +262,47 @@ LANG_WORDS = {
 _NOT_PROSE = re.compile(r"```.*?```|`[^`]*`|https?://\S+|\S*[/\\]\S*", re.S)
 
 
-def guess_language(text):
+def guess_language(text, need=4):
     """The language `text` is written in, or None when it is too short or mixed to tell. Code, URLs and paths
     are ignored, so a report quoting French UI strings in backticks still reads as English."""
     words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", _NOT_PROSE.sub(" ", text.lower().replace("’", "'")))
     hits = sorted(((sum(w in ws for w in words), lang) for lang, ws in LANG_WORDS.items()), reverse=True)
     (best, lang), (second, _) = hits[0], hits[1]
-    return lang if best >= 4 and best >= 3 * second else None
+    return lang if best >= need and best >= 3 * second else None
+
+
+_QUOTED = re.compile(r'"[^"\n]*"|“[^”]*”|«[^»]*»|^>.*$', re.M)
+_PASTE = re.compile(r":[ \t]*\n")
+
+
+def user_language(text):
+    """The language of the user's own words in `text`. Quoted text is left out. Text pasted after a line ending
+    in ':' ("Translate this to English:" + a French paragraph) only counts when the line before it agrees, and
+    paragraphs in two languages mean unsure."""
+    text = _QUOTED.sub(" ", text)
+    if len({guess_language(p) for p in re.split(r"\n\s*\n|:[ \t]*\n", text)} - {None}) > 1:
+        return None
+    lang = guess_language(text)
+    head = _PASTE.split(text, maxsplit=1)
+    return None if lang and len(head) > 1 and guess_language(head[0], need=1) != lang else lang
 
 
 USER_SAYS = ("reply", "note")
+# server.handback writes the user's word on which findings to fix behind this board line, or HANDBACK_ASK when
+# they typed nothing.
+HANDBACK = "Sent the review findings back to {}: "
+HANDBACK_ASK = "Fix the findings you agree with; say which ones you skip and why."
+_HANDBACK = re.compile("^" + re.escape(HANDBACK).replace(r"\{\}", r"\w+"))
 
 
 def latest_user_text(board, task_id):
     """The user's newest message to this task: their last reply or note on the card, else the card's title and
-    notes."""
+    notes. Board-written text is left out."""
     for e in reversed(read(board, task_id)):
-        if e.get("from") == "you" and e.get("status") in USER_SAYS and e.get("message", "").strip():
-            return e["message"]
+        if e.get("from") == "you" and e.get("status") in USER_SAYS:
+            said = _HANDBACK.sub("", e.get("message", ""), count=1).strip()
+            if said and said != HANDBACK_ASK:
+                return said
     try:
         with open(os.path.join(board, "tasks.json"), encoding="utf-8") as f:
             tasks = json.load(f).get("tasks", [])
@@ -292,7 +315,7 @@ def latest_user_text(board, task_id):
 def language_mismatch(board, task_id, message):
     """(report language, user language) when a report is plainly in another language than the user's latest
     message, else None. Unsure on either side means no mismatch: a false refusal costs more than a miss."""
-    mine, theirs = guess_language(message), guess_language(latest_user_text(board, task_id))
+    mine, theirs = guess_language(message), user_language(latest_user_text(board, task_id))
     return (mine, theirs) if mine and theirs and mine != theirs else None
 
 

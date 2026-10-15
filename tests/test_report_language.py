@@ -70,5 +70,31 @@ reports.append(BOARD, TASK, "reply", "ok go", "you")
 code, out = report(FR)
 check("unguessable user message never refuses", code == 0)
 
+# Pasted or quoted text in another language is not the user's language.
+FR_PARA = ("Le joueur est dans la maison et il ne peut pas sortir. C'est une porte qui est fermée pour les enfants, "
+           "mais ce n'est pas très grave pour nous.")
+check("English ask with a pasted French paragraph is not French",
+      reports.user_language("Please translate this to English:\n\n" + FR_PARA) != "French")
+check("French ask with a pasted French paragraph reads as French",
+      reports.user_language("Traduis ce texte en anglais pour le menu :\n\n" + FR_PARA) == "French")
+check("English bug report after a colon still reads as English", reports.user_language(
+    "Here's the bug:\nThe card does not close when it is done and the button is not there. It was there before.")
+      == "English")
+check("quoted French is left out", reports.user_language(f'Can you translate "{FR_PARA}" for the menu') != "French")
+reports.append(BOARD, TASK, "reply", "Please translate this to English:\n\n" + FR_PARA, "you")
+code, out = report(EN)
+check("English report posted under an English ask with French pasted", code == 0)
+
+# The board's handback line is not the user's words: its typed part counts, the default text never does.
+reports.append(BOARD, TASK, "reply", "Peux-tu me répondre en français à partir de maintenant ? Je préfère ça pour "
+               "cette tâche, merci.", "you")
+reports.append(BOARD, TASK, "reply", reports.HANDBACK.format("Claude") + reports.HANDBACK_ASK, "you")
+code, out = report(EN)
+check("default handback falls back to the user's French reply", code != 0 and "in French" in out)
+reports.append(BOARD, TASK, "reply", reports.HANDBACK.format("Codex") + "Corrige les deux problèmes, mais ne "
+               "change pas le menu et garde le bouton dans la carte.", "you")
+check("typed handback words count without the board prefix",
+      reports.latest_user_text(BOARD, TASK).startswith("Corrige") and report(EN)[0] != 0)
+
 print("PASS" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)
