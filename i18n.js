@@ -532,7 +532,15 @@ const I18N = {
     "To Do": "À faire",
     "In Progress": "En cours",
     "Review": "Relecture",
-    "New column": "Nouvelle colonne"
+    "New column": "Nouvelle colonne",
+    "Is this task for another project?": "Cette tâche est-elle pour un autre projet ?",
+    "Keep it here and send": "La garder ici et l’envoyer",
+    "Not sent": "Non envoyée",
+    "Claude thinks this task is for {name}, not {here}.": "Claude pense que cette tâche est pour {name}, pas pour {here}.",
+    "Move to {name} and send": "Déplacer vers {name} et envoyer",
+    "the card is not on {name}'s board": "la carte n’est pas sur le tableau de {name}",
+    "Could not move the task: {error}": "Impossible de déplacer la tâche : {error}",
+    "Checking which project this task is for…": "Vérification du projet de cette tâche…"
   } /* fr-end */
 };
 

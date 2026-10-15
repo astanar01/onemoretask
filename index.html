@@ -167,12 +167,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
-#trust-modal, #repo-modal, #wtdel-modal, #fresh-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
-#trust-modal.open, #repo-modal.open, #wtdel-modal.open, #fresh-modal.open { display: flex; }
-#trust-modal .box, #repo-modal .box, #wtdel-modal .box, #fresh-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-#trust-modal h3, #repo-modal h3, #wtdel-modal h3, #fresh-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
-#trust-modal p, #repo-modal p, #wtdel-modal p, #fresh-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
-#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions, #fresh-modal .actions { justify-content: flex-end; }
+#trust-modal, #repo-modal, #wtdel-modal, #fresh-modal, #proj-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open, #repo-modal.open, #wtdel-modal.open, #fresh-modal.open, #proj-modal.open { display: flex; }
+#trust-modal .box, #repo-modal .box, #wtdel-modal .box, #fresh-modal .box, #proj-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3, #repo-modal h3, #wtdel-modal h3, #fresh-modal h3, #proj-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p, #repo-modal p, #wtdel-modal p, #fresh-modal p, #proj-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions, #fresh-modal .actions, #proj-modal .actions { justify-content: flex-end; }
 #obs-btn { display: none; align-items: center; gap: 6px; }
 #obs-modal, #cl-modal { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #obs-modal.open, #cl-modal.open { display: flex; }
@@ -705,6 +705,11 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <p id="wtdel-text"></p>
   <ul id="wtdel-list"></ul>
   <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
+</div></div>
+<div id="proj-modal" role="dialog" aria-modal="true" aria-labelledby="proj-title"><div class="box">
+  <h3 id="proj-title">Is this task for another project?</h3>
+  <p id="proj-text"></p>
+  <div class="actions"><button class="btn" id="proj-keep">Keep it here and send</button><button class="btn primary" id="proj-move"></button></div>
 </div></div>
 <div id="fresh-modal" role="dialog" aria-modal="true" aria-labelledby="fresh-title"><div class="box">
   <h3 id="fresh-title">New task from this</h3>
@@ -1397,7 +1402,7 @@ function settleDraft() {
   draftId = null;
   if (!t) return;
   if (!t.title.trim() && !t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
-  else autoFill(t);
+  else { autoFill(t); if (needsProjectCheck(t)) checkProject(t); }
 }
 
 function renderDetail() {
@@ -1541,6 +1546,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
   else if (e.key === "Escape" && freshOpen()) closeFresh();
+  else if (e.key === "Escape" && projOpen()) closeProj(true);
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
@@ -2403,8 +2409,71 @@ function askRepo(t) {
 $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
 
 
+// A card written on the wrong project's board: before Send, one Claude call compares it with every remembered
+// project. One check per card and notes text; closing a new card starts it early, so Send rarely waits.
+// Resolves to { project, why } when Claude is sure it is for another project, null when it fits here, false on failure.
+const projectChecks = new Map();
+const needsProjectCheck = (t) => useServer && projects.length > 1 && !t.projectOk && !t.agent && !t.parent
+  && !t.tags.includes("observations") && !!(t.title.trim() || t.notes.trim());
+function checkProject(t) {
+  const key = P + "\n" + (t.notes.trim() || t.title.trim()), c = projectChecks.get(t.id);
+  if (c && c.key === key) return c.run;
+  const pid = P;
+  const run = post("/api/which-project", { p: pid, taskId: t.id, title: t.title, notes: t.notes })
+    .then((r) => (r && r.project && r.project.id !== pid ? r : null), () => false);
+  projectChecks.set(t.id, { key, run });
+  return run;
+}
+const projOpen = () => $("#proj-modal").classList.contains("open");
+function closeProj(cancelled) {
+  $("#proj-modal").classList.remove("open");
+  if (cancelled) setStatus(window.t("Not sent"));
+}
+function askProject(t, other) {
+  const here = (projects.find((x) => x.id === P) || {}).name || "";
+  $("#proj-text").textContent = window.t("Claude thinks this task is for {name}, not {here}.", { name: other.project.name, here })
+    + (other.why ? " " + other.why : "");
+  $("#proj-move").textContent = window.t("Move to {name} and send", { name: other.project.name });
+  $("#proj-keep").onclick = async () => {
+    closeProj(false);
+    t = task(t.id) || t; t.projectOk = true; touch(t);
+    await sendToClaude(t);
+  };
+  $("#proj-move").onclick = async () => {
+    $("#proj-move").disabled = true;
+    try {
+      await settled();   // the server moves the card as tasks.json has it
+      await post("/api/task/move", { p: P, taskId: t.id, to: other.project.id });
+      closeProj(false);
+      projectChecks.delete(t.id);
+      await switchProject(other.project.id);
+      const moved = task(t.id);
+      if (!moved) throw new Error(window.t("the card is not on {name}'s board", { name: other.project.name }));
+      openDetail(moved.id);
+      await sendToClaude(moved);
+    } catch (e) {
+      setStatus(window.t("Could not move the task: {error}", { error: window.t(e.message) }), true);
+    } finally { $("#proj-move").disabled = false; }
+  };
+  $("#proj-modal").classList.add("open");
+  $("#proj-move").focus();
+}
+$("#proj-modal").addEventListener("mousedown", (e) => { if (e.target.id === "proj-modal") closeProj(true); });
+
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
+  if (needsProjectCheck(t)) {
+    setStatus(window.t("Checking which project this task is for…"));
+    const other = await checkProject(t);
+    t = task(t.id) || t;
+    if (other) {
+      setStatus("");
+      if (openId === t.id) renderAgent(t);
+      askProject(t, other);
+      return;
+    }
+    if (other === null) { t.projectOk = true; touch(t); }
+  }
   const model = $("#d-model").value;   // read before the wait below: another card may be open by then
   const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));

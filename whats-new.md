@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.

@@ -104,6 +104,7 @@ const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCo
 const addPending = (t, status, message) => { const m = { status, message, state: "sending" }; pending.push(m); return m; };
 const dropPending = () => {}, refreshAgent = () => {}, renderAgent = () => {}, pollAgents = async () => {}, settled = async () => {};
 const colRole = () => ({ id: "progress" }), moveTask = (id, col) => { card.column = col; }, now = () => 0;
+const needsProjectCheck = () => false;
 const post = (url, body) => { calls.push(url); return url === "/api/autofill"
   ? new Promise((r) => (resolveCall = () => r({ title: "Fix column scroll jump", tags: ["bug"] })))
   : Promise.resolve({ id: "s1" }); };
