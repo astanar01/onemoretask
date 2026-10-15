@@ -666,34 +666,15 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   .sel { max-width: 70%; }
   .tab { padding: 10px 9px 12px; }
 }
-/* List layout: the panel docks right of the list as one scrolling column (status pill, big title, then the rest);
+/* List layout: the panel docks right of the list with its usual two panes (options left, chat right);
    with no task open the dock shows #dock-empty. Under 641px it stays the full-screen overlay above. */
 #dock-empty { display: none; }
 @media (min-width: 641px) {
   body.view-list #overlay { display: flex; inset: var(--hdr-h, 0px) 0 0 var(--list-w); padding: 0; background: var(--bg); border-left: 1px solid var(--line); }
   body.view-list #overlay:not(.open) #panel { display: none; }
   body.view-list #overlay:not(.open) #dock-empty { display: grid; place-items: center; flex: 1; padding: 24px; color: var(--muted); text-align: center; }
-  body.view-list #panel { display: flex; flex-direction: column; overflow-y: auto; border-radius: 0; box-shadow: none; }
-  body.view-list .side { border-right: 0; overflow: visible; flex: none; padding: 22px 32px 4px; }
+  body.view-list #panel { border-radius: 0; box-shadow: none; }
   body.view-list #d-back { display: none; }
-  body.view-list .rows { order: -1; display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0 0 8px; }
-  body.view-list .row { padding: 0; gap: 4px; }
-  body.view-list .row + .row { border-top: 0; }
-  body.view-list .row .lbl, body.view-list .ov-ico.st { display: none; }
-  body.view-list .sel { max-width: none; }
-  body.view-list #d-col-slot::before { content: ""; position: absolute; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); pointer-events: none; }
-  body.view-list #d-col { padding-left: 27px; }
-  body.view-list #d-title { font-size: calc(28px * var(--ts)); }
-  body.view-list .fields { max-width: 640px; }
-  body.view-list .nx-send { flex-direction: row; }
-  body.view-list #d-model { flex: 1; width: auto; }
-  body.view-list #d-send, body.view-list .nx-actions .btn { width: auto; }
-  body.view-list .nx-actions { flex-direction: row; flex-wrap: wrap; }
-  body.view-list .dates { padding-top: 10px; }
-  body.view-list .main { flex: 1 0 auto; }
-  body.view-list .mainbar { padding-left: 32px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
-  body.view-list .body { flex: 1 0 auto; overflow: visible; padding: 16px 32px 12px; }
-  body.view-list .composer { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: 10px 32px 12px; }
 }
 </style>
 </head>
