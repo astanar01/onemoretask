@@ -395,6 +395,7 @@ const I18N = {
     "Not sent: no local repo": "Non envoyé : aucun dépôt local",
     "This folder": "Ce dossier",
     "Could not send: {error}": "Envoi impossible : {error}",
+    "Claude could not make a title: {error}": "Claude n’a pas pu trouver de titre : {error}",
     "Local repo created": "Dépôt local créé",
     "Checking the folder size…": "Mesure de la taille du dossier…",
     "This folder holds {size}. Every worktree gets a full copy. Tick what to leave out (it stays on your disk):": "Ce dossier contient {size}. Chaque worktree en reçoit une copie complète. Cochez ce qu’il faut exclure (cela reste sur votre disque) :",

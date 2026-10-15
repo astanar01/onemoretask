@@ -1615,7 +1615,9 @@ async function autoFillOnce(t) {
       if (openId === cur.id && !$("#d-tags").value.trim()) { $("#d-tags").value = cur.tags.join(", "); renderTagSuggestions(cur); }
     }
     if (changed) { touch(cur); render(); }
-  } catch (e) { /* no server or no Claude: "Untitled" stays, no tags */ }
+  } catch (e) {  // "Untitled" stays, no tags; say why unless there is no server at all (fetch's TypeError)
+    if (!(e instanceof TypeError)) setStatus(window.t("Claude could not make a title: {error}", { error: window.t(e.message) }), true);
+  }
 }
 
 // A fresh "+ Add task" draft closed with nothing in it vanishes; with content it gets a title and tags from its notes if it lacks them.
