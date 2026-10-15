@@ -292,6 +292,12 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 #busy.open { display: flex; }
 #busy .box { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 12px; padding: 16px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
 #busy svg { animation: spin 1.2s linear infinite; color: var(--accent); }
+#repo-sizes { margin: -8px 0 16px; }
+#repo-sizes:empty { display: none; }
+#repo-sizes ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 200px; overflow: auto; }
+#repo-sizes li label { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; cursor: pointer; }
+#repo-sizes .path { font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); overflow-wrap: anywhere; flex: 1; }
+#repo-sizes .size { color: var(--muted); white-space: nowrap; }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
@@ -826,7 +832,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p data-i18n><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files, and a WordPress site's uploads and backups, are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <p data-i18n><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <div id="repo-sizes"></div>
   <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn" id="repo-nowt">Send without a worktree</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
 <div id="wtdel-modal" role="dialog" aria-modal="true" aria-labelledby="wtdel-title"><div class="box">
@@ -2714,7 +2721,8 @@ function askRepo(t) {
     $("#repo-yes").disabled = true;
     setStatus(window.t("Creating the repo… a big folder can take a few minutes"));
     try {
-      await post("/api/git/init", { p: P });
+      const leaveOut = [...document.querySelectorAll("#repo-sizes input:checked")].map((x) => x.value);
+      await post("/api/git/init", { p: P, leaveOut });
       gitInfo.at = 0;   // the chips reload with the new branch
       closeRepo(false);
       setStatus(window.t("Local repo created"));
@@ -2725,6 +2733,20 @@ function askRepo(t) {
   };
   $("#repo-modal").classList.add("open");
   $("#repo-yes").focus();
+  showRepoSizes();
+}
+const fmtBytes = (n) => n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`;
+// The heaviest folders and files, each with a box to leave it out of the first commit (every worktree copies it).
+async function showRepoSizes() {
+  const box = $("#repo-sizes"), forP = P;
+  box.textContent = window.t("Checking the folder size…");
+  let r;
+  try { r = await post("/api/git/scan", { p: forP }); } catch (e) { box.textContent = ""; return; }
+  if (forP !== P || !repoOpen()) return;
+  if (!r.entries.length) { box.textContent = ""; return; }
+  box.innerHTML = `<div>${esc(window.t("This folder holds {size}. Every worktree gets a full copy. Tick what to leave out (it stays on your disk):", { size: fmtBytes(r.total) }))}</div>`
+    + `<ul>${r.entries.map((x) => `<li><label><input type="checkbox" value="${esc(x.path)}"><span class="path">${esc(x.path)}${x.dir ? "/" : ""}</span><span class="size">${fmtBytes(x.size)}</span></label></li>`).join("")}</ul>`
+    + (r.partial ? `<div>${esc(window.t("The folder is too big to measure fully; this list may miss some."))}</div>` : "");
 }
 $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
 

@@ -87,23 +87,29 @@ for t in ts:
 check("race: one created", out.count(True) >= 1, True)
 check("race: no lock left", os.path.isfile(os.path.join(r.path, ".git", "index.lock")), False)
 
-# A WordPress site: media and backups stay out of the first commit; themes and plugins go in.
+# The scan offers the heavy folders; only the ticked ones stay out of the first commit.
+server.BIG = 1000
 w = project("wp", 0)
-for d, name in [("wp-content/uploads/2024", "a.jpg"), ("wp-content/updraft", "backup.zip"),
-                ("wp-content/themes/t", "style.css"), ("wp-content/plugins/x", "x.php"), ("", "wp-config.php")]:
+for d, name, n in [("wp-content/uploads/2024", "a.jpg", 3000), ("wp-content/updraft", "backup.zip", 4000),
+                   ("wp-content/themes/t", "style.css", 10), ("", "wp-config.php", 10),
+                   ("nested", "big.bin", 9000), ("odd[1]", "x", 2000)]:
     os.makedirs(os.path.join(w.path, d), exist_ok=True)
-    open(os.path.join(w.path, d, name), "w").write("x")
-server.init_repo(w)
+    open(os.path.join(w.path, d, name), "w").write("x" * n)
+nested = os.path.join(w.path, "nested")   # a repo of its own: committed as a pointer, so not offered
+subprocess.run(["git", "-C", nested, "init", "-q"], check=True)
+subprocess.run(["git", "-C", nested, "add", "-A"], check=True)
+subprocess.run(["git", "-C", nested, "commit", "-qm", "n"], check=True)
+scan = server.scan_sizes(w)
+check("scan: big parts, biggest first, nested repo and board skipped",
+      [(e["path"], e["dir"]) for e in scan["entries"]],
+      [("wp-content/updraft", True), ("wp-content/uploads", True), ("odd[1]", True)])
+check("scan: total", scan["total"], 3000 + 4000 + 10 + 10 + 2000)
+server.init_repo(w, ["wp-content/updraft", "odd[1]", "../outside", "/etc", "missing"])
 tracked = sorted(subprocess.run(["git", "-C", w.path, "ls-files"], capture_output=True, text=True).stdout.split())
-check("wp: uploads and backups left out", tracked,
-      ["wp-config.php", "wp-content/plugins/x/x.php", "wp-content/themes/t/style.css"])
-# Not WordPress: an uploads folder is kept.
-n = project("plain", 0)
-os.makedirs(os.path.join(n.path, "uploads"))
-open(os.path.join(n.path, "uploads", "a.jpg"), "w").write("x")
-server.init_repo(n)
-check("plain: uploads kept", subprocess.run(["git", "-C", n.path, "ls-files"], capture_output=True, text=True)
-      .stdout.split(), ["uploads/a.jpg"])
+check("ticked left out, the rest saved", tracked,
+      ["nested", "wp-config.php", "wp-content/themes/t/style.css", "wp-content/uploads/2024/a.jpg"])
+excl = open(os.path.join(w.path, ".git", "info", "exclude")).read()
+check("nothing outside the folder excluded", ("outside" in excl, "etc" in excl, "missing" in excl), (False, False, False))
 
 print("FAILED" if fails else "PASSED", f"({fails} failing)")
 sys.exit(1 if fails else 0)

@@ -812,9 +812,73 @@ WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent
 
 
 SECRET_FILES = (".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template")  # kept out of init_repo's commit
-# A WordPress site's media and backup-plugin folders: gigabytes, copied into every worktree if committed.
-WP_HEAVY = ("/wp-content/uploads/", "/wp-content/updraft/", "/wp-content/ai1wm-backups/",
-            "/wp-content/backups-dup-lite/", "/wp-content/backup-db/", "/wp-content/upgrade-temp-backup/")
+BIG = 50 * 1024 * 1024   # a folder or file this size is offered in the Create repo box to leave out
+SCAN_SECONDS = 20
+
+
+def scan_sizes(p):
+    """The heavy parts of a folder about to get its first commit, for the Create repo box to offer leaving out.
+    {total, entries: [{path, size, dir}], partial}. Entries are files and folders one or two levels down of BIG or
+    more; a top folder is replaced by its big parts when there are several and they hold at least half of it (wp-content →
+    wp-content/uploads, wp-content/updraft). Skips .git, nested repos (they are committed as a pointer), the board's
+    own folders."""
+    root = os.path.realpath(p.path)
+    skip = {os.path.join(root, d) for d in (WORKTREES, *OBSERVER_DIRS)}
+    skip.add(os.path.realpath(p.board))
+    size, isdir = {}, {}   # relative path (depth 1 or 2) → bytes
+    total, partial, end = 0, False, time.monotonic() + SCAN_SECONDS
+    stack = [root]
+    while stack:
+        if time.monotonic() > end:
+            partial = True
+            break
+        d = stack.pop()
+        try:
+            it = list(os.scandir(d))
+        except OSError:
+            continue
+        if d != root and any(e.name == ".git" for e in it):
+            continue
+        for e in it:
+            if e.name == ".git" or e.path in skip:
+                continue
+            try:
+                if e.is_dir(follow_symlinks=False):
+                    stack.append(e.path)
+                    n, is_d = 0, True
+                elif e.is_file(follow_symlinks=False):
+                    n, is_d = e.stat(follow_symlinks=False).st_size, False
+                else:
+                    continue
+            except OSError:
+                continue
+            rel = os.path.relpath(e.path, root).split(os.sep)
+            for k in range(1, min(len(rel), 2) + 1):
+                key = "/".join(rel[:k])
+                size[key] = size.get(key, 0) + n
+                isdir.setdefault(key, is_d if k == len(rel) else True)
+            total += n
+    big = {k: v for k, v in size.items() if v >= BIG}
+    entries = []
+    for k in [k for k in big if "/" not in k]:
+        kids = [c for c in big if c.startswith(k + "/")]
+        if len(kids) > 1 and sum(big[c] for c in kids) * 2 >= big[k]:
+            entries += kids
+        else:
+            entries.append(k)
+    entries.sort(key=lambda k: -big[k])
+    return {"total": total, "partial": partial,
+            "entries": [{"path": k, "size": big[k], "dir": isdir[k]} for k in entries[:15]]}
+
+
+def _leave_out_pattern(rel, root):
+    """info/exclude line for one path the user ticked, anchored and escaped; None for anything outside the folder."""
+    rel = str(rel).strip().strip("/")
+    full = os.path.realpath(os.path.join(root, rel))
+    if not rel or not full.startswith(os.path.realpath(root) + os.sep) or not os.path.exists(full):
+        return None
+    esc = re.sub(r"([\\*?\[\]!#])", r"\\\1", rel)
+    return "/" + esc + ("/" if os.path.isdir(full) else "")
 
 
 def exclude_dirs(p, dirs):
@@ -882,9 +946,10 @@ _init_busy = set()
 _init_busy_lock = threading.Lock()
 
 
-def init_repo(p):
+def init_repo(p, leave_out=()):
     """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info.
-    The commit takes every file but the board (tasks), its local folders and .env files (secrets)."""
+    The commit takes every file but the board (tasks), its local folders, .env files (secrets) and the paths the
+    user ticked in the Create repo box (leave_out, relative to the folder)."""
     key = os.path.realpath(p.path)
     with _init_busy_lock:
         if key in _init_busy:
@@ -897,8 +962,7 @@ def init_repo(p):
         if not info["commits"]:
             exclude_local(p)
             exclude_patterns(p, SECRET_FILES)
-            if os.path.isdir(os.path.join(p.path, "wp-content")):
-                exclude_patterns(p, WP_HEAVY)
+            exclude_patterns(p, [x for x in (_leave_out_pattern(r, p.path) for r in leave_out) if x])
             # No commit yet and no run of ours in flight: an index.lock is left from an earlier run that was stopped.
             lock = git_try(p.path, "rev-parse", "--git-path", "index.lock")
             if lock and os.path.isfile(os.path.join(p.path, lock)):
@@ -3530,7 +3594,10 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/agent/spawn":
                 self._json(200, spawn(project(body["p"]), body["taskId"], bool(body.get("close"))))
             elif path == "/api/git/init":
-                self._json(200, init_repo(project(body["p"])))
+                leave_out = [x for x in body.get("leaveOut") or [] if isinstance(x, str)]
+                self._json(200, init_repo(project(body["p"]), leave_out))
+            elif path == "/api/git/scan":
+                self._json(200, scan_sizes(project(body["p"])))
             elif path == "/api/push":
                 self._json(200, {"ok": True, "output": push_commits(project(body["p"]), body.get("target"))})
             elif path == "/api/agent/review":
