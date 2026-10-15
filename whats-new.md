@@ -2,6 +2,8 @@
 
 ## 2026-10-15
 
+- The top of the board now says "OneMoreTask" and its version number, which goes up each time a new version comes out. The Update button shows which version you will get.
+- When a newer Claude Code is out, a button at the top tells you. Click it, say yes, and the board updates Claude Code for you.
 - When Claude has questions for you, they now always show on the card with a button for each answer. Before, Claude sometimes asked in a hidden window, and the card only said it was waiting.
 - When Claude asks if it may do something, the "Allow" button on the card works again. Before, it sometimes said "the prompt has no such choice".
 - A task you send to Claude now goes to the top of the next column, not the bottom. And you can scroll a long column again while Claude works: it no longer stops your scrolling every few seconds.

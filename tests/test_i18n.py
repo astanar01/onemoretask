@@ -104,6 +104,8 @@ SERVER_SENTENCES = [
     "The update changes files that were edited here. Commit or undo those edits, then try again.",
     "Could not check GitHub — try again later.",
     "Nothing to update.",
+    "Could not find Claude Code.",
+    "Claude Code took too long to update. Try again later.",
 ]
 
 
@@ -131,7 +133,7 @@ def all_keys():
 
 
 # Markup text that is not English: symbols, numbers, names, pure punctuation.
-IGNORE = re.compile(r"^(?:[^A-Za-z]*|Task Board|Claude|Codex|Français|English|[A-Z]{1,3}|\d+\s*%|[a-z]+-[a-z-]+)$")
+IGNORE = re.compile(r"^(?:[^A-Za-z]*|Task Board|OneMoreTask|Claude|Codex|Français|English|[A-Z]{1,3}|\d+\s*%|[a-z]+-[a-z-]+)$")
 
 
 def main():
