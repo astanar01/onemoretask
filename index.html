@@ -16,7 +16,8 @@
   --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b; --blue: #2f7fd8;
   --crit: #b42318; --crit-bg: #fde2df; --major: #b54708; --major-bg: #fdebd7;
   --minor: #8a6100; --minor-bg: #fbf0c9; --low: #4a6177; --low-bg: #e3eaf1; --ok-bg: #dcf0e5;
-  --spin: #ffd166;
+  --pill-start: #6d45c9; --pill-work: #7a4fd6; --pill-review: #2a6fc0; --pill-recap: #0f766e;
+  --pill-wait: #e67e22; --pill-done: #2e7d54; --pill-gone: #6f6a61; --pill-merge: #be1f7a;
 }
 /* Theme: follows the system unless the header's Theme menu sets data-theme on <html>. */
 :root { color-scheme: light; }
@@ -28,7 +29,8 @@
     --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4); --blue: #5ea6f2;
     --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
     --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
-    --spin: #2a1d4d;
+    --pill-start: #a88af0; --pill-work: #6d45c9; --pill-review: #2a6fc0; --pill-recap: #0f766e;
+    --pill-wait: #e67e22; --pill-done: #2e7d54; --pill-gone: #5f5a66; --pill-merge: #b5247e;
   }
 }
 :root[data-theme="dark"] {
@@ -38,7 +40,8 @@
   --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4); --blue: #5ea6f2;
   --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
   --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
-  --spin: #2a1d4d;
+  --pill-start: #a88af0; --pill-work: #6d45c9; --pill-review: #2a6fc0; --pill-recap: #0f766e;
+  --pill-wait: #e67e22; --pill-done: #2e7d54; --pill-gone: #5f5a66; --pill-merge: #b5247e;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -268,10 +271,14 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .sub-list li .c { font-size: calc(11px * var(--ts)); color: var(--muted); }
 .sub-list li .n { font-size: calc(11px * var(--ts)); color: var(--muted); }
 :root { --wait: #e67e22; --ok: #3c9d6b; }
-.agent { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--accent); }
-.agent.working { background: var(--accent); color: #fff; }
-.agent.needs_you { background: var(--wait); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
-.agent.finished { background: var(--ok); color: #fff; }
+.agent { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--pill-start); }
+.agent.working { background: var(--pill-work); color: #fff; }
+.agent.working.reviewing { background: var(--pill-review); }
+.agent.working.recapping { background: var(--pill-recap); }
+.agent.working.merging { background: var(--pill-merge); }
+.agent.needs_you { background: var(--pill-wait); color: #1f1d1a; animation: pulse 1.6s ease-in-out infinite; }
+.agent.finished { background: var(--pill-done); color: #fff; }
+.agent.gone, .agent.stopped { background: var(--pill-gone); color: #fff; }
 .yours { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--wait); color: var(--wait); font-weight: 600; white-space: nowrap; flex: none; }
 @keyframes pulse { 50% { opacity: .55; } }
 .card-subs { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
@@ -389,7 +396,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .turning svg { width: 1em; height: 1em; }
 .agent:has(> .turning), #d-next-title:has(> .turning) { display: flex; align-items: center; }
 .agent:has(> .turning) { display: inline-flex; }
-.agent .turning { margin-right: 4px; color: var(--spin); }
+.agent .turning { margin-right: 4px; }
 #d-next-title .turning { margin-right: 8px; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .turning { animation: none; } }
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -412,7 +419,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .ov-ico.st { color: var(--accent); }
 .ov-ico.fl { color: var(--wait); }
 [data-ico] { display: inline-flex; }
-.agent.stopped { background: var(--line); color: var(--muted); }
 
 /* ---------------------------------------------------------------- task panel: sidebar + main */
 #panel { position: relative; background: var(--bg); border-radius: 12px; width: 100%; height: 100%; display: grid; grid-template-columns: clamp(320px, calc(300px * var(--ts) + 60px), 38%) minmax(0, 1fr); overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
@@ -1388,7 +1394,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
       ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? window.t("Code review") : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${t.agent ? `<span class="agent ${pillCls(ag)}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(t))}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1546,7 +1552,7 @@ function listRowEl(x, depth) {
   // Branch: the worktree the launch made, stored on the card. Messages: the entries the panel's Conversation shows.
   const br = x.agent && x.agent.worktree && x.agent.worktree.branch, n = ((ag && ag.log) || []).length;
   const l2 = `${br ? `<span class="lbr" title="${esc(br)}">${icon("branch", 15)}<span>${esc(br)}</span></span>` : ""}
-    ${x.agent ? `<span class="agent ${ag ? ag.phase : ""}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? t("Code review") : `${who(x)}: ${esc(phaseLabel(ag))}`}</span>${yoursChip(x, ag)}` : ""}
+    ${x.agent ? `<span class="agent ${pillCls(ag)}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(x))}</span>${yoursChip(x, ag)}` : ""}
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
   el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span><button type="button" class="lmore" title="${t("Open task")}">${icon("more", 18)}</button></div>
@@ -1850,6 +1856,22 @@ const PHASES = { working: t("working"), needs_you: t("needs you"), finished: t("
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
 const reviewing = (a) => { const e = (a.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status)); return !!(e && e.status === "review"); };
+// Merging: your latest message is the Merge button's (server worktree_label); a later message ends it.
+// Pressed while Claude was busy, it waits as a note until a "resume" entry hands the notes before it over.
+const merging = (a) => {
+  const you = (a.log || []).filter((x) => x.from === "you"), i = you.findLastIndex((x) => x.status !== "note");
+  if (i < 0) return false;
+  const sent = [you[i]];
+  if (you[i].status === "resume") for (let j = i - 1; j >= 0 && you[j].status === "note"; j--) sent.push(you[j]);
+  return sent.some((x) => /^Merge worktree/.test(x.message || ""));
+};
+// Status pill: the phase, plus what a working session is busy with (recap, merge, code review), each its own color.
+const pillCls = (a) => !a ? "" : a.phase !== "working" ? a.phase : a.recapping ? "working recapping" : merging(a) ? "working merging" : reviewing(a) ? "working reviewing" : "working";
+const pillText = (a, who) => {
+  const c = pillCls(a);
+  return c === "working recapping" ? t("{who}: writing recap", { who }) : c === "working merging" ? t("{who}: merging", { who })
+    : c === "working reviewing" ? t("Code review") : `${who}: ${esc(phaseLabel(a))}`;
+};
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
 // One row per subagent on the card: status, name, and what a running one is doing now.

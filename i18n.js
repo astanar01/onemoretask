@@ -145,6 +145,8 @@ const I18N = {
     "{n} images": "{n} images",
     "{who} session {id}": "Session {who} {id}",
     "Code review": "Relecture de code",
+    "{who}: merging": "{who}: fusion en cours",
+    "{who}: writing recap": "{who}: rédige le résumé",
     "A fresh {who} session code-reviews this task's commits": "Une nouvelle session {who} relit le code des commits de cette tâche",
     "Mark as done": "Marquer terminé",
     "+ Add task": "+ Ajouter une tâche",

@@ -2,7 +2,7 @@
 
 ## 2026-10-15
 
-- The little turning arrow on "Claude: working" and "Code review" now has its own color, so it stands out from the words.
+- The little tag on each card now has its own color for what Claude is doing: working, checking the work, writing the recap, merging, waiting for you, finished or gone. Writing the recap and merging now say so in words too.
 - A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
 - In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone. The new task always lands in To Do, and you see it there even when the filter hides To Do.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
