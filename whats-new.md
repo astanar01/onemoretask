@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- When you press Send to Claude, the task page now switches to its summary at once. Claude gets started in the background while you look.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.
