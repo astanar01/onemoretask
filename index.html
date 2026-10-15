@@ -1797,7 +1797,7 @@ function qChoices(shown, i) {
   const live = !ans && !later.some((x) => x.from !== "you" && x.status === "question");
   if (!Array.isArray(e.options) || !e.options.length || e.status !== "question") {
     const parts = qParts(e);
-    return parts.length >= (e.status === "question" || e.parts ? 1 : 2) ? partsHtml(e, i, parts, ans, live) : "";
+    return e.status === "question" && parts.length ? partsHtml(e, i, parts, ans, live) : "";   // a report's numbered list is not asking
   }
   const said = ans ? String(ans.message || "").trim() : null;
   return `<div class="qopts">${e.options.map((o, k) => {
@@ -1849,8 +1849,8 @@ function sendParts(b) {
   const extra = $("#d-reply").value.trim();
   if (extra) setReplyDraft(t.id, "");
   $("#d-log").querySelectorAll("button[data-qo], button[data-qsend]").forEach((x) => (x.disabled = true));   // no double send
-  // A failed send gives back only the typed extra: the picks stay on the buttons and are re-read on retry.
-  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""), extra);
+  // A failed send gives back only the typed extra (and images): the picks stay on the buttons and are re-read on retry.
+  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""), extra, true);
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
@@ -2990,15 +2990,17 @@ function pickReview(key, v) {
 $("#d-review-model").onchange = (e) => pickReview("taskboard.reviewModel", e.target.value);
 
 // pick: a clicked answer button's label, sent instead of the reply box (whose draft and images stay put).
-// keep: what goes back in the reply box if the send fails (default: the whole text).
-async function sendReply(pick, keep) {
+// keep: what goes back in the reply box if the send fails (default: the whole text). withImages: a pick that
+// also takes the box's pasted images.
+async function sendReply(pick, keep, withImages) {
   const chose = typeof pick === "string", t = task(openId), text = chose ? pick.trim() : $("#d-reply").value.trim();
   if (!t || (!text && (chose || !replyImages.length)) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? window.t("Sending note…") : window.t("Sending reply…"));
-  const images = chose ? [] : replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
-  if (!chose) { setReplyDraft(t.id, ""); replyImages = []; renderReplyImages(); }
+  const images = chose && !withImages ? [] : replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
+  if (!chose) setReplyDraft(t.id, "");
+  if (images.length) { replyImages = []; renderReplyImages(); }
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
   // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
