@@ -272,7 +272,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .md .flbl + .fv::before { content: " "; }
 .md .sec { font-weight: 700; margin-top: .7em; }
 /* review finding card: severity colour on the left edge, "Label  text" rows in two columns */
-.md .finding { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px 14px; margin: 1.1em 0; }
+.md .finding { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px 14px; margin: 1.1em 0; display: flex; flex-direction: column; }
+.md .finding .li.fix { order: 1; }   /* the Fix is the action: it closes the card, whatever order Claude wrote */
 .md .fhead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .md .ftag { font-size: calc(10.5px * var(--ts)); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; line-height: 1.6; }
 .md .ftag.crit { background: var(--crit-bg); color: var(--crit); }
@@ -285,7 +286,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .md .finding .li:has(> .flbl)::before { content: none; }
 .md .finding .li:has(> .flbl) .flbl { font-size: calc(12.5px * var(--ts)); font-weight: 600; color: var(--muted); padding-top: 2px; }
 .md .finding .li:has(> .flbl) .fv::before { content: none; }
-.md .finding .li.fix { margin-top: 6px; }
+.md .finding .li.fix { margin-top: 8px; }
 .md .finding .li.fix .flbl { color: var(--text); padding-top: 10px; }
 .md .finding .li.fix .fv { background: var(--col); border-radius: 8px; padding: 8px 12px; }
 #d-log li.k-done .md > .p:first-child, #d-log li.k-question .md > .p:first-child { font-weight: 600; font-size: calc(15.5px * var(--ts)); margin-bottom: .2em; }
