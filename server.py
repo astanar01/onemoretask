@@ -758,12 +758,27 @@ def _launch(p, task_id, model):
             git_try(p.path, "branch", "-d", wt["branch"])
         raise
     where = f", worktree {wt['branch']}" if wt else ""
-    reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{where})",
-                   "you", session=aid)
     cli = "codex" if codex.is_model(model) else "claude"
     agent = {"id": aid, "started": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
              **({"model": model} if model else {}), **({"worktree": wt} if wt else {}), **({"cli": cli} if cli == "codex" else {})}
-    revs = set_agent(p, task_id, agent)
+    try:
+        reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{where})",
+                       "you", session=aid)
+        revs = set_agent(p, task_id, agent)
+    except Exception:
+        # No card tracks the session: stop it rather than leave it running unseen.
+        try:
+            if cli == "codex":
+                codex.remove(p.board, aid)
+            else:
+                run_claude(["stop", aid], cwd=p.path, timeout=30)
+        except Exception as e:  # noqa: BLE001
+            print("stop orphaned session:", e)
+        if "worktree" in made:
+            git_try(p.path, "worktree", "remove", wt["path"])
+        if "branch" in made and not os.path.isdir(wt["path"]):
+            git_try(p.path, "branch", "-d", wt["branch"])
+        raise
     WATCH.expect(p, task_id, aid)
     return {"id": aid, "worktree": wt, "cli": cli, "agent": agent, **revs}
 
@@ -2107,8 +2122,11 @@ class Watcher:
                 threading.Thread(target=self._type, args=(p, t["id"], aid), daemon=True).start()
                 pending = False
             # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
-            waiting = (pending and busy and phase == "working" and not attach.available() and not is_codex(s) and time.time() - (
-                turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
+            try:
+                waiting = (pending and busy and phase == "working" and not attach.available() and not is_codex(s) and time.time() - (
+                    turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
+            except OSError:
+                waiting = False
             if pending and (phase in ("finished", "needs_you") and not busy or waiting):
                 self.delivering.add((p.id, t["id"]))
                 threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
@@ -3255,6 +3273,12 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
          ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
 
 
+class Body(dict):
+    """A request body: a missing key is a bad request (400), not a KeyError, which _errors would answer 404."""
+    def __missing__(self, key):
+        raise ValueError(f"missing field: {key}")
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=HERE, **kwargs)
@@ -3293,6 +3317,12 @@ class Handler(SimpleHTTPRequestHandler):
     def _route(self):
         u = urlsplit(self.path)
         return u.path, parse_qs(u.query).get("p", [""])[0]
+
+    def _read_body(self):
+        n = self.headers.get("Content-Length", "0")
+        if not n.isdigit():  # rfile.read(-1) would wait for the client to close
+            raise ValueError("bad Content-Length")
+        return self.rfile.read(int(n))
 
     def _errors(self, fn):
         try:
@@ -3444,7 +3474,10 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         def handle():
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            body = json.loads(self._read_body() or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError("the body must be a JSON object")
+            body = Body(body)
             if path == "/api/projects":
                 self._json(200, open_project(body["path"]).info())
             elif path == "/api/projects/pick":
@@ -3519,9 +3552,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not self._same_origin():
             self._json(403, {"error": "cross-origin request refused"})
             return
-        raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
-
         def write():
+            raw = self._read_body()
             p = project(pid)
             try:
                 data = json.loads(raw)
