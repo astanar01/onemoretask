@@ -27,6 +27,8 @@ const I18N = {
     "Show subtasks on board": "Afficher les sous-tâches sur le tableau",
     "Notifications": "Notifications",
     "Pop up a note when Claude needs you or is done": "Afficher une note quand Claude vous attend ou a fini",
+    "Notification sound": "Son des notifications",
+    "Play a chime with each note": "Jouer un petit son avec chaque note",
     "Your browser blocks them. Allow them in this site's settings.": "Votre navigateur les bloque. Autorisez-les dans les réglages de ce site.",
     "Language": "Langue",
     "What changed in the task board app": "Les nouveautés de l’application Task Board",

@@ -708,6 +708,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
   <label class="pop-row" id="notify-row" title="Pop up a note when Claude needs you or is done" hidden><span>Notifications<small id="notify-hint" hidden>Your browser blocks them. Allow them in this site's settings.</small></span><input type="checkbox" id="notify"></label>
+  <label class="pop-row" id="sound-row" title="Play a chime with each note" hidden><span>Notification sound</span><input type="checkbox" id="notify-sound"></label>
   <label class="pop-row"><span>Language</span><select id="lang" title="Language"><option value="en">English</option><option value="fr">Français</option></select></label>
 </div>
 <div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
@@ -3715,6 +3716,8 @@ function syncNotify() {
   const on = notifyOn(), perm = Notification.permission, want = on && perm === "granted";
   $("#notify").checked = on && perm !== "default";
   $("#notify-hint").hidden = !(on && perm === "denied");
+  $("#sound-row").hidden = $("#notify-row").hidden || !$("#notify").checked;
+  $("#notify-sound").checked = soundOn();
   if (!navigator.locks) { if (want && !notifyES) openStream(); else if (!want) closeStream(); return; }
   if (want && !notifyStop) {
     const ac = new AbortController();
@@ -3725,10 +3728,32 @@ function syncNotify() {
       .catch(() => {});
   } else if (!want && notifyStop) { notifyStop(); notifyStop = null; }
 }
-addEventListener("storage", (e) => { if (e.key === LS_KEY + ":notify" && !$("#notify-row").hidden) syncNotify(); });
+addEventListener("storage", (e) => { if ((e.key === LS_KEY + ":notify" || e.key === LS_KEY + ":sound") && !$("#notify-row").hidden) syncNotify(); });
+// Chrome and Edge on macOS never give their notifications a sound, so the board plays its own chime.
+function soundOn() { try { return localStorage.getItem(LS_KEY + ":sound") !== "0"; } catch (_) { return true; } }
+let chimeCtx = null;
+function chime() {
+  try {
+    chimeCtx = chimeCtx || new AudioContext();
+    if (chimeCtx.state === "suspended") chimeCtx.resume();
+    const t = chimeCtx.currentTime;
+    [[880, 0], [1320, 0.12]].forEach(([f, d]) => {
+      const o = chimeCtx.createOscillator(), g = chimeCtx.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.exponentialRampToValueAtTime(0.25, t + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.5);
+      o.connect(g).connect(chimeCtx.destination);
+      o.start(t + d); o.stop(t + d + 0.55);
+    });
+  } catch (_) {}
+}
 function showAlert(a) {
   const icon = document.querySelector('link[rel="icon"]');
-  const n = new Notification(a.title, { body: a.sub + (a.reason ? "\n" + a.reason : ""), tag: "otask-" + a.seq, icon: icon ? icon.href : undefined });
+  const sound = soundOn();
+  // silent when the chime plays, so systems that do sound their notifications (Windows) don't ring twice.
+  const n = new Notification(a.title, { body: a.sub + (a.reason ? "\n" + a.reason : ""), tag: "otask-" + a.seq, icon: icon ? icon.href : undefined, silent: sound });
+  if (sound) chime();
   n.onclick = async () => {
     window.focus(); n.close();
     if (a.project !== P && projects.some((p) => p.id === a.project)) await switchProject(a.project);
@@ -3753,6 +3778,10 @@ $("#notify").addEventListener("change", async (e) => {
   // Saved after the answer, so the other tabs' storage event already sees the permission.
   try { localStorage.setItem(LS_KEY + ":notify", on ? "1" : "0"); } catch (_) {}
   syncNotify();
+});
+$("#notify-sound").addEventListener("change", (e) => {
+  try { localStorage.setItem(LS_KEY + ":sound", e.target.checked ? "1" : "0"); } catch (_) {}
+  if (e.target.checked) chime();   // a sample, and this click lets the page play sound from now on
 });
 $("#layout").value = view;
 $("#layout").addEventListener("change", (e) => {
