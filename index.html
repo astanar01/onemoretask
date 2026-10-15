@@ -2665,27 +2665,28 @@ $("#proj-modal").addEventListener("mousedown", (e) => { if (e.target.id === "pro
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
+  const model = $("#d-model").value;   // read before the waits below: another card may be open by then
+  const nm = isCodexModel(model) ? "Codex" : "Claude";
+  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
+  pm.model = model;
+  // The panel swaps to Summary on the click; the project check, the title, the launch and the worktree come in the background.
+  if (openId === t.id) renderDetail();
   if (needsProjectCheck(t)) {
     setStatus(window.t("Checking which project this task is for…"));
     const pid = P;
     const other = await checkProject(t);
-    if (P !== pid) { setStatus(window.t("The board switched project, so the task was not sent"), true); return; }
+    if (P !== pid) { dropPending(t, pm); setStatus(window.t("The board switched project, so the task was not sent"), true); return; }
     t = task(t.id) || t;
     if (other) {
+      dropPending(t, pm);
       setStatus("");
-      if (openId === t.id) renderAgent(t);
+      if (openId === t.id) renderDetail();   // back to the form under the question
       askProject(t, other);
       return;
     }
     if (other === null) { t.projectOk = true; touch(t); }
   }
-  const model = $("#d-model").value;   // read before the wait below: another card may be open by then
-  const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
-  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
-  pm.model = model;
-  // The panel swaps to Summary on the click; the title, the launch and the worktree come in the background.
-  if (openId === t.id) renderDetail();
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
