@@ -46,9 +46,9 @@ def fire(task_id, phase="finished"):
     W.flush_alerts()
 
 
-def connect(query=""):
+def connect():
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    c.request("GET", "/api/alerts/stream" + query)
+    c.request("GET", "/api/alerts/stream")
     r = c.getresponse()
     return c, r
 
@@ -77,8 +77,8 @@ def wait(cond, secs=5):
     return False
 
 
-# (a) a page that shows notifications gets the event.
-c, r = connect("?notify=1")
+# (a) a listening page gets the event.
+c, r = connect()
 check(r.status == 200 and r.getheader("Content-Type") == "text/event-stream"
       and r.getheader("Cache-Control") == "no-cache", "the stream answers with event-stream headers")
 hello = read_event(r)
@@ -105,21 +105,21 @@ fire("t3")
 check([a["task"] for a in published] == ["t3"] and not server.WATCH.alerts, "no page: the alert is sent, not kept",
       (published, server.WATCH.alerts))
 
-# (c) a page that does not show notifications still gets the event.
+# (c) a page opened later gets the next event, and pings.
 server.ALERT_PING = 1
 c, r = connect()
 read_event(r)
-check(wait(lambda: len(server.ALERTS.subs) == 1), "a plain page is listed as listening")
+check(wait(lambda: len(server.ALERTS.subs) == 1), "the new page is listed as listening")
 fire("t4")
 ev = read_event(r, pings=False)
 data = json.loads(ev[1][len("data: "):]) if ev and len(ev) == 2 else None
-check(data is not None and data["task"] == "t4" and data["seq"] > first_seq, "a plain page gets the event", ev)
+check(data is not None and data["task"] == "t4" and data["seq"] > first_seq, "the new page gets the event", ev)
 ev = read_event(r)
 check(ev == [": ping"], "a ping keeps the stream alive", ev)
 
 # A foreign page may not listen (it could read the alerts).
 c2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-c2.request("GET", "/api/alerts/stream?notify=1", headers={"Origin": "http://evil.example"})
+c2.request("GET", "/api/alerts/stream", headers={"Origin": "http://evil.example"})
 check(c2.getresponse().status == 403, "another site's page is refused")
 c2.close()
 

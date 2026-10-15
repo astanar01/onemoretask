@@ -3583,19 +3583,36 @@ $("#show-subs").addEventListener("change", () => {
   render();
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
-// Browser notifications: one alert stream for every project. ?notify=1 tells server.py to skip its own Mac alert.
-let notifyES = null;
+// Browser notifications: one alert stream for every project, held by ONE tab (the leader, holding a Web Lock), so
+// many board tabs don't use up the browser's 6 connections per host, and each alert pops up once. When the leader
+// closes, its lock frees and a waiting tab takes over.
+let notifyES = null, notifyStop = null;
 function notifyOn() { try { return localStorage.getItem(LS_KEY + ":notify") === "1"; } catch (_) { return false; } }
+function openStream() {
+  notifyES = new EventSource("/api/alerts/stream");   // reconnects by itself after a network drop
+  notifyES.addEventListener("alert", (e) => showAlert(JSON.parse(e.data)));
+  notifyES.onerror = () => {
+    if (!notifyES || notifyES.readyState !== EventSource.CLOSED) return;
+    notifyES = null;
+    if (notifyStop) { notifyStop(); notifyStop = null; }   // gave up: let another tab try
+  };
+}
+function closeStream() { if (notifyES) { notifyES.close(); notifyES = null; } }
 function syncNotify() {
-  const on = notifyOn(), perm = Notification.permission;
+  const on = notifyOn(), perm = Notification.permission, want = on && perm === "granted";
   $("#notify").checked = on && perm !== "default";
   $("#notify-hint").hidden = !(on && perm === "denied");
-  if (on && perm === "granted" && !notifyES) {
-    notifyES = new EventSource("/api/alerts/stream?notify=1");   // reconnects by itself after a network drop
-    notifyES.addEventListener("alert", (e) => showAlert(JSON.parse(e.data)));
-    notifyES.onerror = () => { if (notifyES && notifyES.readyState === EventSource.CLOSED) notifyES = null; };
-  } else if (!(on && perm === "granted") && notifyES) { notifyES.close(); notifyES = null; }
+  if (!navigator.locks) { if (want && !notifyES) openStream(); else if (!want) closeStream(); return; }
+  if (want && !notifyStop) {
+    const ac = new AbortController();
+    let release;
+    const held = new Promise((r) => { release = r; });
+    notifyStop = () => { ac.abort(); release(); };   // abort drops a request still waiting; release ends a held one
+    navigator.locks.request("otask-alerts", { signal: ac.signal }, () => { openStream(); return held.then(closeStream); })
+      .catch(() => {});
+  } else if (!want && notifyStop) { notifyStop(); notifyStop = null; }
 }
+addEventListener("storage", (e) => { if (e.key === LS_KEY + ":notify" && !$("#notify-row").hidden) syncNotify(); });
 function showAlert(a) {
   const icon = document.querySelector('link[rel="icon"]');
   const n = new Notification(a.title, { body: a.sub + (a.reason ? "\n" + a.reason : ""), tag: "otask-" + a.seq, icon: icon ? icon.href : undefined });
@@ -3618,8 +3635,10 @@ async function initNotify() {
   syncNotify();
 }
 $("#notify").addEventListener("change", async (e) => {
-  try { localStorage.setItem(LS_KEY + ":notify", e.target.checked ? "1" : "0"); } catch (_) {}
-  if (e.target.checked && Notification.permission === "default") await Notification.requestPermission();
+  const on = e.target.checked;
+  if (on && Notification.permission === "default") await Notification.requestPermission();
+  // Saved after the answer, so the other tabs' storage event already sees the permission.
+  try { localStorage.setItem(LS_KEY + ":notify", on ? "1" : "0"); } catch (_) {}
   syncNotify();
 });
 $("#layout").value = view;
