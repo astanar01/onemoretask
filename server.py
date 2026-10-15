@@ -176,24 +176,52 @@ def claude_cmd(found=None):
 
 
 CLAUDE_CMD = claude_cmd()
+# User-settings keys that say how Claude Code logs in and reaches the API (key helper, Bedrock/Vertex, proxy).
+AUTH_SETTINGS = ("env", "apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "gcpAuthRefresh",
+                 "forceLoginMethod", "forceLoginOrgUUID")
+
+
+def auth_settings():
+    """The login part of the user's Claude Code settings, as a --settings value ("" when there is none).
+    `--setting-sources ""` skips the user settings file, and with it a login kept there."""
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "settings.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            s = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    keep = {k: s[k] for k in AUTH_SETTINGS if isinstance(s, dict) and s.get(k)}
+    return json.dumps(keep) if keep else ""
 
 
 def ask_claude(model, ask, data, timeout, system=None):
-    """One answer from a bare `claude -p`: no tools, MCP, hooks, CLAUDE.md or settings, so the model does not turn
-    into a coding agent that answers or acts on the data. The CLI puts `ask` first and `data` (stdin) after it.
-    `system` replaces the default agent system prompt. Returns the answer text; raises RuntimeError on a failure."""
+    """One answer from a bare `claude -p`: no tools, MCP, hooks, CLAUDE.md or settings (but the login ones), so the
+    model does not turn into a coding agent that answers or acts on the data. The CLI puts `ask` first and `data`
+    (stdin) after it. `system` replaces the default agent system prompt. Returns the answer text; raises RuntimeError
+    on a failure."""
     args = ["-p", "--model", model, "--setting-sources", "", "--strict-mcp-config", "--mcp-config",
             '{"mcpServers":{}}', "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1"]
+    auth = auth_settings()
+    if auth:
+        args += ["--settings", auth]
     if system:
         args += ["--system-prompt", system]
-    r = run_claude(args + [ask], input=data, cwd=tempfile.gettempdir(), timeout=timeout)
+    try:
+        r = run_claude(args + [ask], input=data, cwd=tempfile.gettempdir(), timeout=timeout)
+    except FileNotFoundError:
+        raise RuntimeError(f"Claude Code is not installed or not found ({CLAUDE_CMD[0]})")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Claude did not answer within {timeout} seconds")
     try:
         out = json.loads(r.stdout)
     except ValueError:
         out = {}
     text = (out.get("result") or "").strip()
     if r.returncode != 0 or out.get("is_error") or not text:
-        raise RuntimeError((text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}")
+        err = (text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}"
+        if "unknown option" in err:  # --tools and --disable-slash-commands came in Claude Code 2.0.60
+            err += " — Claude Code is too old: run `claude update`"
+        raise RuntimeError(err)
     return text
 
 

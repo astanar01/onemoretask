@@ -17,7 +17,7 @@
 - If sending a task fails halfway, Claude no longer keeps working on it out of sight.
 - If another app already uses the board's address, the board tells you so instead of opening that app.
 - If Claude saved work in a side place the task does not know about, the task now tells you, so that work is not lost.
-- A new task now gets its name much more often. Before, a task written as a question ("why does this break?") often stayed "Untitled".
+- A new task now gets its name much more often. Before, a task written as a question ("why does this break?") often stayed "Untitled". It also works now on computers where Claude was set up in a less usual way. And when Claude can't find a name, the bottom of the board says why.
 - The three dots on task cards are gone. Click the card to open it, like before.
 - The bar at the top no longer gets squashed when the window is short. Its buttons stay whole.
 - In the list view, you can now drag the edge of the list of tasks to make it wider or narrower. Double-click the edge to put it back.

@@ -80,6 +80,36 @@ try:
 except RuntimeError:
     check("no JSON raises", "raised", "raised")
 
+# --setting-sources "" also skips a login kept in ~/.claude/settings.json (apiKeyHelper, env: an API key, Bedrock):
+# a Mac set up that way got "Not logged in". The login keys go back in through --settings; hooks and the rest stay out.
+fake_claude('{"title": "x"}')
+check("no user settings: no --settings", "--settings" in calls[-1][0], False)
+os.makedirs(os.path.join(os.environ["HOME"], ".claude"))
+with open(os.path.join(os.environ["HOME"], ".claude", "settings.json"), "w") as f:
+    json.dump({"apiKeyHelper": "echo k", "env": {"CLAUDE_CODE_USE_BEDROCK": "1"}, "hooks": {"Stop": []},
+               "model": "opus"}, f)
+server.autofill("notes", True, False)
+args = calls[-1][0]
+check("login settings passed, hooks and model not", json.loads(args[args.index("--settings") + 1]),
+      {"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}, "apiKeyHelper": "echo k"})
+
+
+def failing(exc=None, out=""):
+    def run(args, **kw):
+        if exc:
+            raise exc
+        return SimpleNamespace(returncode=1, stdout="", stderr=out)
+    server.run_claude = run
+    try:
+        server.autofill("notes", True, False)
+    except RuntimeError as e:
+        return str(e)
+
+
+check("no claude: says so", "not installed or not found" in (failing(FileNotFoundError()) or ""), True)
+check("timeout: says so", "within 90 seconds" in (failing(subprocess.TimeoutExpired("claude", 90)) or ""), True)
+check("old claude: says update", "claude update" in (failing(out="error: unknown option '--tools'") or ""), True)
+
 # The board: one autoFill per card at a time, so Send waits for the call the title box started when it lost focus.
 node = shutil.which("node")
 if node:
@@ -105,6 +135,28 @@ const post = (url, body) => { calls++; return new Promise((r) => (resolveCall = 
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
     check("Send waits for the running call; Untitled meanwhile; Claude's title after",
           got, ["Untitled", True, 1, "Fix column scroll jump"])
+
+    # A failed title call says why on the status line (it used to keep "Untitled" silently); no server at all stays quiet.
+    harness = """
+let openId = null, shown = [];
+const window = { t: (s, v) => s.replace("{error}", v ? v.error : "") };
+const task = (id) => card, touch = () => {}, render = () => {}, $ = () => ({}), tagSuggestions = () => [];
+const setStatus = (msg, err) => shown.push([msg, !!err]);
+let card, fail;
+const post = () => Promise.reject(fail);
+""" + fn + """
+(async () => {
+  card = { id: "a", title: "", tags: ["x"], notes: "n", agent: null }; fail = new Error("Not logged in");
+  await autoFill(card);
+  card = { id: "b", title: "", tags: ["x"], notes: "n", agent: null }; fail = new TypeError("Failed to fetch");
+  await autoFill(card);
+  console.log(JSON.stringify([shown, card.title]));
+})();
+"""
+    out = subprocess.run([node, "-e", harness], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("A failed title call shows why; no server stays quiet",
+          got, [[["Claude could not make a title: Not logged in", True]], "Untitled"])
 
     # Send shows "Sending" and moves the card at once; the launch itself still waits for the title.
     send_fn = re.search(r"async function sendToClaude\(t\) \{[\s\S]*?\n}\n", src).group(0)
