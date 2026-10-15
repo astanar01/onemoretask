@@ -87,5 +87,23 @@ for t in ts:
 check("race: one created", out.count(True) >= 1, True)
 check("race: no lock left", os.path.isfile(os.path.join(r.path, ".git", "index.lock")), False)
 
+# A WordPress site: media and backups stay out of the first commit; themes and plugins go in.
+w = project("wp", 0)
+for d, name in [("wp-content/uploads/2024", "a.jpg"), ("wp-content/updraft", "backup.zip"),
+                ("wp-content/themes/t", "style.css"), ("wp-content/plugins/x", "x.php"), ("", "wp-config.php")]:
+    os.makedirs(os.path.join(w.path, d), exist_ok=True)
+    open(os.path.join(w.path, d, name), "w").write("x")
+server.init_repo(w)
+tracked = sorted(subprocess.run(["git", "-C", w.path, "ls-files"], capture_output=True, text=True).stdout.split())
+check("wp: uploads and backups left out", tracked,
+      ["wp-config.php", "wp-content/plugins/x/x.php", "wp-content/themes/t/style.css"])
+# Not WordPress: an uploads folder is kept.
+n = project("plain", 0)
+os.makedirs(os.path.join(n.path, "uploads"))
+open(os.path.join(n.path, "uploads", "a.jpg"), "w").write("x")
+server.init_repo(n)
+check("plain: uploads kept", subprocess.run(["git", "-C", n.path, "ls-files"], capture_output=True, text=True)
+      .stdout.split(), ["uploads/a.jpg"])
+
 print("FAILED" if fails else "PASSED", f"({fails} failing)")
 sys.exit(1 if fails else 0)

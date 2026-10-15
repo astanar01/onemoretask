@@ -812,6 +812,9 @@ WORKTREES = ".claude/worktrees"  # under the repo root; one folder per task sent
 
 
 SECRET_FILES = (".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template")  # kept out of init_repo's commit
+# A WordPress site's media and backup-plugin folders: gigabytes, copied into every worktree if committed.
+WP_HEAVY = ("/wp-content/uploads/", "/wp-content/updraft/", "/wp-content/ai1wm-backups/",
+            "/wp-content/backups-dup-lite/", "/wp-content/backup-db/", "/wp-content/upgrade-temp-backup/")
 
 
 def exclude_dirs(p, dirs):
@@ -894,6 +897,8 @@ def init_repo(p):
         if not info["commits"]:
             exclude_local(p)
             exclude_patterns(p, SECRET_FILES)
+            if os.path.isdir(os.path.join(p.path, "wp-content")):
+                exclude_patterns(p, WP_HEAVY)
             # No commit yet and no run of ours in flight: an index.lock is left from an earlier run that was stopped.
             lock = git_try(p.path, "rev-parse", "--git-path", "index.lock")
             if lock and os.path.isfile(os.path.join(p.path, lock)):
