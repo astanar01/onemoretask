@@ -811,9 +811,9 @@ def worktree_name(t):
 
 
 def default_branch(cwd):
-    """The repo's default branch: origin/HEAD's branch, else main, else None. Only branches that exist locally."""
+    """The repo's default branch: origin/HEAD's branch, else main, else master, else None. Only branches that exist locally."""
     for b in ((git_try(cwd, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD") or "").removeprefix("origin/"),
-              "main"):
+              "main", "master"):
         if b and git_try(cwd, "rev-parse", "--verify", "--quiet", f"refs/heads/{b}") is not None:
             return b
     return None
