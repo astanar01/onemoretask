@@ -201,15 +201,13 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 .lcard .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(15px * var(--ts)); }
 .lcard .prio { margin: 0; vertical-align: 0; flex: none; }
 .lcard .lsub { color: var(--muted); flex: none; }
-.lcard .lmore { border: 0; background: transparent; color: var(--muted); padding: 0 2px; border-radius: 5px; flex: none; display: grid; place-items: center; height: 20px; }
-.lcard .lmore:hover { background: var(--col); color: var(--text); }
 .lcard .l2 { color: var(--muted); font-size: calc(13px * var(--ts)); flex-wrap: wrap; row-gap: 4px; }
 .lcard .l2 svg { flex: none; }
 .lcard .lbr { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .lcard .lbr span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lcard .agent { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lcard .tags { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
-.lcard .lmsg { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; padding-right: 26px; }
+.lcard .lmsg { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; }
 .lcard.is-done .title { text-decoration: line-through; color: var(--muted); }
 .lcard.needs-you { box-shadow: inset 3px 0 0 var(--wait); }
 .lcard.unread .title { font-weight: 600; }
@@ -1490,9 +1488,8 @@ function listRowEl(x, depth) {
     ${x.agent ? `<span class="agent ${pillCls(ag)}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(x))}</span>${yoursChip(x, ag)}` : ""}
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
-  el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span><button type="button" class="lmore" title="${t("Open task")}">${icon("more", 18)}</button></div>
+  el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
     ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}`;
-  el.querySelector(".lmore").onclick = (e) => { e.stopPropagation(); openDetail(x.id); };
   el.onclick = () => openDetail(x.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(x.id); } };
   return el;

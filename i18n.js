@@ -551,7 +551,6 @@ const I18N = {
     "Clear filters": "Effacer les filtres",
     "Expand": "Déplier",
     "Collapse": "Replier",
-    "Open task": "Ouvrir la tâche",
     "1 message": "1 message",
     "{n} messages": "{n} messages",
     "To Do": "À faire",
