@@ -368,7 +368,7 @@ def remove(board, thread_id):
 # ---------------------------------------------------------------- reading the log
 def last_answer(log_path, reply_text=None):
     """Codex's chat text of the last turn ('' if none)."""
-    texts = [e["item"].get("text", "").strip() for e in _last_turn(log_path)
+    texts = [str(e["item"].get("text") or "").strip() for e in _last_turn(log_path)
              if e.get("type") == "item.completed" and isinstance(e.get("item"), dict)
              and e["item"].get("type") == "agent_message"]
     return "\n\n".join(t for t in texts if t)

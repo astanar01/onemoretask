@@ -49,6 +49,12 @@ for a in it:
 if len(args) != 3 or args[1] not in STATUSES + ("decision",):
     sys.exit(__doc__)
 task_id, status, message = args
+try:
+    reports._path("", task_id)
+except ValueError as e:
+    sys.exit(str(e))
+if status != "decision" and not message.strip():
+    sys.exit(f"{status} needs a message")
 if options:
     if status != "question":
         sys.exit("--option only goes with question")
