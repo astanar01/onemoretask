@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -185,6 +186,42 @@ check(len(reopened) == 1 and reopened[0][0] == "t2" and "wait, also do X" in reo
       "spawn close: the note reopens the card in a new session", reopened)
 check(not reports.take_notes(p.board, "t2")[0] and (p.id, "t2") not in server.WATCH.closing,
       "spawn close: no note left pending, card no longer closing", (reports.read(p.board, "t2"), server.WATCH.closing))
+
+# A done card whose sessions were already closed (recap saved, session gone): start from the saved recap.
+server.list_sessions = lambda cwd: []
+ran.clear()
+for close in (False, True):
+    code, r = post({"p": p.id, "taskId": "t1", "close": close})
+    check(code == 200 and r == want, f"closed card, close={close}: follow-up from the saved recap", (code, r))
+check(not ran and (p.id, "t1") not in server.WATCH.closing, "closed card: nothing removed, not left closing",
+      (ran, server.WATCH.closing))
+
+# Moved to done a moment ago: the watcher is still writing the recap. Spawn waits for it, then uses it.
+state = server.load_tasks(p)
+state["tasks"].append({"id": "t3", "title": "Asked", "column": "done", "agent": {"id": "a3", "model": "sonnet"}})
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(state, f)
+server.WATCH.closing.add((p.id, "t3"))
+
+
+def watcher_finishes():
+    time.sleep(1)
+    with open(reports.recap_path(p.board, "t3"), "w", encoding="utf-8") as f:
+        f.write("## Goal\nAnswer.\n\n" + server.TRANSCRIPTS + "\n\nFull conversations:\n\n- /x/s3.jsonl\n")
+    with server.WATCH.lock:
+        server.WATCH.closing.discard((p.id, "t3"))
+
+
+threading.Thread(target=watcher_finishes, daemon=True).start()
+code, r = post({"p": p.id, "taskId": "t3", "close": True})
+check(code == 200 and r["title"] == "Follow-up: Asked" and r["model"] == "sonnet"
+      and r["notes"] == 'Continues the card "Asked" (t3).\n\n## Goal\nAnswer.\n\nFull conversations: /x/s3.jsonl',
+      "recap being written: waits, then uses it", (code, r))
+server.WATCH.closing.add((p.id, "t3"))
+server.SPAWN_WAIT = 0.6
+code, r = post({"p": p.id, "taskId": "t3", "close": True})
+check(code == 500 and "still being written" in r.get("error", ""), "recap never finishes: says so", (code, r))
+server.WATCH.closing.discard((p.id, "t3"))
 server.list_sessions = lambda cwd: [{"id": "a0", "sessionId": "s0", "state": "done"}]
 
 code, r = post({"p": p.id, "taskId": "nope", "close": False})

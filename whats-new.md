@@ -6,6 +6,7 @@
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.
 - When Claude picks between options, its card now shows the choice as a small tree: what was asked, each option, which one was picked and who picked it.
 - A card that only answers now gets a Create new task button when you ask it for work. The work goes to a new card that starts from this one's summary, so this card stays as it was.
+- Making a new task from a finished card now works, even right after you finish it. Before, it showed an error while Claude was still writing the summary, or after it was done.
 - Claude can no longer post a card message in another language than the one you wrote in. If you write in English, a message in French gets stopped, and Claude has to write it again in English.
 - Claude's messages are easier to read: titles are bigger, there is more room between parts, and lists breathe. Tables, code boxes and quotes now show as real tables, boxes and quotes. Each review finding sits in its own card: a coloured tag for how serious it is, the title, then Where, Problem, Fix and Proof lined up, with the fix in its own box.
 - When you press Send to Claude, the task page now switches to its summary at once. Claude gets started in the background while you look.

@@ -2834,18 +2834,39 @@ def recap_sessions(p, task_id):
     return t, sessions, recap, list(dict.fromkeys(old + paths))
 
 
+def saved_recap(p, task_id):
+    """The recap archive() saved for a card whose sessions are closed: (t, recap markdown, transcript paths), or
+    None when there is none."""
+    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    text = reports.read_recap(p.board, task_id)
+    if not t or not t.get("agent") or not text.strip():
+        return None
+    recap, _, listing = text.partition(TRANSCRIPTS)
+    return t, recap.strip(), re.findall(r"^- (.+\.jsonl)$", listing, re.M)
+
+
+SPAWN_WAIT = 600  # seconds spawn waits for a recap the watcher is writing (claude -p over long transcripts)
+
+
 def spawn(p, task_id, close):
     """The data for a follow-up card that continues this one from a recap of its sessions. `close` also archives
     the old card (recap saved, sessions removed); otherwise the old card and its sessions are left as they are.
-    The page creates the new card itself."""
-    if close:
-        # Same guards as Watcher._close: a reply during the recap becomes a note instead of resuming a session
-        # about to be removed, and a move to done at the same moment does not archive it twice.
-        key = (p.id, task_id)
+    The page creates the new card itself. A card whose sessions were already closed starts from its saved recap;
+    while that recap is being written (moved to done a moment ago), this waits for it."""
+    key = (p.id, task_id)
+    deadline = time.time() + SPAWN_WAIT
+    while True:
         with WATCH.lock:
-            if key in WATCH.closing:
-                raise RuntimeError("the recap of this card is already being written")
-            WATCH.closing.add(key)
+            if key not in WATCH.closing:
+                # Same guards as Watcher._close: a reply during the recap becomes a note instead of resuming a
+                # session about to be removed, and a move to done at the same moment does not archive it twice.
+                if close:
+                    WATCH.closing.add(key)
+                break
+        if time.time() > deadline:
+            raise RuntimeError("the recap of this card is still being written; try again in a minute")
+        time.sleep(0.5)
+    if close:
         try:
             with CLOSE_SLOTS:
                 r = archive(p, task_id)
@@ -2856,9 +2877,12 @@ def spawn(p, task_id, close):
         WATCH.hand_notes(p, task_id)
     else:
         r = recap_sessions(p, task_id)
+        r = r and (r[0], r[2], r[3])
+    if not r:
+        r = saved_recap(p, task_id)
     if not r:
         raise LookupError("no Claude session for this task")
-    t, recap, paths = (r[0], r[1], r[2]) if close else (r[0], r[2], r[3])
+    t, recap, paths = r
     notes = f'Continues the card "{t["title"]}" ({t["id"]}).\n\n{recap}'
     if paths:
         notes += "\n\nFull conversations: " + ", ".join(shell_path(x) for x in paths)
