@@ -51,6 +51,16 @@ class InstallHooksTest(unittest.TestCase):
     def commands(self, event):
         return [h["command"] for e in self.settings()["hooks"].get(event, []) for h in e["hooks"]]
 
+    def test_lost_manifest_is_rebuilt_and_updates_still_land(self):
+        self.run_installer()
+        (self.claude / install_hooks.MANIFEST).unlink()
+        self.run_installer()
+        self.assertTrue((self.claude / install_hooks.MANIFEST).exists())
+        hook = self.repo / "claude" / "hooks" / "session-gate.sh"
+        hook.write_text(hook.read_text() + "\n# shipped update\n")
+        self.run_installer()
+        self.assertEqual((self.claude / "hooks" / "session-gate.sh").read_bytes(), hook.read_bytes())
+
     def test_first_install_copies_everything_and_merges_settings(self):
         out = self.run_installer()
         for _, src, dest in install_hooks.shipped(self.claude):

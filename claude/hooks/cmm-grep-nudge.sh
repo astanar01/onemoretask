@@ -40,7 +40,22 @@ src_dir = re.compile(r"(^|/)(src|app|apps|lib|pkg|internal|hooks|agents|scripts)
 nav = {"grep", "egrep", "rg", "cat", "head", "tail", "awk", "less", "nl"}
 dir_nav = {"grep", "rg", "find", "cat", "head", "tail", "wc"}
 dir_hit = False
-for seg in re.split(r"\|\||&&|[|;&\n()]", cmd):
+def segments(s):
+    # Split on | ; & ( ) and newlines outside quotes: `grep "a|b" x.py` is one command.
+    segs, cur, q, i = [], "", "", 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and q != "'":
+            cur += s[i:i + 2]; i += 2; continue
+        if q:
+            q = "" if c == q else q
+        elif c in "'\"":
+            q = c
+        elif c in "|;&\n()":
+            segs.append(cur); cur = ""; i += 1; continue
+        cur += c; i += 1
+    return segs + [cur]
+for seg in segments(cmd):
     try:
         w = shlex.split(seg, comments=True)
     except ValueError:
@@ -74,8 +89,11 @@ PY
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
-    # Normalize path to resolve symlinks (macOS /var/folders -> /private/var/folders)
-    BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && pwd -P) || BASH_REPO_ROOT="${BASH_CWD:-.}"
+    # Same root cmm-sentinel-writer.sh keys the sentinel on (lib/project-root.sh): a subfolder or a worktree
+    # of the project must find the sentinel too.
+    _HOOK_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+    BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && . "$_HOOK_DIR/lib/project-root.sh" && printf '%s' "$PROJECT_ROOT")
+    [ -n "$BASH_REPO_ROOT" ] || BASH_REPO_ROOT="${BASH_CWD:-.}"
     BASH_CMM_FOUND=false
     if [ -f "$BASH_REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$BASH_REPO_ROOT/.mcp.json" 2>/dev/null; then
       BASH_CMM_FOUND=true

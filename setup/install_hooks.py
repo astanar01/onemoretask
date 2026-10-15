@@ -75,6 +75,7 @@ def install_files(claude, dry):
             current = sha256(dest)
             if current == new:
                 r["same"].append(key)
+                sums[key] = new  # a lost manifest would otherwise keep every later update out as "yours"
                 continue
             if sums.get(key) != current:  # edited since we installed it, or never ours
                 r["kept"].append(dest.relative_to(r["dir"]).as_posix())
