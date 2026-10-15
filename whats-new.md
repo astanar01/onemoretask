@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- When Claude picks between options, its card now shows the choice as a small tree: what was asked, each option, which one was picked and who picked it.
 - A card that only answers now gets a Create new task button when you ask it for work. The work goes to a new card that starts from this one's summary, so this card stays as it was.
 
 ## 2026-10-14

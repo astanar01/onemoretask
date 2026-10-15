@@ -444,6 +444,9 @@ def card_lines(report, answer_only=False):
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
+              f'- `{report} decision -` when you choose between options (a fork in the work, or a '
+              "choice the user made): pipe in JSON (a heredoc) with the query, the options with a short why each, "
+              "the index of the one chosen (null while open), by (\"agent\" or \"you\") and why. The card draws it as a tree.",
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "

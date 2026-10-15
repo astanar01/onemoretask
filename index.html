@@ -273,6 +273,17 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
 #d-log .mark.sent { color: var(--ok); font-weight: 700; }
 #d-log .note-state { font-style: italic; }
+.dtree { font-size: calc(13px * var(--ts)); }
+.dtree .dq { font-weight: 600; margin-bottom: 4px; }
+.dtree > ul { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
+.dtree > ul > li { display: flex; gap: 6px; padding: 3px 0 3px 8px; }
+.dtree .dmark { color: var(--muted); }
+.dtree .dlabel { font-weight: 500; }
+.dtree .dwhy { font-size: calc(12px * var(--ts)); color: var(--muted); }
+.dtree > ul > li.on { color: var(--ok); }
+.dtree > ul > li.on .dlabel { font-weight: 700; }
+.dtree > ul > li.off { opacity: .5; }
+.dtree .dwho { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 3px; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1790,7 +1801,7 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.decision ? decisionTree(e.decision) : `<div class="msg md">${fmtMsg(e.message)}</div>`}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
@@ -3013,6 +3024,16 @@ function fmtMsg(text) {
     else out += `<div>${fmtItem(l)}</div>`;
   }
   return out;
+}
+// A decision entry (report.py decision): the query, each option with its why, the chosen one marked, who chose.
+function decisionTree(d) {
+  const opts = d.options.map((o, i) => {
+    const cls = d.chosen == null ? "" : d.chosen === i ? "on" : "off";
+    return `<li class="${cls}"><span class="dmark">${d.chosen === i ? "●" : "○"}</span><div><div class="dlabel">${esc(o.label)}</div>${o.why ? `<div class="dwhy">${esc(o.why)}</div>` : ""}</div></li>`;
+  }).join("");
+  const by = d.by === "you" ? window.t("Chosen by you") : window.t("Chosen by Claude");
+  const chooser = d.chosen == null ? window.t("Still open") : `${by}${d.why ? `: ${esc(d.why)}` : ""}`;
+  return `<div class="dtree"><div class="dq">${esc(d.query)}</div><ul>${opts}</ul><div class="dwho">${chooser}</div></div>`;
 }
 function fmt(iso) { return iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 

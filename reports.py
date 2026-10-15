@@ -189,12 +189,44 @@ def _write_json(path, obj):
             time.sleep(0.05)
 
 
-def append(board, task_id, status, message, sender, session=None, images=None):
+def check_decision(d):
+    """A decision report's JSON as stored: the query, the options (label, why), the index chosen (None = still open), who chose."""
+    if not isinstance(d, dict) or not str(d.get("query") or "").strip():
+        raise ValueError('a decision needs a "query"')
+    opts = d.get("options")
+    if not isinstance(opts, list) or not 2 <= len(opts) <= 6:
+        raise ValueError('"options" needs 2 to 6 entries')
+    clean = []
+    for o in opts:
+        label = str(o.get("label") or "").strip() if isinstance(o, dict) else ""
+        if not label:
+            raise ValueError('every option needs a "label"')
+        clean.append({"label": label, "why": str(o.get("why") or "").strip()})
+    chosen = d.get("chosen")
+    if chosen is not None and (not isinstance(chosen, int) or isinstance(chosen, bool) or not 0 <= chosen < len(clean)):
+        raise ValueError('"chosen" is an option index (0 to %d), or null while open' % (len(clean) - 1))
+    by = d.get("by") or "agent"
+    if by not in ("agent", "you"):
+        raise ValueError('"by" is "agent" or "you"')
+    return {"query": str(d["query"]).strip(), "options": clean, "chosen": chosen, "by": by,
+            "why": str(d.get("why") or "").strip()}
+
+
+def decision_message(d):
+    """The plain line a decision also carries (what older readers show)."""
+    if d["chosen"] is None:
+        return f"Decision open: {d['query']}"
+    return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
+
+
+def append(board, task_id, status, message, sender, session=None, images=None, decision=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
     if images:
         entry["images"] = images  # names in log_images(board)
+    if decision:
+        entry["decision"] = decision  # check_decision(); the card draws it as a tree
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
