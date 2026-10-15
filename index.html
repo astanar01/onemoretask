@@ -1624,10 +1624,10 @@ function freshTip(f) {
 }
 let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
-function openFresh(t) {
+function openFresh(t, text = "") {
   const f = (agents[t.id] && agents[t.id].fresh_start) || {};
   freshFor = t.id;
-  $("#fresh-text").value = "";
+  $("#fresh-text").value = text;
   $("#fresh-close").checked = f.fit === "good";
   $("#fresh-msg").textContent = ""; $("#fresh-msg").className = "";
   $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = false;
@@ -1919,6 +1919,11 @@ function nextAction(t, ag, g) {
   const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
     : { title: window.t("Ready to send"), text: window.t("Claude has not started this task yet. Pick a model and send it."), actions: [] };
+  // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
+  const lastSaid = ag && (ag.log || []).filter((x) => x.from === "you" && x.status !== "note").pop();
+  if (t.answerOnly && lastSaid && lastSaid.status === "reply") return { title: window.t("This asks for work"),
+    text: window.t("An answer-only card changes nothing. Create a new task for the work: it starts from this card's recap."),
+    actions: [act(window.t("Create new task"), "primary", () => openFresh(t, lastSaid.message || ""), { title: window.t("Opens New task from this, with your follow-up as what the new task should do") }), markDone("ghost")] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
     // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).

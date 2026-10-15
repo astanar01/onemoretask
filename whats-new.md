@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- A card that only answers now gets a Create new task button when you ask it for work. The work goes to a new card that starts from this one's summary, so this card stays as it was.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.
