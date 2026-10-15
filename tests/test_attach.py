@@ -41,6 +41,23 @@ print("ok  menu_options reads the three menu variants")
 for n in ("idle_question_text.raw", "bash_short_after_allow.raw", "bash_long_after_always.raw"):
     assert attach.menu_options(screen(n)) == [], n
 print("ok  menu_options is empty with no prompt on screen (idle session, after a key)")
+variable = attach.menu_options(screen("bash_variable_before.raw"))
+assert variable == [("1", "Yes"), ("2", "Yes, and switch to auto mode · auto mode handles these prompts for you"),
+                    ("3", "No")], variable
+assert [attach.pick(variable, c) for c in ("allow", "always", "deny")] == ["1", None, "3"]
+print("ok  menu_options + pick on a real 'variable can't be checked' prompt: no 'Yes, and' to always-allow")
+# A boxed Yes / No menu with a line under the box, as the board reported it: "it offers: Yes |; No | | +1 file
+# edited before this session (show)" (no capture of that screen).
+boxed = ("│ Do you want to proceed?            │\r\n│ ❯ 1. Yes                           │\r\n"
+         "│   2. No                            │\r\n╰────────────────────────────────────╯\r\n"
+         "  +1 file edited before this session (show)\r\n")
+for bar in ("│", "|"):
+    opts = attach.menu_options(boxed.replace("│", bar))
+    assert opts == [("1", "Yes"), ("2", "No")], (bar, opts)
+    assert [attach.pick(opts, c) for c in ("allow", "deny")] == ["1", "2"], (bar, opts)
+assert attach.menu_options("Do you want to proceed?\r ❯ 1. Yes, and don't ask again for: ls | grep x\r 2. No\r") == [
+    ("1", "Yes, and don't ask again for: ls"), ("2", "No")]
+print("ok  menu_options drops a box border and the text after it from a label (Allow failed on 'Yes |')")
 
 # pick
 for n, opts in menus.items():
