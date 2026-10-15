@@ -470,6 +470,10 @@ def card_lines(report, answer_only=False):
               "(2 to 6) as a short `--option` label, e.g. \"A. Task list (left)\"; explain them in the message. The "
               "card shows a button per option, and the user can also type an answer. Do not guess on decisions the "
               "user should make.",
+              f'- Several decisions at once: ONE `{report} question "<intro>" --part "1. <first question>" --option '
+              '"a) <label>" --option "b) <label>" --part "2. <next question>" --option ...` (1 to 8 parts). The card '
+              "shows a row of choices per part and one send button; never ask the user to type letters like \"1a 2b\". "
+              "The answer comes back as one line per part: \"<part> → <option>\".",
               f'- `{report} decision -` when YOU choose between options (a fork in the work): pipe in JSON (a heredoc) '
               "with the query, the options with a short why each, the index of the one chosen (null while open), by "
               "\"agent\" and why. The card draws it as a tree. Never post a decision for a choice the user just made "

@@ -375,6 +375,11 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 .qopts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .qopts .btn { font-size: calc(13px * var(--ts)); text-align: left; white-space: normal; }
 .qopts .btn.picked:disabled { opacity: 1; border-color: var(--ok); color: var(--ok); font-weight: 600; }
+.qparts { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.qparts .qopts { margin-top: 4px; }
+.qpq { font-weight: 600; font-size: calc(13px * var(--ts)); }
+.qparts .btn.picked:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.qsend { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: calc(12px * var(--ts)); }
 .dtree .dlabel { font-weight: 500; }
 .dtree .dwhy { font-size: calc(12px * var(--ts)); color: var(--muted); }
 .dtree > ul > li.on { color: var(--ok); }
@@ -1787,14 +1792,64 @@ function addPending(t, status, message, images) {
 let logShown = [];
 function qChoices(shown, i) {
   const e = shown[i];
-  if (e.from === "you" || e.status !== "question" || !Array.isArray(e.options) || !e.options.length) return "";
+  if (e.from === "you" || e.decision) return "";
   const later = shown.slice(i + 1), ans = later.find((x) => x.from === "you");
-  const said = ans ? String(ans.message || "").trim() : null;
   const live = !ans && !later.some((x) => x.from !== "you" && x.status === "question");
+  if (!Array.isArray(e.options) || !e.options.length || e.status !== "question") {
+    const parts = qParts(e);
+    return parts.length >= (e.status === "question" || e.parts ? 1 : 2) ? partsHtml(e, i, parts, ans, live) : "";
+  }
+  const said = ans ? String(ans.message || "").trim() : null;
   return `<div class="qopts">${e.options.map((o, k) => {
     const picked = said !== null && String(o).trim() === said;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qo="${k}"${live ? ` title="${esc(window.t("Send this as your answer"))}"` : " disabled"}>${picked ? "✓ " : ""}${esc(String(o))}</button>`;
   }).join("")}</div>`;
+}
+// A many-part question: parts from report.py --part, or an older message's typed "1. question / - a) choice"
+// list. One row of choices per part and one send button; picks live in qPicks since polls re-render the log.
+const qPicks = {};
+const qKey = (e) => `${openId}:${e.at}`;
+const answerLine = (p, o) => `${p.q} → ${o}`;
+function qParts(e) {
+  if (Array.isArray(e.parts)) return e.parts;
+  const parts = [];
+  let cur = null, m;
+  for (const raw of String(e.message || "").split("\n")) {
+    const line = raw.trim();
+    if (cur && (m = line.match(/^(?:[-*•]\s+)?\(?([a-h])[).]\s+(.+)$/i))) cur.options.push(`${m[1].toLowerCase()}) ${m[2].replace(/\*\*/g, "").trim()}`);
+    else if ((m = line.match(/^\*\*(\d{1,2})[.)]\s+(.+?)\*\*/) || line.match(/^(\d{1,2})[.)]\s+(.+)$/))) parts.push(cur = { q: `${m[1]}. ${m[2].replace(/\*\*/g, "").replace(/:\s*$/, "").trim()}`, options: [] });
+    else if (line && cur && cur.options.length) cur = null;   // prose after a part's choices ends that part
+  }
+  const ok = parts.filter((p) => p.options.length >= 2 && p.options.length <= 6 && new Set(p.options).size === p.options.length);
+  return ok.length <= 8 && new Set(ok.map((p) => p.q)).size === ok.length ? ok : [];
+}
+function partsHtml(e, i, parts, ans, live) {
+  const said = ans ? String(ans.message || "").split("\n").map((s) => s.trim()) : null, picks = qPicks[qKey(e)] || {};
+  const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div><div class="qopts">${p.options.map((o, k) => {
+    const picked = said ? said.includes(answerLine(p, o)) : picks[pi] === k;
+    return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qp="${pi}" data-qo="${k}" aria-pressed="${picked}"${live ? "" : " disabled"}>${picked && !live ? "✓ " : ""}${esc(String(o))}</button>`;
+  }).join("")}</div></div>`).join("");
+  const n = parts.filter((_, pi) => picks[pi] != null).length;
+  const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(window.t("{n} of {m} picked", { n, m: parts.length }))}</span></div>` : "";
+  return `<div class="qparts">${rows}${send}</div>`;
+}
+function pickPart(b) {
+  const e = logShown[+b.dataset.qi], parts = e && qParts(e), pi = +b.dataset.qp;
+  if (!parts || !parts[pi]) return;
+  const picks = (qPicks[qKey(e)] = qPicks[qKey(e)] || {});
+  picks[pi] = +b.dataset.qo;
+  b.closest(".qopts").querySelectorAll("button").forEach((x) => { x.classList.toggle("picked", x === b); x.setAttribute("aria-pressed", x === b); });
+  const n = parts.filter((_, k) => picks[k] != null).length, wrap = b.closest(".qparts");
+  wrap.querySelector("[data-qsend]").disabled = n < parts.length;
+  wrap.querySelector(".qsend span").textContent = window.t("{n} of {m} picked", { n, m: parts.length });
+}
+function sendParts(b) {
+  const e = logShown[+b.dataset.qsend], parts = e && qParts(e), picks = e && qPicks[qKey(e)], t = task(openId);
+  if (!t || !parts || !picks || parts.some((_, k) => picks[k] == null)) return;
+  const extra = $("#d-reply").value.trim();
+  if (extra) setReplyDraft(t.id, "");
+  $("#d-log").querySelectorAll("button[data-qo], button[data-qsend]").forEach((x) => (x.disabled = true));   // no double send
+  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""));
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
@@ -2968,8 +3023,10 @@ async function sendReply(pick) {
 }
 $("#d-reply-send").onclick = () => sendReply();
 $("#d-log").addEventListener("click", (ev) => {
-  const b = ev.target.closest("button[data-qo]");
+  const b = ev.target.closest("button[data-qo], button[data-qsend]");
   if (!b || b.disabled) return;
+  if (b.dataset.qsend != null) return sendParts(b);
+  if (b.dataset.qp != null) return pickPart(b);
   const e = logShown[+b.dataset.qi], o = e && e.options && e.options[+b.dataset.qo];
   if (o == null) return;
   $("#d-log").querySelectorAll("button[data-qo]").forEach((x) => (x.disabled = true));   // no double send

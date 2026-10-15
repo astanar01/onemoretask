@@ -62,5 +62,30 @@ check("card_lines tells agents to pass --option", '--option "A. <short label>"' 
 check("card_lines no longer asks for a decision on the user's choice",
       "choice the user made)" not in text and "Never post a decision for a choice the user just made" in text)
 
+# Many-part questions: --part starts a part, the --option after it belong to it.
+r = cli("question", "Pick both:", "--part", " 1. Starting tokens? ", "--option", "a) 20 at signup", "--option", "b) none",
+        "--part", "2. Do tokens expire?", "--option", "a) no", "--option", "b) yes")
+check("cli accepts a many-part question", r.returncode == 0)
+e = reports.read(BOARD, "t1")[-1]
+check("parts stored, trimmed", e.get("parts") == [{"q": "1. Starting tokens?", "options": ["a) 20 at signup", "b) none"]},
+                                                  {"q": "2. Do tokens expire?", "options": ["a) no", "b) yes"]}])
+check("no options key with parts", "options" not in e)
+n = len(reports.read(BOARD, "t1"))
+for name, args in [("part with one option", ["--part", "1?", "--option", "a", "--part", "2?", "--option", "a", "--option", "b"]),
+                   ("same option twice in a part", ["--part", "1?", "--option", "a", "--option", "a"]),
+                   ("empty part question", ["--part", " ", "--option", "a", "--option", "b"]),
+                   ("same part twice", ["--part", "1?", "--option", "a", "--option", "b", "--part", "1?", "--option", "a", "--option", "b"]),
+                   ("option before the first part", ["--option", "x", "--part", "1?", "--option", "a", "--option", "b"]),
+                   ("nine parts", [x for k in range(9) for x in ("--part", f"{k}?", "--option", "a", "--option", "b")])]:
+    r = cli("question", "Pick?", *args)
+    check(f"refused: {name}", r.returncode != 0 and "question:" in r.stderr)
+r = cli("done", "ok", "--part", "1?", "--option", "a", "--option", "b")
+check("refused: --part with done", r.returncode != 0 and "only goes with question" in r.stderr)
+check("nothing posted by refused part calls", len(reports.read(BOARD, "t1")) == n)
+check("same option label allowed in different parts",
+      cli("question", "Q", "--part", "1?", "--option", "a) no", "--option", "b) yes",
+          "--part", "2?", "--option", "a) no", "--option", "b) yes").returncode == 0)
+check("card_lines tells agents to use --part", '--part "1. <first question>"' in text and "1a 2b" in text)
+
 print("FAILED: " + ", ".join(fails) if fails else "all question option checks passed")
 sys.exit(1 if fails else 0)
