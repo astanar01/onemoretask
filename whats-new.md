@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- The little turning arrow on "Claude: working" and "Code review" now has its own color, so it stands out from the words.
 - A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, grouped by step, with the task you pick open right beside it, laid out like before: its choices on the left and the chat on the right. A Filter button picks which ones to show. The board view is still there in the View menu.
