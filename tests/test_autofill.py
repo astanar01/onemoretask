@@ -122,6 +122,15 @@ const post = (url, body) => { calls.push(url); return url === "/api/autofill"
     check("Send moves the card and shows Sending before the title comes; launches after it",
           got, [["progress", 1, ["/api/autofill"]], ["/api/autofill", "/api/agent"], "Fix column scroll jump", ["bug"], "s1"])
 
+    # The open panel swaps to the sent layout on the click, before the title or the launch come back.
+    shown = (harness.replace('let calls = [], openId = null,', 'let calls = [], openId = "a", panel = [],')
+                    .replace('const dropPending = () => {},', 'const renderDetail = () => panel.push([calls.slice(), pending.map((m) => m.status)]), dropPending = () => {},')
+                    .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",
+                             "console.log(JSON.stringify(panel[0] || null));"))
+    out = subprocess.run([node, "-e", shown], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("Send redraws the open panel with the launch pending before any server call ends", got, [[], ["launch"]])
+
     # Another window's board swapped in while the title was coming (the move not on disk yet): Send still launches.
     reload = (harness.replace("resolveCall(); await send;", 'boardGen++; card.column = "todo"; resolveCall(); await send;')
                      .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",

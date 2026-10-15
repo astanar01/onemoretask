@@ -1607,7 +1607,8 @@ function renderDetail() {
   $("#d-crumb").innerHTML = chain.length
     ? window.t("Subtask of {chain}", { chain: chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ") })
     : window.t("Task");
-  $("#d-crumb").style.display = t.agent && !chain.length ? "none" : "";
+  const sent = !!t.agent || !!launchOf(t);
+  $("#d-crumb").style.display = sent && !chain.length ? "none" : "";
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
@@ -1622,7 +1623,6 @@ function renderDetail() {
   $("#d-answeronly").checked = !!t.answerOnly;
   syncWorktreeBox(t);
   // Once sent, the prompt Claude got is fixed: title, tags, notes, images and new subtasks lock. Replies carry anything new.
-  const sent = !!t.agent;
   for (const id of ["#d-title", "#d-tags", "#d-notes"]) $(id).readOnly = sent;
   $("#d-delegate").disabled = sent;
   $("#d-submodel").disabled = sent || !t.delegate;
@@ -1647,8 +1647,8 @@ function renderDetail() {
     ul.appendChild(li);
   }
   $("#d-newsub").value = "";
-  $("#d-subblock").style.display = t.agent && !kids.length ? "none" : "";
-  $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (t.agent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
+  $("#d-subblock").style.display = sent && !kids.length ? "none" : "";
+  $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (sent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
   renderAgent(t);
   $("#d-dates").textContent = window.t("Updated {updated} · Created {created}", { updated: fmt(t.updated), created: fmt(t.created) });
   disarmDelete();
@@ -1767,6 +1767,8 @@ function addPending(t, status, message, images) {
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
+// Send was clicked and the session is on its way: the panel already shows the sent layout (Summary, tabs).
+const launchOf = (t) => (pending[t.id] || []).find((m) => m.status === "launch");
 const PHASES = { working: t("working"), needs_you: t("needs you"), finished: t("finished"), gone: t("removed") };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
@@ -1969,8 +1971,9 @@ function renderAgent(t) {
   const pend = pending[t.id] || [];
   $("#d-send-row").style.display = t.agent || pend.length ? "none" : "";
   // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
-  const mdl = (t.agent && t.agent.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
-  $("#d-agent").innerHTML = t.agent ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
+  const launch = !t.agent && launchOf(t);
+  const mdl = (t.agent && t.agent.model) || (launch && launch.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
+  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
       <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
@@ -2081,7 +2084,7 @@ function showTab(tab) {
   document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
-  $("#d-reply-wrap").classList.toggle("on", !!t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation"));
+  $("#d-reply-wrap").classList.toggle("on", !!(t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation")));   // undefined would flip it
   if (tab === "conversation") { logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
 }
 document.querySelectorAll("#d-tabs .tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
@@ -2306,7 +2309,7 @@ function renderTech(t) {
 }
 
 function renderOverview(t) {
-  const sent = !!t.agent;
+  const sent = !!t.agent || !!launchOf(t);
   $("#panel").classList.toggle("sent", sent);
   if (ovFor !== t.id) {
     ovFor = t.id;
@@ -2315,7 +2318,7 @@ function renderOverview(t) {
     for (const d of document.querySelectorAll("#d-side details")) d.open = false;
     closeDiff();
     loadTaskGit(t, true);
-  }
+  } else if (t.agent && taskGitFor(t) === undefined) loadTaskGit(t, true);   // the session arrived after the card opened
   if (!sent) {
     place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
     place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
@@ -2328,7 +2331,8 @@ function renderOverview(t) {
   $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = false));
   place($("#d-subs"), $("#d-crit-slot"));
   place($("#d-images"), $("#d-prompt-imgs"));
-  $("#d-tech").hidden = $("#d-prompt").hidden = false;
+  $("#d-tech").hidden = false;
+  $("#d-prompt").hidden = !t.agent;   // the server builds the prompt at launch, once the title is in
   showTab();
   const ag = agents[t.id];
   const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => e.images || []))];
@@ -2367,7 +2371,7 @@ function renderSummary(t) {
   let html;
   if (rep) html = `<div class="sum-label">${rep.status === "recap" ? window.t("Recap") : rep.status === "answer" ? window.t("Answer") : window.t("Result")} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
   else if (latest) html = `<div class="sum-label">${window.t("No final report yet")} · ${window.t("latest {status}", { status: esc(latest.status) })} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
-  else html = `<div class="sum-empty">${ag && ag.phase === "working" ? window.t("Claude has not reported anything yet.") : window.t("No report from Claude on this task.")}</div>`;
+  else html = `<div class="sum-empty">${(ag && ag.phase === "working") || (!t.agent && launchOf(t)) ? window.t("Claude has not reported anything yet.") : window.t("No report from Claude on this task.")}</div>`;
   if (box.innerHTML !== html) box.innerHTML = html;
   // What changed: commits named on the card / ahead of the target, and uncommitted files.
   const items = [];
@@ -2679,7 +2683,9 @@ async function sendToClaude(t) {
   const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
-  refreshAgent(t);
+  pm.model = model;
+  // The panel swaps to Summary on the click; the title, the launch and the worktree come in the background.
+  if (openId === t.id) renderDetail();
   // The card moves on the click itself; a failed launch puts it back.
   const fromCol = t.column, prog = colRole("progress");
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
@@ -2695,7 +2701,7 @@ async function sendToClaude(t) {
   if (boardGen !== gen) {
     // The save was refused and the board reloaded from disk: the card sits where disk has it and nothing was sent.
     dropPending(t, pm); t = task(t.id) || t;
-    render(); if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
+    render(); if (openId === t.id) renderDetail();
     setStatus(window.t("The board changed in another window, so {name} was not started. Please send again.", { name: nm }), true);
     return;
   }
@@ -2726,7 +2732,7 @@ async function sendToClaude(t) {
   }
   t = task(t.id) || t;
   render();
-  if (openId === t.id) { renderAgent(t); $("#d-col").value = t.column; }
+  if (openId === t.id) renderDetail();   // a failed launch unlocks the fields and shows Send again
   await pollAgents();
 }
 
