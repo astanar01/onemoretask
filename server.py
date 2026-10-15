@@ -3126,6 +3126,21 @@ def _git_err(r):
         line[:300] or f"git exited with {r.returncode}")
 
 
+def _fetch(source, refspec, timeout):
+    """None when `git fetch` worked, else the error line."""
+    try:
+        r = app_git("fetch", "-q", source, refspec, timeout=timeout)
+        return _git_err(r) if r.returncode else None
+    except subprocess.TimeoutExpired:
+        return "Could not reach GitHub (timed out)."
+
+
+def _https_twin(url):
+    """https:// address of a GitHub SSH remote (git@github.com:o/r.git, ssh://…), else None."""
+    m = re.match(r"(?:ssh://)?(?:[\w.-]+@)?(?:ssh\.)?github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url or "")
+    return f"https://github.com/{m.group(1)}.git" if m else None
+
+
 def update_status():
     st = {"installed": None, "latest": None, "behind": 0, "ahead": 0, "dirty": False, "canUpdate": False,
           "reason": None, "error": None, "checked": datetime.now(timezone.utc).isoformat(timespec="seconds")}
@@ -3146,12 +3161,11 @@ def update_status():
             up = "origin/main"
         remote, _, branch = up.partition("/")
         st["upstream"] = up
-        try:
-            r = app_git("fetch", "-q", remote, branch, timeout=20)
-            if r.returncode:
-                st["error"] = _git_err(r)
-        except subprocess.TimeoutExpired:
-            st["error"] = "Could not reach GitHub (timed out)."
+        st["error"] = _fetch(remote, branch, timeout=20)
+        twin = st["error"] and _https_twin(_git_out("remote", "get-url", remote))
+        # Networks away from home often block SSH (port 22); a public GitHub repo also comes over HTTPS (443).
+        if twin and not _fetch(twin, f"+refs/heads/{branch}:refs/remotes/{up}", timeout=20):
+            st["error"] = None
         st["latest"] = _git_out("rev-parse", "--short", up)
         if st["latest"]:
             counts = (_git_out("rev-list", "--left-right", "--count", f"HEAD...{up}") or "0 0").split()
@@ -3219,7 +3233,9 @@ class Updater:
             self.at = time.time()
             if st["installed"] and st["behind"] == 0 and not st["error"] and not st["reason"]:
                 return st["installed"], st["installed"]
-            if not st["canUpdate"]:
+            # GitHub out of reach right now (no network, blocked port), but an earlier check already downloaded
+            # the update: install that instead of failing.
+            if not st["canUpdate"] and not (st["error"] and st["behind"] > 0):
                 raise PermissionError(st["reason"] or st["error"] or "Nothing to update.")
             up = st["upstream"]
             if st["ahead"]:

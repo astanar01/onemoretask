@@ -122,5 +122,43 @@ check("dirty overlap: reported", err is not None and "edited here" in err, err)
 check("dirty overlap: edit and HEAD untouched", read(os.path.join(app, "a.txt")) == "a-edit\n"
       and git(app, "rev-parse", "HEAD") == before)
 
+# 5. Update fetched at home, GitHub out of reach when Update is clicked: the downloaded update is installed.
+gh, app = setup("offline")
+upstream_change(gh, "a.txt", "a2\n")
+git(app, "fetch", "-q")
+git(app, "remote", "set-url", "origin", os.path.join(TMP, "nowhere.git"))
+server.APP = app
+st = server.update_status()
+check("offline: fetch error seen, update known", st["error"] and st["behind"] == 1, st)
+res, err = pull(app)
+check("offline: downloaded update installed", err is None and read(os.path.join(app, "a.txt")) == "a2\n", err)
+
+# 6. SSH remote on a network that blocks SSH: fetched again over the HTTPS address instead.
+gh, app = setup("ssh-blocked")
+origin = git(app, "remote", "get-url", "origin")
+upstream_change(gh, "a.txt", "a2\n")
+git(app, "remote", "set-url", "origin", "git@github.com:someone/app.git")
+os.environ["GIT_SSH_COMMAND"] = "false"  # every SSH connection fails, like a blocked port 22
+real_twin, seen = server._https_twin, []
+server._https_twin = lambda url: seen.append(url) or origin  # the bare repo stands in for https://github.com/…
+server.APP = app
+st = server.update_status()
+check("ssh blocked: HTTPS retry asked for the SSH address", seen == ["git@github.com:someone/app.git"], seen)
+check("ssh blocked: update found over HTTPS", not st["error"] and st["behind"] == 1 and st["canUpdate"], st)
+res, err = pull(app)
+check("ssh blocked: installed", err is None and read(os.path.join(app, "a.txt")) == "a2\n", err)
+check("ssh blocked: remote left as SSH", git(app, "remote", "get-url", "origin") == "git@github.com:someone/app.git")
+server._https_twin = real_twin
+del os.environ["GIT_SSH_COMMAND"]
+
+# 7. Which remotes get an HTTPS twin.
+for url, want in [("git@github.com:astanar01/onemoretask.git", "https://github.com/astanar01/onemoretask.git"),
+                  ("git@github.com:astanar01/onemoretask", "https://github.com/astanar01/onemoretask.git"),
+                  ("ssh://git@github.com/o/r.git", "https://github.com/o/r.git"),
+                  ("ssh://git@ssh.github.com:443/o/r.git", "https://github.com/o/r.git"),
+                  ("https://github.com/o/r.git", None), ("git@gitlab.com:o/r.git", None),
+                  ("git@github.com.evil.example:o/r.git", None), ("/srv/repo.git", None), (None, None)]:
+    check(f"https twin of {url}", server._https_twin(url) == want, server._https_twin(url))
+
 print("PASS" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
