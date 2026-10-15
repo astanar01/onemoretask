@@ -81,11 +81,22 @@ def _terminal(session_id, cmd):
         except OSError:
             pass
         _read(fd, 0.5)
-        try:
-            os.waitpid(pid, 0)
-        except OSError:
-            pass
+        _reap(pid)
         os.close(fd)
+
+
+def _reap(pid, seconds=2):
+    """Wait for a child told to stop; SIGKILL it if it ignores SIGTERM, so the caller never hangs."""
+    end = time.time() + seconds
+    try:
+        while time.time() < end:
+            if os.waitpid(pid, os.WNOHANG)[0]:
+                return
+            time.sleep(0.05)
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    except OSError:
+        pass
 
 
 def type_into(session_id, text, cmd=("claude",)):
