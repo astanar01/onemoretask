@@ -54,6 +54,10 @@ button { cursor: pointer; }
 header { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
 header > * { flex-shrink: 0; }
 header h1 { font-size: calc(17px * var(--ts)); margin: 0 4px 0 0; }
+#app-version { font-size: calc(12px * var(--ts)); font-weight: 400; color: var(--muted); }
+#claude-upd { border-color: var(--accent); color: var(--accent); }
+#claude-pop .row { display: flex; gap: 8px; justify-content: flex-end; padding: 0 10px 8px; }
+#claude-pop .err { color: var(--major); white-space: pre-wrap; overflow-wrap: anywhere; }
 header .grow { flex: 1; }
 #search { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); flex: 10 1 200px; max-width: 520px; min-width: 90px; }
 label.toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); user-select: none; }
@@ -696,13 +700,14 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </head>
 <body>
 <header>
-  <h1>Task Board</h1>
+  <h1>OneMoreTask <span id="app-version"></span></h1>
   <span id="project-wrap"><select id="project" title="Project" data-pop="project-menu" aria-haspopup="menu" aria-expanded="false"></select><span id="others-waiting" hidden>*</span></span>
   <input id="project-path" placeholder="Folder path — Enter to open, Esc to cancel">
   <input id="search" type="search" placeholder="Filter tasks…">
   <span class="grow"></span>
   <select id="app-copy" hidden></select>
   <button class="btn" id="update" hidden></button>
+  <button class="btn" id="claude-upd" data-pop="claude-pop" aria-haspopup="dialog" aria-expanded="false" hidden></button>
   <button class="btn" id="unpushed" data-pop="unpushed-pop" aria-haspopup="dialog" aria-expanded="false" hidden></button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span><span class="badge warn" id="obs-due"></span></button>
@@ -712,6 +717,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </header>
 <div class="pop" id="project-menu" role="menu" aria-label="Project" hidden></div>
 <div class="pop" id="update-pop" role="dialog" aria-label="Update" hidden></div>
+<div class="pop" id="claude-pop" role="dialog" aria-label="Update Claude Code" hidden></div>
 <div class="pop" id="unpushed-pop" role="dialog" aria-label="Commits not pushed yet" hidden></div>
 <div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
   <button class="pop-row" id="theme"></button>
@@ -3619,8 +3625,9 @@ async function checkUpdate(force) {
   } catch (e) { upd = { error: e.message }; }
   // Shown only when GitHub has something newer; up to date or a failed check shows nothing.
   const u = upd;
-  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate(t("Update"), "new", u.behind > 1 ? t("{n} new updates on GitHub ({from} → {to}). Click to install and restart.", { n: u.behind, from: short(u.installed), to: short(u.latest) }) : t("1 new update on GitHub ({from} → {to}). Click to install and restart.", { from: short(u.installed), to: short(u.latest) }));
-  else if (!u.error && u.behind > 0) showUpdate(t("Update available"), "blocked", u.reason ? t(u.reason) : t("Cannot update automatically"));
+  if (u.version) $("#app-version").textContent = "v" + u.version;
+  if (!u.error && u.behind > 0 && u.canUpdate) showUpdate(u.latestVersion ? t("Update to v{v}", { v: u.latestVersion }) : t("Update"), "new",u.behind > 1 ? t("{n} new updates on GitHub ({from} → {to}). Click to install and restart.", { n: u.behind, from: short(u.installed), to: short(u.latest) }) : t("1 new update on GitHub ({from} → {to}). Click to install and restart.", { from: short(u.installed), to: short(u.latest) }));
+  else if (!u.error && u.behind > 0) showUpdate(u.latestVersion ? t("v{v} available", { v: u.latestVersion }) : t("Update available"), "blocked",u.reason ? t(u.reason) : t("Cannot update automatically"));
   else if (u.settingUp) showUpdate(t("Setting up tools…"), "", t("Installing the tools Claude works with. The board works meanwhile."));
   else $("#update").hidden = true;
   // The server sets up the tools in the background after a start; look again until it is done.
@@ -3649,6 +3656,59 @@ async function runUpdate() {
     showUpdate(t("Update failed"), "", again(t(e.message)));
   }
 }
+// The board's version next to its name: commits on main, so it goes up with every push. /api/update fills it too.
+async function showVersion() {
+  if (!useServer) return;
+  try {
+    const r = await fetch("/api/version", { cache: "no-store" });
+    const v = r.ok && (await r.json()).version;
+    if (v) $("#app-version").textContent = "v" + v;
+  } catch (_) {}
+}
+// Claude Code: a button shows when a newer version is out; it asks first, then runs `claude update` on the server.
+let cc = null, ccBusy = false, ccErr = "";
+async function checkClaude(force) {
+  if (!useServer || ccBusy) return;
+  try {
+    const r = await fetch("/api/claude-version" + (force ? "?force=1" : ""), { cache: "no-store" });
+    if (!r.ok) return;
+    cc = await r.json();
+  } catch (_) { return; }
+  const b = $("#claude-upd");
+  b.hidden = !cc.outdated;
+  b.textContent = t("Claude Code {v}", { v: cc.latest });
+  b.title = t("A newer Claude Code is out ({from} → {to}). Click to update.", { from: cc.installed, to: cc.latest });
+  if (popBtn === b) buildClaudePop();
+}
+function buildClaudePop() {
+  const m = $("#claude-pop");
+  if (!cc) return;
+  const head = Object.assign(document.createElement("div"), { className: "pop-head", textContent: t("Update Claude Code?") });
+  const text = Object.assign(document.createElement("p"), { className: "upd-why",
+    textContent: t("You have Claude Code {from}. Version {to} is out.", { from: cc.installed, to: cc.latest }) });
+  const go = Object.assign(document.createElement("button"), { className: "btn primary", id: "claude-go", disabled: ccBusy,
+    textContent: ccBusy ? t("Updating Claude Code…") : t("Update now"), onclick: runClaudeUpdate });
+  const no = Object.assign(document.createElement("button"), { className: "btn", textContent: t("Not now"), disabled: ccBusy, onclick: () => closePop() });
+  const row = Object.assign(document.createElement("div"), { className: "row" });
+  row.append(go, no);
+  const err = Object.assign(document.createElement("p"), { className: "upd-why err", textContent: ccErr, hidden: !ccErr });
+  m.replaceChildren(head, text, row, err);
+}
+async function runClaudeUpdate() {
+  ccBusy = true; ccErr = ""; buildClaudePop();
+  try {
+    const r = await fetch("/api/claude-version", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    ccBusy = false; closePop();
+    setStatus(t("Claude Code is now {v}", { v: d.to || "?" }));
+  } catch (e) {
+    ccBusy = false; ccErr = t("Update failed: {error}", { error: t(e.message) });
+  }
+  await checkClaude(false);
+  if (popBtn === $("#claude-upd")) buildClaudePop();
+}
+setInterval(() => checkClaude(), 30 * 60000);
 // Which copy of the app serves this page: main, or a task's worktree. Picking another restarts the board from it.
 let copies = null;
 async function checkAppCopy() {
@@ -3788,7 +3848,7 @@ let lastCatchUp = 0;
 function catchUp() {
   if (document.hidden || Date.now() - lastCatchUp < 2000) return;
   lastCatchUp = Date.now();
-  pollAgents(); loadObservations(true); checkUnpushed(); checkAppCopy(); checkUpdate();
+  pollAgents(); loadObservations(true); checkUnpushed(); checkAppCopy(); checkUpdate(); checkClaude();
 }
 document.addEventListener("visibilitychange", catchUp);
 window.addEventListener("focus", catchUp);
@@ -3910,6 +3970,7 @@ function openPop(b, kbd) {
   }
   if (b.id === "project") buildProjectMenu();
   if (b.id === "unpushed") buildUnpushedPop();
+  if (b.id === "claude-upd") buildClaudePop();
   m.hidden = false;
   const r = b.getBoundingClientRect(), w = m.offsetWidth;
   m.style.top = r.bottom + 6 + "px";
@@ -3938,7 +3999,7 @@ document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", 
 }));
 
 load().then(() => {
-  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); checkUpdate(); checkAppCopy(); checkUnpushed(); initNotify();
+  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); showVersion(); checkUpdate(); checkClaude(); checkAppCopy(); checkUnpushed(); initNotify();
 })
   .catch((e) => setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true));
 </script>

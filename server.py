@@ -87,7 +87,10 @@ onemoretask). Until then new /api routes answer a bare 404, which the page repor
 GET /api/update compares the app's own git clone with GitHub (fetch, cached 10 min, ?force=1 re-checks); POST
 /api/update runs `git pull --ff-only` there and restarts the server with the same arguments. Each start runs
 setup/run_setup.py --if-needed in the background, so a pull that changes the Claude Code tools, hooks or skills
-sets them up; GET /api/update says settingUp: true meanwhile.
+sets them up; GET /api/update says settingUp: true meanwhile. The app's version is the number of commits on the
+first-parent line (app_version), so each push to main raises it; GET /api/update gives version and latestVersion.
+GET /api/claude-version compares `claude --version` with npm's dist-tag for the user's autoUpdatesChannel (cached
+like the update check); POST /api/claude-version runs `claude update`.
 
 GET /api/observations?p=<pid> lists the open entries of the task-observer skill's observation logs
 (<project>/skill-observations/ and <claude config dir>/skill-observations/, read-only; see observations.py).
@@ -138,6 +141,7 @@ import time
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import urlopen
 
 import attach
 import codex
@@ -3205,8 +3209,14 @@ def _https_twin(url):
     return f"https://github.com/{m.group(1)}.git" if m else None
 
 
+def app_version(ref="HEAD"):
+    """The board's version: commits on ref's first-parent line, so every push (or merge) to main raises it."""
+    n = _git_out("rev-list", "--count", "--first-parent", ref)
+    return int(n) if n and n.isdigit() else None
+
+
 def update_status():
-    st = {"installed": None, "latest": None, "behind": 0, "ahead": 0, "dirty": False, "canUpdate": False,
+    st = {"installed": None, "latest": None, "version": None, "latestVersion": None, "behind": 0, "ahead": 0, "dirty": False, "canUpdate": False,
           "reason": None, "error": None, "checked": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     try:
         top = _git_out("rev-parse", "--show-toplevel")
@@ -3231,7 +3241,9 @@ def update_status():
         if twin and not _fetch(twin, f"+refs/heads/{branch}:refs/remotes/{up}", timeout=20):
             st["error"] = None
         st["latest"] = _git_out("rev-parse", "--short", up)
+        st["version"] = app_version()
         if st["latest"]:
+            st["latestVersion"] = app_version(up)
             counts = (_git_out("rev-list", "--left-right", "--count", f"HEAD...{up}") or "0 0").split()
             st["ahead"], st["behind"] = int(counts[0]), int(counts[1])
         elif not st["error"]:
@@ -3321,6 +3333,94 @@ class Updater:
 
 
 UPDATER = Updater()
+
+NPM_TAGS = "https://registry.npmjs.org/-/package/@anthropic-ai/claude-code/dist-tags"
+
+
+def _version_key(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3])
+
+
+def claude_installed_version():
+    """"2.1.300" from `claude --version` ("2.1.300 (Claude Code)"), or None."""
+    try:
+        r = subprocess.run([*claude_cmd(), "--version"], capture_output=True, timeout=30, stdin=subprocess.DEVNULL, **TEXT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"\d+\.\d+\.\d+", r.stdout or "")
+    return m.group(0) if r.returncode == 0 and m else None
+
+
+def claude_channel():
+    """The release channel Claude Code updates from: autoUpdatesChannel in the user settings, "latest" by default."""
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "settings.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            ch = json.load(f).get("autoUpdatesChannel")
+    except (OSError, ValueError, AttributeError):
+        ch = None
+    return ch if ch in ("stable", "latest") else "latest"
+
+
+def _get_url(url):
+    try:
+        with urlopen(url, timeout=15) as r:
+            return r.read()
+    except OSError:
+        # A python.org Python on macOS has no CA certificates until "Install Certificates" is run, so urllib
+        # fails there. curl uses the system's.
+        curl = shutil.which("curl")
+        if not curl:
+            raise
+        return subprocess.run([curl, "-fsSL", "--max-time", "15", url], capture_output=True, check=True,
+                              stdin=subprocess.DEVNULL, timeout=30).stdout
+
+
+def claude_version_status():
+    st = {"installed": claude_installed_version(), "latest": None, "channel": claude_channel(), "outdated": False,
+          "error": None}
+    if not st["installed"]:
+        st["error"] = "Could not find Claude Code."
+        return st
+    try:
+        st["latest"] = json.loads(_get_url(NPM_TAGS)).get(st["channel"])
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        st["error"] = f"Could not check for a newer Claude Code: {e}"[:300]
+    st["outdated"] = bool(st["latest"]) and _version_key(st["latest"]) > _version_key(st["installed"])
+    return st
+
+
+class ClaudeUpdater:
+    """Caches the Claude Code version check; `claude update` installs the newest one."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.last, self.at = None, 0
+
+    def status(self, force=False):
+        with self.lock:
+            if force or not self.last or time.time() - self.at > UPDATE_TTL:
+                self.last, self.at = claude_version_status(), time.time()
+            return self.last
+
+    def update(self):
+        with self.lock:
+            before = claude_installed_version()
+            try:
+                r = subprocess.run([*claude_cmd(), "update"], capture_output=True, timeout=600,
+                                   stdin=subprocess.DEVNULL, **TEXT)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("Claude Code took too long to update. Try again later.")
+            except OSError:
+                raise RuntimeError("Could not find Claude Code.")
+            self.last, self.at = claude_version_status(), time.time()
+            if r.returncode:
+                out = (r.stderr or r.stdout or "").strip()
+                raise RuntimeError(out[-1000:] or f"claude update exited with {r.returncode}")
+            return before, self.last["installed"]
+
+
+CLAUDE_UPDATER = ClaudeUpdater()
 
 
 def app_copies():
@@ -3618,6 +3718,11 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/update":
             force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
             self._errors(lambda: self._json(200, UPDATER.status(force)))
+        elif path == "/api/version":
+            self._errors(lambda: self._json(200, {"version": app_version()}))
+        elif path == "/api/claude-version":
+            force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
+            self._errors(lambda: self._json(200, CLAUDE_UPDATER.status(force)))
         elif path in ("/", "/index.html"):
             # Only the page itself: the app folder also holds .git/ and the board data.
             with open(os.path.join(HERE, "index.html"), "rb") as f:
@@ -3634,7 +3739,7 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy", "/api/push", "/api/autofill", "/api/which-project",
-                  "/api/task/move")
+                  "/api/task/move", "/api/claude-version")
         if not self._host_ok():
             return
         if path not in routes:
@@ -3690,6 +3795,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if old != new:
                     self.wfile.flush()
                     threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+            elif path == "/api/claude-version":
+                old, new = CLAUDE_UPDATER.update()
+                self._json(200, {"ok": True, "from": old, "to": new})
             elif path == "/api/app-copy":
                 switch_copy(body.get("path"))
                 self._json(200, {"ok": True, "restarting": True})
