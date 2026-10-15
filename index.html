@@ -173,7 +173,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* List layout (View menu): the list pane is var(--list-w) wide on the left; body.view-list docks the task panel to its right. */
 :root { --list-w: clamp(240px, 17vw, 280px); }
 #board.list { flex: 1 1 auto; width: var(--list-w); flex-direction: column; gap: 0; padding: 0; overflow: hidden; align-items: stretch; min-height: 0; border-right: 1px solid var(--line); }
-.ltop { display: flex; flex-wrap: wrap; gap: 8px;padding: 12px 16px 4px 20px; }
+.ltop { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 4px 20px; }
 .lnew { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .lfbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .lfbtn[aria-expanded="true"], .lfbtn.on { color: var(--text); border-color: var(--accent); }
