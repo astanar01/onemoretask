@@ -11,7 +11,7 @@ already keeps one there, <root>/tools/task_board/). It holds
 
 None of it is committed: a new board folder ignores itself (ensure_board).
 
-A log is a list of {at, status, message, from, images?, decision?, options?, session?}. Images are
+A log is a list of {at, status, message, from, images?, decision?, options?, parts?, session?}. Images are
 stored by content hash.
 
 A message typed on the card while Claude works is logged as status "note". The session's inbox hook
@@ -224,6 +224,25 @@ def check_options(labels):
     return clean
 
 
+def check_parts(parts):
+    """A many-part question as stored: 1 to 8 parts of {"q": the part's question, "options": check_options()}."""
+    if not 1 <= len(parts) <= 8:
+        raise ValueError("a question takes 1 to 8 --part")
+    clean = []
+    for p in parts:
+        q = str(p.get("q") or "").strip()
+        if not q:
+            raise ValueError("every --part needs its question")
+        try:
+            opts = check_options(p.get("options") or [])
+        except ValueError as e:
+            raise ValueError(f'part "{q}": {e}') from None
+        clean.append({"q": q, "options": opts})
+    if len({p["q"] for p in clean}) != len(clean):
+        raise ValueError("every --part must be different")
+    return clean
+
+
 def decision_message(d):
     """The plain line a decision also carries (what older readers show)."""
     if d["chosen"] is None:
@@ -231,7 +250,8 @@ def decision_message(d):
     return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
 
 
-def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None):
+def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None,
+           parts=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
@@ -241,6 +261,8 @@ def append(board, task_id, status, message, sender, session=None, images=None, d
         entry["decision"] = decision  # check_decision(); the card draws it as a tree
     if options:
         entry["options"] = options  # check_options(); the card shows a button per choice
+    if parts:
+        entry["parts"] = parts  # check_parts(); the card shows a row of choices per part and one send button
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.

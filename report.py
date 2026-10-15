@@ -12,6 +12,9 @@ A decision is a choice between options; the card draws it as a tree. Its JSON:
 
 A question can list its choices with `--option "<short label>"` (repeatable, 2 to 6, all different);
 the card shows one button per choice that sends it as the answer. Only for `question`.
+A question with several parts gives each part as `--part "<its question>"` followed by that part's
+`--option`s (1 to 8 parts, 2 to 6 options each); the card shows a row of choices per part and one
+send button, and the answer arrives as one line per part: "<part> → <option>".
 
 Add `--image <file>` (repeatable) to attach screenshots; they show on the card.
 --board is the project's board folder; without it, the board of the git repo
@@ -32,14 +35,17 @@ import reports
 
 STATUSES = ("progress", "question", "done")
 
-args, files, board, lang, options = [], [], None, None, []
+args, files, board, lang, options, parts = [], [], None, None, [], []
 it = iter(sys.argv[1:])
 for a in it:
     if a == "--image":
         files.append(next(it, None) or sys.exit("--image needs a file"))
     elif a == "--option":
         o = next(it, None)
-        options.append(o if o is not None else sys.exit("--option needs a label"))
+        (parts[-1]["options"] if parts else options).append(o if o is not None else sys.exit("--option needs a label"))
+    elif a == "--part":
+        q = next(it, None)
+        parts.append({"q": q if q is not None else sys.exit("--part needs its question"), "options": []})
     elif a == "--board":
         board = next(it, None) or sys.exit("--board needs a folder")
     elif a == "--lang":
@@ -54,6 +60,15 @@ if options:
         sys.exit("--option only goes with question")
     try:
         options = reports.check_options(options)
+    except ValueError as e:
+        sys.exit(f"question: {e}")
+if parts:
+    if status != "question":
+        sys.exit("--part only goes with question")
+    if options:
+        sys.exit("question: put every --option after its --part")
+    try:
+        parts = reports.check_parts(parts)
     except ValueError as e:
         sys.exit(f"question: {e}")
 decision = None
@@ -80,5 +95,5 @@ for p in files:
     if name not in images:
         images.append(name)
 reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
-               options=options)
+               options=options, parts=parts)
 print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {len(images)} image(s)" if images else ""))
