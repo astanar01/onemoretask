@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- Claude's messages are easier to read: titles are bigger, there is more room between parts, and lists breathe. Tables, code boxes and quotes now show as real tables, boxes and quotes. Each review finding sits in its own card with a colour stripe for how serious it is.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.
