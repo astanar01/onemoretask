@@ -205,12 +205,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
-#trust-modal, #repo-modal, #wtdel-modal, #fresh-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
-#trust-modal.open, #repo-modal.open, #wtdel-modal.open, #fresh-modal.open { display: flex; }
-#trust-modal .box, #repo-modal .box, #wtdel-modal .box, #fresh-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-#trust-modal h3, #repo-modal h3, #wtdel-modal h3, #fresh-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
-#trust-modal p, #repo-modal p, #wtdel-modal p, #fresh-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
-#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions, #fresh-modal .actions { justify-content: flex-end; }
+#trust-modal, #repo-modal, #wtdel-modal, #fresh-modal, #proj-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; justify-content: center; align-items: center; padding: 16px; }
+#trust-modal.open, #repo-modal.open, #wtdel-modal.open, #fresh-modal.open, #proj-modal.open { display: flex; }
+#trust-modal .box, #repo-modal .box, #wtdel-modal .box, #fresh-modal .box, #proj-modal .box { background: var(--bg); border-radius: 12px; padding: 20px 22px; width: 100%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+#trust-modal h3, #repo-modal h3, #wtdel-modal h3, #fresh-modal h3, #proj-modal h3 { margin: 0 0 10px; font-size: calc(16px * var(--ts)); }
+#trust-modal p, #repo-modal p, #wtdel-modal p, #fresh-modal p, #proj-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+#trust-modal .actions, #repo-modal .actions, #wtdel-modal .actions, #fresh-modal .actions, #proj-modal .actions { justify-content: flex-end; }
 #obs-btn { display: none; align-items: center; gap: 6px; }
 #obs-modal, #cl-modal { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #obs-modal.open, #cl-modal.open { display: flex; }
@@ -263,8 +263,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .card.unread .title { font-weight: 600; }
 .card.unread .title::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: .8em; vertical-align: 1px; }
-.btn.to-done { border-color: var(--ok); color: var(--ok); }
-.btn.to-done:hover { background: var(--ok); color: #fff; }
 .btn.review { border-color: var(--accent); color: var(--accent); }
 .btn.review:hover { background: var(--accent); color: #fff; }
 #busy { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.5); display: none; justify-content: center; align-items: center; cursor: wait; }
@@ -273,12 +271,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #busy svg { animation: spin 1.2s linear infinite; color: var(--accent); }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
-.card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh .btn { padding: 2px 8px; font-size: calc(12px * var(--ts)); }
-.fit { border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); }
-.fit.bad { border-color: var(--wait); color: var(--wait); }
-.fresh-est { flex-basis: 100%; color: var(--muted); }
+.btn.go { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn.go:hover { filter: brightness(1.1); }
+.fit { color: var(--ok); cursor: help; }
+.fit.bad { color: var(--danger); }
 #fresh-modal textarea { width: 100%; min-height: 80px; margin: 6px 0 10px; box-sizing: border-box; font: inherit; }
 #fresh-modal .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
 #fresh-msg { color: var(--muted); }
@@ -746,6 +744,11 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <p id="wtdel-text"></p>
   <ul id="wtdel-list"></ul>
   <div class="actions"><button class="btn" id="wtdel-no">Cancel</button><button class="btn danger armed" id="wtdel-yes">Delete and lose it</button></div>
+</div></div>
+<div id="proj-modal" role="dialog" aria-modal="true" aria-labelledby="proj-title"><div class="box">
+  <h3 id="proj-title">Is this task for another project?</h3>
+  <p id="proj-text"></p>
+  <div class="actions"><button class="btn" id="proj-keep">Keep it here and send</button><button class="btn primary" id="proj-move"></button></div>
 </div></div>
 <div id="fresh-modal" role="dialog" aria-modal="true" aria-labelledby="fresh-title"><div class="box">
   <h3 id="fresh-title">New task from this</h3>
@@ -1308,11 +1311,9 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
-    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}
+    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}
     ${freshRow(t, ag)}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
-  const td = el.querySelector(".to-done");
-  if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
   const rv = el.querySelector(".review");
   if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(t); });
   const fr = el.querySelector(".fresh .btn");
@@ -1551,7 +1552,7 @@ function settleDraft() {
   draftId = null;
   if (!t) return;
   if (!t.title.trim() && !t.notes.trim() && !t.tags.length && !t.priority && !(t.images || []).length && !children(t.id).length && !t.agent) deleteTask(t.id);
-  else autoFill(t);
+  else { autoFill(t); if (needsProjectCheck(t)) checkProject(t); }
 }
 
 function renderDetail() {
@@ -1695,6 +1696,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape" && repoOpen()) closeRepo(true);
   else if (e.key === "Escape" && wtdelOpen()) closeWtdel();
   else if (e.key === "Escape" && freshOpen()) closeFresh();
+  else if (e.key === "Escape" && projOpen()) closeProj(true);
   else if (e.key === "Escape" && lightboxOpen()) closeLightbox();
   else if (e.key === "Escape" && obsOpen()) closeObs();
   else if (e.key === "Escape" && clOpen()) closeChangelog();
@@ -1765,9 +1767,16 @@ function freshRow(t, ag) {
   if (!freshOk(ag)) return "";
   const f = ag.fresh_start, good = f.fit === "good";
   const fit = good ? window.t("good fit") : window.t("check first: {reasons}", { reasons: (f.reasons || []).join(", ") });
-  return `<div class="fresh"><button class="btn" title="${window.t("Claude writes a short summary of this card's work, and a new card starts from it.")}">${window.t("New task from this")}</button>
-    <span class="fit ${good ? "good" : "bad"}">${esc(fit)}</span>
-    <span class="fresh-est">${window.t("resume ~{resume} tokens · new task ~{new}", { resume: fmtTokens(f.resume_tokens || 0), new: fmtTokens(f.new_tokens || 0) })}</span></div>`;
+  return `<div class="fresh"><button class="btn go" title="${window.t("Claude writes a short summary of this card's work, and a new card starts from it.")}">${window.t("New task from this")}</button>
+    <span class="fit ${good ? "good" : "bad"}" title="${freshTip(f)}">${good ? "✓" : "✕"} ${esc(fit)}</span></div>`;
+}
+// The fit's tooltip: what a new card saves (or costs) against resuming this one, in tokens.
+function freshTip(f) {
+  const resume = f.resume_tokens || 0, fresh = f.new_tokens || 0, d = resume - fresh;
+  const both = { resume: fmtTokens(resume), new: fmtTokens(fresh), diff: fmtTokens(Math.abs(d)) };
+  return d > 0 ? window.t("Saves ~{diff} tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
+    : d < 0 ? window.t("Costs ~{diff} more tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
+    : window.t("Same cost either way: resuming re-reads ~{resume}, a new task reads ~{new}", both);
 }
 let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
@@ -2550,8 +2559,73 @@ function askRepo(t) {
 $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
 
 
+// A card written on the wrong project's board: before Send, one Claude call compares it with every remembered
+// project. One check per card and notes text; closing a new card starts it early, so Send rarely waits.
+// Resolves to { project, why } when Claude is sure it is for another project, null when it fits here, false on failure.
+const projectChecks = new Map();
+const needsProjectCheck = (t) => useServer && projects.length > 1 && !t.projectOk && !t.agent && !t.parent
+  && !t.tags.includes("observations") && !!(t.title.trim() || t.notes.trim());
+function checkProject(t) {
+  const key = P + "\n" + (t.notes.trim() || t.title.trim()), c = projectChecks.get(t.id);
+  if (c && c.key === key) return c.run;
+  const pid = P;
+  const run = post("/api/which-project", { p: pid, taskId: t.id, title: t.title, notes: t.notes })
+    .then((r) => (r && r.project && r.project.id !== pid ? r : null), () => false);
+  projectChecks.set(t.id, { key, run });
+  return run;
+}
+const projOpen = () => $("#proj-modal").classList.contains("open");
+function closeProj(cancelled) {
+  $("#proj-modal").classList.remove("open");
+  if (cancelled) setStatus(window.t("Not sent"));
+}
+function askProject(t, other) {
+  const here = (projects.find((x) => x.id === P) || {}).name || "";
+  $("#proj-text").textContent = window.t("Claude thinks this task is for {name}, not {here}.", { name: other.project.name, here })
+    + (other.why ? " " + other.why : "");
+  $("#proj-move").textContent = window.t("Move to {name} and send", { name: other.project.name });
+  $("#proj-keep").onclick = async () => {
+    closeProj(false);
+    t = task(t.id) || t; t.projectOk = true; touch(t);
+    await sendToClaude(t);
+  };
+  $("#proj-move").onclick = async () => {
+    $("#proj-move").disabled = true;
+    try {
+      await settled();   // the server moves the card as tasks.json has it
+      await post("/api/task/move", { p: P, taskId: t.id, to: other.project.id });
+      closeProj(false);
+      projectChecks.delete(t.id);
+      await switchProject(other.project.id);
+      const moved = task(t.id);
+      if (!moved) throw new Error(window.t("the card is not on {name}'s board", { name: other.project.name }));
+      openDetail(moved.id);
+      await sendToClaude(moved);
+    } catch (e) {
+      setStatus(window.t("Could not move the task: {error}", { error: window.t(e.message) }), true);
+    } finally { $("#proj-move").disabled = false; }
+  };
+  $("#proj-modal").classList.add("open");
+  $("#proj-move").focus();
+}
+$("#proj-modal").addEventListener("mousedown", (e) => { if (e.target.id === "proj-modal") closeProj(true); });
+
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
+  if (needsProjectCheck(t)) {
+    setStatus(window.t("Checking which project this task is for…"));
+    const pid = P;
+    const other = await checkProject(t);
+    if (P !== pid) { setStatus(window.t("The board switched project, so the task was not sent"), true); return; }
+    t = task(t.id) || t;
+    if (other) {
+      setStatus("");
+      if (openId === t.id) renderAgent(t);
+      askProject(t, other);
+      return;
+    }
+    if (other === null) { t.projectOk = true; touch(t); }
+  }
   const model = $("#d-model").value;   // read before the wait below: another card may be open by then
   const nm = isCodexModel(model) ? "Codex" : "Claude";
   setStatus(window.t("Starting {name}…", { name: nm }));

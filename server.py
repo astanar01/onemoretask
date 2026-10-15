@@ -2641,6 +2641,140 @@ def autofill(notes, want_title, want_tags, known=()):
     return res
 
 
+PROFILE_TITLES = 15  # most recently updated card titles that describe a project to the project check
+PROFILE_README = 600
+
+
+def project_profile(p, skip=None):
+    """A few lines that say what a project is: its README's start and its newest card titles (not `skip`'s)."""
+    lines = [f"Folder: {p.path.replace(os.path.expanduser('~'), '~', 1)}"]
+    for name in ("README.md", "README", "readme.md", "CLAUDE.md"):
+        try:
+            with open(os.path.join(p.path, name), encoding="utf-8", errors="replace") as f:
+                text = re.sub(r"\s+", " ", f.read(PROFILE_README * 2)).strip()[:PROFILE_README]
+        except OSError:
+            continue
+        if text:
+            lines.append(f"{name}: {text}")
+            break
+    try:
+        tasks = [t for t in load_tasks(p)["tasks"] if isinstance(t, dict) and t.get("id") != skip and t.get("title")]
+    except (OSError, ValueError, KeyError, TypeError):
+        tasks = []
+    tasks.sort(key=lambda t: t.get("updated") or t.get("created") or "", reverse=True)
+    if tasks:
+        lines.append("Cards on its board: " + "; ".join(t["title"][:80] for t in tasks[:PROFILE_TITLES]))
+    return "\n".join(lines)
+
+
+def which_project(p, title, notes, skip=None):
+    """Ask Claude whether a card written on `p`'s board is really for another of the remembered projects.
+    Returns {"project": <info of that project>, "why": ...} when it surely is, else {} (also with one project)."""
+    others = [x for x in projects() if x.id != p.id]
+    if not others or not (title.strip() or notes.strip()):
+        return {}
+    listed = [p] + others
+    blocks = [f"## Project {i + 1}: {x.name}\n{project_profile(x, skip)}" for i, x in enumerate(listed)]
+    card = f"# Card\nTitle: {title.strip()[:200]}\n\n{notes.strip()[:4000]}"
+    ask = (f"Above are the projects of a task board and a card written on project 1's board ({p.name}). People "
+           "sometimes write a card on the wrong project's board. Which project is the card's work for? Answer with "
+           'only a JSON object: {"project": <its number>, "sure": <true only when the card clearly names that '
+           "project or is plainly about its app, false when it could fit project 1>, \"why\": <one short sentence, "
+           "written in the language of the card's title and notes, not of the project texts>}")
+    r = run_claude(["-p", "--model", AUTOFILL_MODEL, "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                    "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1", ask],
+                   input="\n\n".join(blocks + [card]), cwd=tempfile.gettempdir(), timeout=90)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        out = {}
+    text = (out.get("result") or "").strip()
+    if r.returncode != 0 or out.get("is_error") or not text:
+        raise RuntimeError((text or r.stderr or r.stdout).strip()[:300] or f"claude exited {r.returncode}")
+    try:
+        ans = json.loads(text[text.index("{"):text.rindex("}") + 1])
+        n = int(ans.get("project"))
+    except (ValueError, TypeError):
+        raise RuntimeError(f"no JSON in Claude's answer: {text[:200]}")
+    if ans.get("sure") is not True or not 2 <= n <= len(listed):
+        return {}
+    why = ans.get("why") if isinstance(ans.get("why"), str) else ""
+    return {"project": listed[n - 1].info(), "why": why.strip()[:300]}
+
+
+def default_board():
+    """The board the page makes for a project with no tasks.json yet (index.html defaultState)."""
+    def col(name, done=False, role=None):
+        return {"id": os.urandom(5).hex(), "name": name, "done": done, **({"role": role} if role else {})}
+    return {"version": 1, "columns": [col("To Do"), col("In Progress", role="progress"), col("Review", role="review"),
+                                      col("Done", True)], "tasks": []}
+
+
+def write_board(p, state):
+    reports.ensure_board(p.board)
+    out = (json.dumps(state, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    fd, tmp = tempfile.mkstemp(dir=p.board, suffix=".tmp")
+    with os.fdopen(fd, "wb") as f:
+        f.write(out)
+    replace_file(tmp, p.data)
+    return board_rev(p, out)
+
+
+def move_task(p, task_id, to):
+    """Move a card that was never sent, with its subtasks and pictures, from `p`'s board to the top of `to`'s first
+    column (a done subtask goes to `to`'s done column). The moved card is marked as checked, so the project check
+    does not ask about it again. Returns {"rev": <p's new board rev>, "taskId": ...}."""
+    if to.id == p.id:
+        raise ValueError("the card is already on this project's board")
+    first, second = sorted((p, to), key=lambda x: x.id)   # one lock order for every move: no deadlock
+    with board_lock(first), board_lock(second):
+        src = load_tasks(p)
+        root = next((t for t in src["tasks"] if t.get("id") == task_id), None)
+        if not root:
+            raise LookupError("no such task")
+        ids, grew = {task_id}, True
+        while grew:
+            more = {t["id"] for t in src["tasks"] if t.get("parent") in ids} - ids
+            ids |= more
+            grew = bool(more)
+        moving = [t for t in src["tasks"] if t["id"] in ids]
+        if any(t.get("agent") for t in moving):
+            raise ValueError("a card already sent to Claude stays on its board")
+        try:
+            dst = load_tasks(to)
+        except FileNotFoundError:
+            dst = default_board()
+        cols = [c for c in dst["columns"] if isinstance(c, dict)]
+        if not cols:
+            raise ValueError(f"{to.name}'s board has no columns")
+        todo = next((c for c in cols if not c.get("done") and not c.get("role")), next((c for c in cols if not c.get("done")), cols[0]))
+        done_col = next((c for c in cols if c.get("done")), todo)
+        src_done = {c.get("id") for c in src["columns"] if c.get("done")}
+        top = min((t.get("order", 0) for t in dst["tasks"] if t.get("column") == todo["id"]), default=1) - 1
+        taken = {t.get("id") for t in dst["tasks"]}
+        if taken & ids:
+            raise ValueError(f"{to.name}'s board already has this card")
+        for t in moving:
+            if t["id"] == task_id:
+                t.update(column=todo["id"], order=top, parent=None, projectOk=True)
+            else:
+                t["column"] = done_col["id"] if t.get("column") in src_done else todo["id"]
+            t["updated"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+            for name in t.get("images") or []:
+                try:
+                    a, b = (reports.image_path(reports.task_images(x.board), name) for x in (p, to))
+                except ValueError:
+                    continue
+                if os.path.exists(a) and not os.path.exists(b):
+                    os.makedirs(os.path.dirname(b), exist_ok=True)
+                    shutil.copy2(a, b)
+        dst["tasks"].extend(moving)
+        write_board(to, dst)
+        src["tasks"] = [t for t in src["tasks"] if t["id"] not in ids]
+        rev = write_board(p, src)
+    return {"rev": rev, "taskId": task_id}
+
+
 def archive(p, task_id):
     """A card moved to done: save a recap of its sessions' work, then remove those sessions (`claude rm` ends the
     process and deletes the job folder with its scratch files; the transcript stays). A Codex session is digested
@@ -3156,7 +3290,8 @@ class Handler(SimpleHTTPRequestHandler):
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
-                  "/api/update", "/api/app-copy", "/api/push", "/api/autofill")
+                  "/api/update", "/api/app-copy", "/api/push", "/api/autofill", "/api/which-project",
+                  "/api/task/move")
         if not self._host_ok():
             return
         if path not in routes:
@@ -3214,6 +3349,11 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/autofill":
                 self._json(200, autofill(body.get("notes") or "", bool(body.get("title")), bool(body.get("tags")),
                                          body.get("known") or []))
+            elif path == "/api/which-project":
+                self._json(200, which_project(project(body["p"]), body.get("title") or "", body.get("notes") or "",
+                                              body.get("taskId")))
+            elif path == "/api/task/move":
+                self._json(200, move_task(project(body["p"]), body["taskId"], project(body["to"])))
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)

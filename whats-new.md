@@ -3,6 +3,7 @@
 ## 2026-10-15
 
 - You can now see all your tasks in one list, and pick which ones to show on the left. The board view is still there in the View menu.
+- When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.
 
 ## 2026-10-14
 

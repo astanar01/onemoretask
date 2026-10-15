@@ -145,7 +145,6 @@ const I18N = {
     "{who} session {id}": "Session {who} {id}",
     "Code review": "Relecture de code",
     "A fresh {who} session code-reviews this task's commits": "Une nouvelle session {who} relit le code des commits de cette tâche",
-    "The work is finished — move it to the done column": "Le travail est fini — placez la tâche dans la colonne des tâches terminées",
     "Mark as done": "Marquer terminé",
     "+ Add task": "+ Ajouter une tâche",
     "Subtask of {chain}": "Sous-tâche de {chain}",
@@ -523,7 +522,9 @@ const I18N = {
     "Create": "Créer",
     "good fit": "bon moment",
     "check first: {reasons}": "à vérifier d’abord : {reasons}",
-    "resume ~{resume} tokens · new task ~{new}": "reprendre ~{resume} tokens · nouvelle tâche ~{new}",
+    "Saves ~{diff} tokens: resuming re-reads ~{resume}, a new task reads ~{new}": "Économise ~{diff} tokens : reprendre relit ~{resume}, une nouvelle tâche lit ~{new}",
+    "Costs ~{diff} more tokens: resuming re-reads ~{resume}, a new task reads ~{new}": "Coûte ~{diff} tokens de plus : reprendre relit ~{resume}, une nouvelle tâche lit ~{new}",
+    "Same cost either way: resuming re-reads ~{resume}, a new task reads ~{new}": "Même coût dans les deux cas : reprendre relit ~{resume}, une nouvelle tâche lit ~{new}",
     "Writing the recap…": "Rédaction du résumé…",
     "The board switched project, so the new task was not added": "Le tableau a changé de projet, la nouvelle tâche n’a donc pas été ajoutée",
     "New task created from the recap": "Nouvelle tâche créée à partir du résumé",
@@ -539,7 +540,16 @@ const I18N = {
     "To Do": "À faire",
     "In Progress": "En cours",
     "Review": "Relecture",
-    "New column": "Nouvelle colonne"
+    "New column": "Nouvelle colonne",
+    "Is this task for another project?": "Cette tâche est-elle pour un autre projet ?",
+    "Keep it here and send": "La garder ici et l’envoyer",
+    "Not sent": "Non envoyée",
+    "Claude thinks this task is for {name}, not {here}.": "Claude pense que cette tâche est pour {name}, pas pour {here}.",
+    "Move to {name} and send": "Déplacer vers {name} et envoyer",
+    "the card is not on {name}'s board": "la carte n’est pas sur le tableau de {name}",
+    "Could not move the task: {error}": "Impossible de déplacer la tâche : {error}",
+    "Checking which project this task is for…": "Vérification du projet de cette tâche…",
+    "The board switched project, so the task was not sent": "Le tableau a changé de projet, la tâche n’a donc pas été envoyée"
   } /* fr-end */
 };
 
