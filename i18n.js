@@ -278,6 +278,7 @@ const I18N = {
     "{what}{by}. Merging brings them into {target}.": "{what}{by}. La fusion les intègre dans {target}.",
     "Uncommitted files are committed by the merge step.": "Les fichiers non commités sont commités lors de la fusion.",
     "{what} are already on {branch}; nothing to merge": "{what} : déjà sur {branch}, rien à fusionner",
+    "{commits} also sit on {branch}, which this card does not track: merge that branch by hand if you want them.": "{commits} se trouvent aussi sur {branch}, que cette carte ne suit pas : fusionnez cette branche à la main si vous les voulez.",
     "{run} running of {total}": "{run} actifs sur {total}",
     "Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}": "Contexte actuel : {now} tokens (comme dans la liste d’agents de Claude Code). Nouveaux tokens sur toute l’exécution : {total}",
     "{n} tokens": "{n} tokens",

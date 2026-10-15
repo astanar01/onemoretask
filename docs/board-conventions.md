@@ -99,3 +99,16 @@ offline. Two board-specific traps:
 - Opening a card (`openDetail(id)`) can clear its unread mark on the user's real
   board. Pick cards that are not in `/api/projects` → `attention`, or use a separate
   server.
+
+**No real data needed (how card text renders, List view layout):** `tests/ui_stub/`.
+`stub_server.py <checkout> <port> [agent_reports/<id>.json]` serves the checkout's real
+page and fakes only `/api/projects`, `/api/tasks`, `/api/agents` (one demo card whose
+log ends with `sample_done.md`). Then `node shot.mjs <port> out.png [light|dark]` shoots
+the detail panel, `node shot_list.mjs <port> out.png <width>` the List view. Run the
+`.mjs` files from a temp dir with `npm i playwright-core@1.48.2` (it uses the installed
+Chrome). Traps:
+
+- Each `/api/projects` entry needs a `board` field, or no cards render ("reading
+  'replace'").
+- The theme comes from `colorScheme` plus `localStorage` `task-board:theme`.
+- A page error "reading 'find'" from the thin agent stub is harmless.

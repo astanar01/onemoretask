@@ -2225,16 +2225,17 @@ function nextAction(t, ag, g) {
   if (!g.available) return { title: window.t("Ready for review"), text: window.t("Repository state unavailable: {error}. Check the changes by hand before finishing.", { error: g.error ? window.t(g.error) : window.t("git did not answer") }), actions: [...review("primary"), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
   const where = g.shared ? " " + window.t("in the project folder (shared with other tasks)") : "";
+  const stray = (g.stray || []).map(s => " " + window.t("{commits} also sit on {branch}, which this card does not track: merge that branch by hand if you want them.", { commits: nCommits(s.ahead), branch: s.branch })).join("");
   if (!has) {
     const why = g.answerOnly ? window.t("Answer-only task: no changes were expected.") : g.merged ? window.t("The worktree branch is already merged. Nothing left to merge.") : g.worktree && !g.worktree.exists ? window.t("The worktree is gone and its branch holds nothing unmerged.") : window.t("No repository changes to merge.");
-    return { title: window.t("Ready to complete"), text: why, actions: [markDone(), ...extra] };
+    return { title: window.t("Ready to complete"), text: why + stray, actions: [markDone(), ...extra] };
   }
   const commits = ahead ? (g.aheadKind === "own" ? window.t("{commits} on {branch}", { commits: nCommits(ahead), branch: g.branch }) : window.t("{commits} ahead of {target}", { commits: nCommits(ahead), target: g.target })) : "";
   const what = files && commits ? window.t("{files} and {commits}", { files: nFiles(files), commits }) : files ? nFiles(files) : commits;
   const by = claudeReviewed(ag) ? window.t(", {who} reviewed them", { who: ag.cli === "codex" ? "Codex" : "Claude" }) : "";
   const hb = handBack(), first = hb.length ? "sec" : "primary";
-  if (wt) return { title: window.t("Ready to merge"), text: window.t("{what}{by}. Merging brings them into {target}.", { what, by, target: g.target }) + (files ? " " + window.t("Uncommitted files are committed by the merge step.") : ""), actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
-  return { title: window.t("Ready to complete"), text: (g.aheadKind === "own" ? window.t("{what} are already on {branch}; nothing to merge", { what, branch: g.branch }) : `${what}${where}`) + `${by}.`, actions: [...hb, markDone(first), ...review(), ...extra] };
+  if (wt) return { title: window.t("Ready to merge"), text: window.t("{what}{by}. Merging brings them into {target}.", { what, by, target: g.target }) + (files ? " " + window.t("Uncommitted files are committed by the merge step.") : "") + stray, actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
+  return { title: window.t("Ready to complete"), text: (g.aheadKind === "own" ? window.t("{what} are already on {branch}; nothing to merge", { what, branch: g.branch }) : `${what}${where}`) + `${by}.` + stray, actions: [...hb, markDone(first), ...review(), ...extra] };
 }
 function renderNext(t) {
   const ag = t.agent && agents[t.id];

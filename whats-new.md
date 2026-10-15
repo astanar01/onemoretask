@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- If Claude saved work in a side place the task does not know about, the task now tells you, so that work is not lost.
 - A new task now gets its name much more often. Before, a task written as a question ("why does this break?") often stayed "Untitled".
 - The three dots on task cards are gone. Click the card to open it, like before.
 - The bar at the top no longer gets squashed when the window is short. Its buttons stay whole.

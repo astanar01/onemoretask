@@ -1289,6 +1289,20 @@ def _changed_files(cwd):
     return out, truncated
 
 
+def _stray_branches(p, task_id, tracked, target_ref):
+    """Branches named after this task (`<slug>-<task id>`) that the board does not track and that hold commits
+    missing from the target: an agent made one against its prompt, and the card offers no merge for it."""
+    refs = git_try(p.path, "for-each-ref", "--format=%(refname:short)", "refs/heads/", timeout=5) or ""
+    out = []
+    for b in refs.splitlines():
+        if b == tracked or not b.endswith("-" + task_id):
+            continue
+        n = git_try(p.path, "rev-list", "--count", f"{target_ref}..refs/heads/{b}", "--", timeout=5)
+        if n and n.isdigit() and int(n):
+            out.append({"branch": b, "ahead": int(n)})
+    return out
+
+
 def task_git(p, task_id):
     """The real git state of a task's work, so the card can tell whether anything is left to merge. Git trouble
     gives available=False with an error, never an exception; LookupError only for an unknown task."""
@@ -1328,6 +1342,7 @@ def task_git(p, task_id):
                                     timeout=5) is not None
         else:
             out["merged"] = True  # the branch was merged and deleted
+        out["stray"] = _stray_branches(p, task_id, place["branch"], place["target_ref"])
         out["available"] = True
     except (GitUnavailable, OSError, ValueError) as e:
         out.update(available=False, error=str(e) or "git failed", changed=[], ahead=[], behind=0, merged=False)
