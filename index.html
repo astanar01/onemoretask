@@ -1930,11 +1930,6 @@ function nextAction(t, ag, g) {
   const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
     : { title: window.t("Ready to send"), text: window.t("Claude has not started this task yet. Pick a model and send it."), actions: [] };
-  // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
-  const lastSaid = ag && (ag.log || []).filter((x) => x.from === "you" && x.status !== "note").pop();
-  if (t.answerOnly && lastSaid && lastSaid.status === "reply") return { title: window.t("This asks for work"),
-    text: window.t("An answer-only card changes nothing. Create a new task for the work: it starts from this card's recap."),
-    actions: [act(window.t("Create new task"), "primary", () => openFresh(t, lastSaid.message || ""), { title: window.t("Opens New task from this, with your follow-up as what the new task should do") }), markDone("ghost")] };
   if (isDone(t)) {
     const wt = t.agent.worktree && ag && ag.worktree;
     // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).
@@ -1968,6 +1963,12 @@ function nextAction(t, ag, g) {
       text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
+  // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
+  // Below the working / needs_you branches so a reply still shows progress and permission buttons.
+  const lastSaid = (ag.log || []).filter((x) => x.from === "you" && x.status !== "note").pop();
+  if (t.answerOnly && lastSaid && lastSaid.status === "reply") return { title: window.t("This asks for work"),
+    text: window.t("An answer-only card changes nothing. Create a new task for the work: it starts from this card's recap."),
+    actions: [act(window.t("Create new task"), "primary", () => openFresh(t, lastSaid.message || ""), { title: window.t("Opens New task from this, with your follow-up as what the new task should do") }), markDone("ghost")] };
   // Finished (or last message is a done report): what is there to review, merge, or complete?
   if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colRole("review") ? [act(window.t("Move to {col}", { col: window.t(colRole("review").name) }), "sec", () => { moveTask(t.id, colRole("review").id, null); renderDetail(); render(); })] : [] };
   if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
