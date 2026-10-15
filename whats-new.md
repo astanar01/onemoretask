@@ -4,6 +4,7 @@
 
 - When Claude has questions for you, they now always show on the card with a button for each answer. Before, Claude sometimes asked in a hidden window, and the card only said it was waiting.
 - When Claude asks if it may do something, the "Allow" button on the card works again. Before, it sometimes said "the prompt has no such choice".
+- A task you send to Claude now goes to the top of the next column, not the bottom. And you can scroll a long column again while Claude works: it no longer stops your scrolling every few seconds.
 - The Update button now works away from home too, like at a friend's or in a café. Before, some places stopped it and it said the update failed.
 - "Create repo" now works on very big folders. Before, it gave up after a minute and then said it could not create the repo. It now waits and tells you it can take a few minutes. It also shows the biggest folders with their size, so you can tick the ones to leave out.
 - When Claude asks you several things at once, you now click one answer for each, then press "Send answers". No more typing letters like "1a 2b".
