@@ -3446,7 +3446,7 @@ async function checkAppCopy() {
   sel.classList.toggle("away", !cur || !cur.main);
   sel.title = cur && cur.main ? t("The board runs from the main copy. Pick a worktree to try a task's changes")
     : t("The board runs from a worktree, not from main: {path}", { path: copies.current });
-  const name = (c) => (c.main ? "main" : "⎇ " + (c.name || c.branch));
+  const name = (c) => (c.main ? c.branch : "⎇ " + (c.name || c.branch));
   sel.innerHTML = copies.copies.map((c) => `<option value="${esc(c.path)}"${c === cur ? " selected" : ""}${c.canSwitch ? "" : " disabled"}>`
     + esc(name(c)) + (c.canSwitch ? "" : " (" + t("too old") + ")") + "</option>").join("");
   if (!cur) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(copies.current)}</option>`);

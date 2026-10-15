@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, and pick which ones to show on the left. The board view is still there in the View menu.
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.
 - When Claude picks between options, its card now shows the choice as a small tree: what was asked, each option, which one was picked and who picked it.
