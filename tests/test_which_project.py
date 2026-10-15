@@ -140,7 +140,9 @@ const dropPending = () => {}, refreshAgent = () => {}, renderAgent = () => {}, p
 const colRole = () => ({ id: "progress" }), moveTask = (id, col) => { card.column = col; }, now = () => 0;
 const autoFilling = new Map(), askProject = (t, other) => { asked = other.project.name; };
 let answer = { project: { id: "q", name: "onemoretask" }, why: "board app" };
-const post = (url, body) => { calls.push(url); return url === "/api/which-project"
+let switchDuring = false;
+const post = (url, body) => { calls.push(url); if (url === "/api/which-project" && switchDuring) P = "q";
+  return url === "/api/which-project"
   ? (answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer)) : Promise.resolve({ id: "s1" }); };
 """ + check_fn + send_fn + """
 (async () => {
@@ -159,17 +161,22 @@ const post = (url, body) => { calls.push(url); return url === "/api/which-projec
   card.projectOk = false; card.agent = null; card.parent = "x"; calls = [];   // a subtask: no check
   await sendToClaude(card);
   out.push(calls.slice());
+  card.parent = null; card.agent = null; card.column = "todo"; card.notes = "fourth"; calls = []; answer = {}; switchDuring = true;   // project switched mid-check
+  await sendToClaude(card);
+  out.push([calls.slice(), card.column, !!card.projectOk]);
   console.log(JSON.stringify(out));
 })();
 """
     out = subprocess.run([node, "-e", harness], capture_output=True, text=True)
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-400:]
-    check("Send: asks and starts nothing; kept card sends; fits-here sends and is marked; failure sends unmarked; subtask unchecked",
+    check("Send: asks and starts nothing; kept card sends; fits-here sends and is marked; failure sends unmarked; subtask unchecked;"
+          " a project switch during the check sends nothing",
           got, [[["/api/which-project"], "onemoretask", "todo", False],
                 [["/api/agent"], "s1"],
                 [["/api/which-project", "/api/agent"], True],
                 [["/api/which-project", "/api/agent"], False],
-                ["/api/agent"]])
+                ["/api/agent"],
+                [["/api/which-project"], "todo", False]])
 else:
     print("skip board Send: no node")
 

@@ -2464,7 +2464,9 @@ async function sendToClaude(t) {
   $("#d-send").disabled = true;
   if (needsProjectCheck(t)) {
     setStatus(window.t("Checking which project this task is for…"));
+    const pid = P;
     const other = await checkProject(t);
+    if (P !== pid) { setStatus(window.t("The board switched project, so the task was not sent"), true); return; }
     t = task(t.id) || t;
     if (other) {
       setStatus("");
