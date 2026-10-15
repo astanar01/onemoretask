@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- "Create repo" now works on very big folders. Before, it gave up after a minute and then said it could not create the repo. It now waits and tells you it can take a few minutes.
 - When Claude asks you several things at once, you now click one answer for each, then press "Send answers". No more typing letters like "1a 2b".
 - Notes that pop up now make a little sound, also in Chrome and Edge. You can turn the sound off under View, "Notification sound".
 - Pressing Send twice by mistake no longer starts two helpers on the same task.

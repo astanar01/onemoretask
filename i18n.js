@@ -396,6 +396,7 @@ const I18N = {
     "This folder": "Ce dossier",
     "Could not send: {error}": "Envoi impossible : {error}",
     "Local repo created": "Dépôt local créé",
+    "Creating the repo… a big folder can take a few minutes": "Création du dépôt… un gros dossier peut prendre quelques minutes",
     "Could not create the repo: {error}": "Impossible de créer le dépôt : {error}",
     "Starting {name}…": "Démarrage de {name}…",
     "Sending to {name}": "Envoi à {name}",

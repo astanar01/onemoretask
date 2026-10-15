@@ -2712,6 +2712,7 @@ function askRepo(t) {
   };
   $("#repo-yes").onclick = async () => {
     $("#repo-yes").disabled = true;
+    setStatus(window.t("Creating the repo… a big folder can take a few minutes"));
     try {
       await post("/api/git/init", { p: P });
       gitInfo.at = 0;   // the chips reload with the new branch

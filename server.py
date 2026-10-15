@@ -874,20 +874,38 @@ def git_run(cwd, *args, timeout=60):
     return r.stdout.strip()
 
 
+INIT_TIMEOUT = 3600   # git add -A of a big site (14 GB, 80k files) runs for minutes; a kill leaves index.lock behind
+_init_busy = set()
+_init_busy_lock = threading.Lock()
+
+
 def init_repo(p):
     """Make the project a git repo with a first commit, so its tasks can use worktrees. Returns git_info.
     The commit takes every file but the board (tasks), its local folders and .env files (secrets)."""
-    info = git_info(p)
-    if not info["repo"]:
-        git_run(p.path, "init", "-q")
-    if not info["commits"]:
-        exclude_local(p)
-        exclude_patterns(p, SECRET_FILES)
-        git_run(p.path, "add", "-A")
-        who = [] if git_try(p.path, "config", "user.email") and git_try(p.path, "config", "user.name") else [
-            "-c", "user.name=Task board", "-c", "user.email=taskboard@localhost"]
-        git_run(p.path, *who, "commit", "-q", "--allow-empty", "-m", "Initial commit")
-    return git_info(p)
+    key = os.path.realpath(p.path)
+    with _init_busy_lock:
+        if key in _init_busy:
+            raise RuntimeError("the repo is still being created; big folders take a few minutes")
+        _init_busy.add(key)
+    try:
+        info = git_info(p)
+        if not info["repo"]:
+            git_run(p.path, "init", "-q")
+        if not info["commits"]:
+            exclude_local(p)
+            exclude_patterns(p, SECRET_FILES)
+            # No commit yet and no run of ours in flight: an index.lock is left from an earlier run that was stopped.
+            lock = git_try(p.path, "rev-parse", "--git-path", "index.lock")
+            if lock and os.path.isfile(os.path.join(p.path, lock)):
+                os.remove(os.path.join(p.path, lock))
+            git_run(p.path, "add", "-A", timeout=INIT_TIMEOUT)
+            who = [] if git_try(p.path, "config", "user.email") and git_try(p.path, "config", "user.name") else [
+                "-c", "user.name=Task board", "-c", "user.email=taskboard@localhost"]
+            git_run(p.path, *who, "commit", "-q", "--allow-empty", "-m", "Initial commit", timeout=INIT_TIMEOUT)
+        return git_info(p)
+    finally:
+        with _init_busy_lock:
+            _init_busy.discard(key)
 
 
 def worktree_name(t):
