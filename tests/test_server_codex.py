@@ -140,7 +140,7 @@ def fake_run_claude(args, **kw):
 
 server.run_claude = fake_run_claude
 server.list_sessions = lambda cwd: []
-server.notify = lambda title, sub, msg: alerts.append((title, msg))
+server.ALERTS.publish = lambda a: alerts.append((a["title"], a["reason"]))
 
 # ---- (a) start_session picks the CLI by model
 aid = server.start_session(p, "t1", "task: Codex task", "THE BRIEF", "gpt-5.5")

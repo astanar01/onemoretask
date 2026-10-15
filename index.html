@@ -117,6 +117,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .pop-row.two input { margin-top: 3px; }
 .pop-row.two small { display: block; color: var(--muted); font-size: calc(12px * var(--ts)); white-space: normal; max-width: 260px; }
 .pop-row:has(input:disabled) { opacity: .6; cursor: default; }
+.pop-row[hidden] { display: none; }
+#notify-row small:not([hidden]) { display: block; color: var(--muted); font-size: calc(12px * var(--ts)); white-space: normal; max-width: 220px; }
 .upd-why { margin: 4px 10px 8px; max-width: 300px; }
 .pop-sep { height: 1px; background: var(--line); margin: 4px 2px; }
 #project-menu { max-height: calc(100vh - 80px); overflow-y: auto; }
@@ -716,6 +718,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
   <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
+  <label class="pop-row" id="notify-row" title="Pop up a note when Claude needs you or is done" hidden><span>Notifications<small id="notify-hint" hidden>Your browser blocks them. Allow them in this site's settings.</small></span><input type="checkbox" id="notify"></label>
   <label class="pop-row"><span>Language</span><select id="lang" title="Language"><option value="en">English</option><option value="fr">Français</option></select></label>
 </div>
 <div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
@@ -3718,6 +3721,64 @@ $("#show-subs").addEventListener("change", () => {
   render();
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
+// Browser notifications: one alert stream for every project, held by ONE tab (the leader, holding a Web Lock), so
+// many board tabs don't use up the browser's 6 connections per host, and each alert pops up once. When the leader
+// closes, its lock frees and a waiting tab takes over.
+let notifyES = null, notifyStop = null;
+function notifyOn() { try { return localStorage.getItem(LS_KEY + ":notify") === "1"; } catch (_) { return false; } }
+function openStream() {
+  notifyES = new EventSource("/api/alerts/stream");   // reconnects by itself after a network drop
+  notifyES.addEventListener("alert", (e) => showAlert(JSON.parse(e.data)));
+  notifyES.onerror = () => {
+    if (!notifyES || notifyES.readyState !== EventSource.CLOSED) return;
+    notifyES = null;
+    if (notifyStop) { notifyStop(); notifyStop = null; }   // gave up: let another tab try
+  };
+}
+function closeStream() { if (notifyES) { notifyES.close(); notifyES = null; } }
+function syncNotify() {
+  const on = notifyOn(), perm = Notification.permission, want = on && perm === "granted";
+  $("#notify").checked = on && perm !== "default";
+  $("#notify-hint").hidden = !(on && perm === "denied");
+  if (!navigator.locks) { if (want && !notifyES) openStream(); else if (!want) closeStream(); return; }
+  if (want && !notifyStop) {
+    const ac = new AbortController();
+    let release;
+    const held = new Promise((r) => { release = r; });
+    notifyStop = () => { ac.abort(); release(); };   // abort drops a request still waiting; release ends a held one
+    navigator.locks.request("otask-alerts", { signal: ac.signal }, () => { openStream(); return held.then(closeStream); })
+      .catch(() => {});
+  } else if (!want && notifyStop) { notifyStop(); notifyStop = null; }
+}
+addEventListener("storage", (e) => { if (e.key === LS_KEY + ":notify" && !$("#notify-row").hidden) syncNotify(); });
+function showAlert(a) {
+  const icon = document.querySelector('link[rel="icon"]');
+  const n = new Notification(a.title, { body: a.sub + (a.reason ? "\n" + a.reason : ""), tag: "otask-" + a.seq, icon: icon ? icon.href : undefined });
+  n.onclick = async () => {
+    window.focus(); n.close();
+    if (a.project !== P && projects.some((p) => p.id === a.project)) await switchProject(a.project);
+    if (a.project === P && task(a.task)) openDetail(a.task);
+  };
+}
+// Shown only when the server has the stream: an older one answers 404.
+async function initNotify() {
+  if (!useServer || !("Notification" in window)) return;
+  const ac = new AbortController();
+  try {
+    const r = await fetch("/api/alerts/stream", { cache: "no-store", signal: ac.signal });
+    ac.abort();
+    if (!r.ok) return;
+  } catch (_) { return; }
+  $("#notify-row").hidden = false;
+  syncNotify();
+}
+$("#notify").addEventListener("change", async (e) => {
+  const on = e.target.checked;
+  if (on && Notification.permission === "default") await Notification.requestPermission();
+  // Saved after the answer, so the other tabs' storage event already sees the permission.
+  try { localStorage.setItem(LS_KEY + ":notify", on ? "1" : "0"); } catch (_) {}
+  syncNotify();
+});
 $("#layout").value = view;
 $("#layout").addEventListener("change", (e) => {
   view = e.target.value;
@@ -3772,7 +3833,7 @@ document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", 
 }));
 
 load().then(() => {
-  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); checkUpdate(); checkAppCopy(); checkUnpushed();
+  render(); if (!useServer) setStatus(t("Saving in this browser")); pollAgents(); checkUpdate(); checkAppCopy(); checkUnpushed(); initNotify();
 })
   .catch((e) => setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true));
 </script>

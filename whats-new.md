@@ -7,6 +7,7 @@
 - In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone. The new task always lands in To Do, and you see it there even when the filter hides To Do.
 - In the list view, the list of tasks is now half as wide, so the open task gets more room. Long names get cut short with "…" instead of spilling out.
 - When Claude asks you to pick, the choices are now buttons: click one to answer, or type your own. When Claude picks for itself, a check mark shows its choice.
+- Turn on Notifications in the View menu to get normal pop-ups from your browser when Claude needs you or is done. Click one to open that card. With the board open in many tabs, you still get just one pop-up, and the board stays quick. The odd "Script Editor" pop-ups are gone.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, grouped by step, with the task you pick open right beside it, laid out like before: its choices on the left and the chat on the right. A Filter button picks which ones to show. The board view is still there in the View menu.
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.

@@ -93,7 +93,7 @@ server.projects = lambda: [p]
 server.list_sessions = lambda cwd: [dict(s) for s in sessions.values()]
 server.resume = fake_resume
 server.run_claude = no_claude
-server.notify = lambda title, sub, msg: alerts.append((title, msg))
+server.ALERTS.publish = lambda a: alerts.append((a["title"], a["reason"]))
 server.time = types.SimpleNamespace(time=lambda: clock[0], sleep=time.sleep)
 W = server.WATCH
 TRY_AGAIN = "Claude Code's safety check kept failing, so Claude stopped. The board tries again in a minute."

@@ -37,7 +37,6 @@ reports.append(p.board, "t1", "done", "All done.", "claude")
 server.projects = lambda: [p]
 server.list_sessions = lambda cwd: [{"id": "a0", "sessionId": "s0", "state": "done", "status": "idle"}]
 server.run_claude = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no real claude in this test"))
-server.notify = lambda *a: None
 closed = []
 server.archive = lambda p_, task_id: closed.append(task_id)
 W = server.WATCH

@@ -39,7 +39,7 @@ card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
 - **Card states that need a finished session** (buttons shown only in phase "finished")
   without a paid run: a ~50-line script that sets `HOME=<tmp>/home`, imports the real
   `server`, replaces `start_session`, `resume`, `list_sessions` (returns every started
-  fake id as idle), `run_claude` (raises) and `notify`, then runs the REAL
+  fake id as idle), and `run_claude` (raises), then runs the REAL
   `WATCH.poll()` in a 1 s loop and serves `server.Handler` on a spare port. With every
   session call faked and its own HOME, this poll cannot touch live sessions (unlike the
   overview script above). Play Claude's side from the shell with the real `report.py`
