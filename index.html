@@ -1453,7 +1453,14 @@ function renderList() {
     board.innerHTML = `<div class="ltop"><button type="button" class="btn primary lnew">${licon("plus", 14)}<span>${t("Create new task")}</span></button><button type="button" class="btn lfbtn">${licon("funnel", 14)}<span>${t("Filter")}</span><span class="n" hidden></span></button></div><div class="lfpanel" hidden></div><div class="lmain"></div>`;
     rail = board.querySelector(".lfpanel"); main = board.querySelector(".lmain");
     board.querySelector(".lfbtn").onclick = () => { lfOpen = !lfOpen; render(); };
-    board.querySelector(".lnew").onclick = () => { settleDraft(); const t = withDelegateChoice(addTask("", firstOpenCol())); save(); draftId = t.id; render(); openDetail(t.id); };
+    // To Do = the open column with no role (In Progress / Review have one). The draft shows there even under a filter.
+    board.querySelector(".lnew").onclick = () => {
+      settleDraft();
+      const col = (state.columns.find((c) => !c.done && !c.role) || { id: firstOpenCol() }).id;
+      const t = withDelegateChoice(addTask("", col)); save(); draftId = t.id;
+      if (lfold.delete(col)) try { localStorage.setItem(LS_KEY + ":lfold", JSON.stringify([...lfold])); } catch (_) {}
+      render(); openDetail(t.id);
+    };
   }
   // Polls render often: the filters are rebuilt only when their choices change and nobody is using them.
   const tags = listTags();
@@ -1470,15 +1477,17 @@ function renderList() {
   const narrowed = !!(q || lf.prios.size || lf.tags.size || lf.running);
   const pass = (x) => {
     const ag = x.agent && agents[x.id];
-    return matches(x, q) && !lf.prios.has(x.priority || "")
+    return x.id === draftId || matches(x, q) && !lf.prios.has(x.priority || "")
       && (!lf.tags.size || (x.tags || []).some((g) => lf.tags.has(g.toLowerCase())))
       && (!lf.running || !!(ag && (ag.phase === "working" || ag.phase === "needs_you")));
   };
   const y = main.scrollTop;
   main.innerHTML = "";
   for (const col of state.columns) {
-    if (lf.cols.has(col.id)) continue;
-    const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && pass(x)).sort((a, b) => a.order - b.order);
+    // A hidden group still shows the new task just made, alone.
+    const hid = lf.cols.has(col.id);
+    if (hid && !(draftId && (task(draftId) || {}).column === col.id)) continue;
+    const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && (hid ? x.id === draftId : pass(x))).sort((a, b) => a.order - b.order);
     if (!rows.length && narrowed) continue;
     const shown = new Set(rows.map((x) => x.id));
     const sec = document.createElement("section"), shut = lfold.has(col.id);
