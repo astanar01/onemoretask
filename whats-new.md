@@ -2,7 +2,7 @@
 
 ## 2026-10-15
 
-- Claude's messages are easier to read: titles are bigger, there is more room between parts, and lists breathe. Tables, code boxes and quotes now show as real tables, boxes and quotes. Each review finding sits in its own card with a colour stripe for how serious it is.
+- Claude's messages are easier to read: titles are bigger, there is more room between parts, and lists breathe. Tables, code boxes and quotes now show as real tables, boxes and quotes. Each review finding sits in its own card: a coloured tag for how serious it is, the title, then Where, Problem, Fix and Proof lined up, with the fix in its own box.
 
 ## 2026-10-14
 
