@@ -397,8 +397,9 @@ def build_prompt(p, state, t, wt=None, model=""):
             f"Commit your work in the worktree, on branch {wt['branch']}; never push unless the task or the user tells "
             "you to." if wt else
             "Work in the project folder itself: do not create a git worktree or a branch for this task (the card has "
-            "\"Use a worktree\" off), and if a harness rule puts you in one anyway, say so on the card. Commit your "
-            "work; never push unless the task or the user tells you to.")
+            "\"Use a worktree\" off), and if a harness rule puts you in one anyway, say so on the card. Never switch or "
+            "check out another branch in the project folder: other tasks share it; for another branch, use a worktree. "
+            "Commit your work; never push unless the task or the user tells you to.")
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
               f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
     return "\n".join(lines)
@@ -809,9 +810,18 @@ def worktree_name(t):
     return f"{slug}-{tid}" if slug else f"task-{tid}"
 
 
+def default_branch(cwd):
+    """The repo's default branch: origin/HEAD's branch, else main, else master, else None. Only branches that exist locally."""
+    for b in ((git_try(cwd, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD") or "").removeprefix("origin/"),
+              "main", "master"):
+        if b and git_try(cwd, "rev-parse", "--verify", "--quiet", f"refs/heads/{b}") is not None:
+            return b
+    return None
+
+
 def make_worktree(p, t, made=None, name=None):
     """Create the task's worktree, or reuse it (a retry after a failed launch): <repo>/.claude/worktrees/<name> on
-    branch <name>, from HEAD. Returns {path, dir (the project folder inside it), branch, base}. `made` (a list)
+    branch <name>, from the default branch (HEAD when there is none). Returns {path, dir (the project folder inside it), branch, base}. `made` (a list)
     gets "worktree" and "branch" for what this call created. `name` defaults to one made from the task's title."""
     made = [] if made is None else made
     if git_try(p.path, "rev-parse", "--is-inside-work-tree") != "true":
@@ -823,7 +833,10 @@ def make_worktree(p, t, made=None, name=None):
     name = name or worktree_name(t)
     path = os.path.join(top, *WORKTREES.split("/"), name)
     exclude_local(p)
-    base = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD") or git_run(p.path, "rev-parse", "--short", "HEAD")
+    # Start from the default branch, not whatever the shared folder has checked out.
+    default = default_branch(p.path)
+    base = default or git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD") or git_run(
+        p.path, "rev-parse", "--short", "HEAD")
     git_run(p.path, "worktree", "prune")  # a registered worktree whose folder was deleted blocks `worktree add`
     listed = {os.path.realpath(x[len("worktree "):]) for x in
               git_run(p.path, "worktree", "list", "--porcelain").splitlines() if x.startswith("worktree ")}
@@ -831,7 +844,7 @@ def make_worktree(p, t, made=None, name=None):
         if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}") is not None:
             git_run(p.path, "worktree", "add", "-q", path, name)
         else:
-            git_run(p.path, "worktree", "add", "-q", "-b", name, path, "HEAD")
+            git_run(p.path, "worktree", "add", "-q", "-b", name, path, f"refs/heads/{default}" if default else "HEAD")
             made.append("branch")
         made.append("worktree")
     return {"path": path, "dir": os.path.normpath(os.path.join(path, prefix)) if prefix else path, "branch": name,
@@ -846,16 +859,18 @@ def live_worktree(t):
 
 def renew_worktree(p, t):
     """A message to a "use worktrees" task whose worktree was deleted or merged away: make a fresh one, same folder
-    and branch name (the card's record stays valid), from the main checkout's HEAD. Returns it, else None."""
+    and branch name (the card's record stays valid), from the default branch. Returns it, else None."""
     wt = (t.get("agent") or {}).get("worktree")
     if not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or live_worktree(t):
         return None
     branch = wt["branch"]
-    # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts at HEAD.
+    # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts fresh.
     # One holding unmerged commits is reused, so that work stays. Prune first: a stale registration blocks -D.
     git_try(p.path, "worktree", "prune")
+    default = default_branch(p.path)
     if (git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None
-            and git_try(p.path, "merge-base", "--is-ancestor", f"refs/heads/{branch}", "HEAD") is not None):
+            and git_try(p.path, "merge-base", "--is-ancestor", f"refs/heads/{branch}",
+                        f"refs/heads/{default}" if default else "HEAD") is not None):
         git_try(p.path, "branch", "-D", branch)
     return make_worktree(p, t, name=branch)
 
