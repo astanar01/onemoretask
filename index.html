@@ -13,7 +13,7 @@
   --bg: #f4f2ee; --col: #e9e6df; --card: #ffffff; --text: #1f1d1a; --muted: #6f6a61;
   --line: #d6d1c7; --accent: #7a4fd6; --accent-soft: #ece4fb; --danger: #c0392b;
   --drop: #7a4fd6; --shadow: 0 1px 2px rgba(0,0,0,.08), 0 1px 1px rgba(0,0,0,.04);
-  --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b;
+  --p-high: #d9534f; --p-med: #e0a100; --p-low: #3c9d6b; --blue: #2f7fd8;
   --crit: #b42318; --crit-bg: #fde2df; --major: #b54708; --major-bg: #fdebd7;
   --minor: #8a6100; --minor-bg: #fbf0c9; --low: #4a6177; --low-bg: #e3eaf1; --ok-bg: #dcf0e5;
 }
@@ -24,7 +24,7 @@
     color-scheme: dark;
     --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
     --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
-    --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4); --blue: #5ea6f2;
     --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
     --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
   }
@@ -33,7 +33,7 @@
   color-scheme: dark;
   --bg: #17161a; --col: #211f25; --card: #2b2830; --text: #ece9f1; --muted: #a29ca9;
   --line: #3a3640; --accent: #a88af0; --accent-soft: #332a47; --danger: #e8685c;
-  --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  --drop: #a88af0; --shadow: 0 1px 2px rgba(0,0,0,.4); --blue: #5ea6f2;
   --crit: #ff8a80; --crit-bg: #4d2020; --major: #ffae66; --major-bg: #4a2e14;
   --minor: #f2cc60; --minor-bg: #43391a; --low: #a9bdd1; --low-bg: #2b3440; --ok-bg: #1f3a2c;
 }
@@ -164,42 +164,65 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .add-card button:hover { background: var(--line); color: var(--text); }
 .add-col { min-width: 220px; }
 
-/* List layout (View menu): filter rail on the left, one-line rows grouped by column. */
-#board.list { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px; overflow: hidden; align-items: stretch; min-height: 0; }
-.lrail { overflow-y: auto; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+/* List layout (View menu): the list pane is var(--list-w) wide on the left; body.view-list docks the task panel to its right. */
+:root { --list-w: clamp(320px, 34vw, 560px); }
+#board.list { flex: 1 1 auto; width: var(--list-w); flex-direction: column; gap: 0; padding: 0; overflow: hidden; align-items: stretch; min-height: 0; border-right: 1px solid var(--line); }
+.ltop { display: flex; padding: 12px 16px 4px 20px; }
+.lfbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.lfbtn[aria-expanded="true"], .lfbtn.on { color: var(--text); border-color: var(--accent); }
+.lfbtn .n { background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: calc(11px * var(--ts)); font-weight: 600; }
+.lfpanel { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 4px 16px 6px 20px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; max-height: 45%; overflow-y: auto; flex: none; }
+.lfpanel[hidden] { display: none; }
 .lf h4 { margin: 0 0 4px 6px; font-size: calc(11px * var(--ts)); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .lopts { display: flex; flex-direction: column; gap: 1px; }
 .lopts.wrap { flex-direction: row; flex-wrap: wrap; gap: 5px; padding-left: 6px; }
+.lf:has(.wrap) { flex-basis: 100%; }
 .lchip { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 6px; cursor: pointer; user-select: none; white-space: nowrap; }
 .lchip:hover { background: var(--col); }
 .lchip input { margin: 0; accent-color: var(--accent); }
 .ltag { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 4px; padding: 1px 7px; font-size: calc(12px * var(--ts)); }
 .ltag:hover { border-color: var(--accent); }
 .ltag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.lmain { overflow-y: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 18px; padding-bottom: 16px; }
-.lgrp-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 5px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
-.lgrp-head .count { color: var(--muted); font-size: calc(12px * var(--ts)); flex: 1; }
-.lgrp-head .add-card { margin: 0; }
-.lgrp-head .add-card button { width: auto; padding: 2px 8px; }
-.lrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; min-width: 0; }
-.lrow:hover, .lrow:focus-visible { background: var(--card); box-shadow: var(--shadow); outline: none; }
-.lrow .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lrow .prio { margin: 0; vertical-align: 0; flex: none; }
-.lrow .agent { flex: none; white-space: nowrap; }
-.lrow .tags { display: flex; gap: 4px; flex: none; max-width: 35%; overflow: hidden; }
-.lrow .lsub { color: var(--muted); flex: none; }
-.lrow.is-done .title { text-decoration: line-through; color: var(--muted); }
-.lrow.needs-you { box-shadow: inset 3px 0 0 var(--wait); }
-.lrow.unread .title { font-weight: 600; }
-.lempty { color: var(--muted); padding: 24px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lmain { flex: 1; overflow-y: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 20px 20px; }
+.lgrp { display: flex; flex-direction: column; gap: 10px; }
+.lgrp-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; }
+.lgrp-head b { font-size: calc(15px * var(--ts)); }
+.lgrp-head .lfold, .lgrp-head .ladd { border: 0; background: transparent; color: var(--muted); padding: 2px; border-radius: 6px; display: grid; place-items: center; flex: none; }
+.lgrp-head .lfold { margin-left: -6px; }
+.lgrp-head .lfold svg { transition: transform .12s; }
+.lgrp.folded .lfold svg { transform: rotate(-90deg); }
+.lgrp-head .lfold:hover, .lgrp-head .ladd:hover { background: var(--col); color: var(--text); }
+.lgrp-head .ladd { margin-left: auto; }
+.ldot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--muted); }
+.lgrp-head .count { color: var(--text); background: var(--col); border: 1px solid var(--line); border-radius: 11px; min-width: 24px; padding: 0 8px; text-align: center; font-size: calc(12px * var(--ts)); }
+.lgrp.folded > .lcard { display: none; }
+.lcard { display: flex; flex-direction: column; gap: 8px; padding: 15px 14px 15px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; min-width: 0; }
+.lcard:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.lcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lcard.cur { border-color: var(--accent); background: var(--accent-soft); }
+.lcard .l1, .lcard .l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lcard .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(15px * var(--ts)); }
+.lcard .prio { margin: 0; vertical-align: 0; flex: none; }
+.lcard .lsub { color: var(--muted); flex: none; }
+.lcard .lmore { border: 0; background: transparent; color: var(--muted); padding: 0 2px; border-radius: 5px; flex: none; display: grid; place-items: center; height: 20px; }
+.lcard .lmore:hover { background: var(--col); color: var(--text); }
+.lcard .l2 { color: var(--muted); font-size: calc(13px * var(--ts)); }
+.lcard .l2 svg { flex: none; }
+.lcard .lbr { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.lcard .lbr span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcard .agent { flex: none; white-space: nowrap; }
+.lcard .tags { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+.lcard .lmsg { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; padding-right: 26px; }
+.lcard.is-done .title { text-decoration: line-through; color: var(--muted); }
+.lcard.needs-you { box-shadow: inset 3px 0 0 var(--wait); }
+.lcard.unread .title { font-weight: 600; }
+.lempty { color: var(--muted); padding: 24px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 @media (max-width: 640px) {
-  #board.list { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 12px 16px; }
-  .lrail { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 6px; padding-bottom: 4px; }
-  .lf, .lopts, .lopts.wrap { display: contents; }
-  .lf h4 { display: none; }
-  .lchip, .ltag { flex: none; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 3px 10px; }
-  .ltag.on { background: var(--accent); }
-  .lrow .tags { display: none; }
+  #board.list { width: 100%; border-right: 0; }
+  .ltop { padding: 10px 12px 4px; }
+  .lfpanel { margin: 4px 12px 6px; }
+  .lmain { padding: 4px 12px 16px; }
+  .lcard .tags { display: none; }
 }
 
 /* detail panel */
@@ -643,6 +666,35 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   .sel { max-width: 70%; }
   .tab { padding: 10px 9px 12px; }
 }
+/* List layout: the panel docks right of the list as one scrolling column (status pill, big title, then the rest);
+   with no task open the dock shows #dock-empty. Under 641px it stays the full-screen overlay above. */
+#dock-empty { display: none; }
+@media (min-width: 641px) {
+  body.view-list #overlay { display: flex; inset: var(--hdr-h, 0px) 0 0 var(--list-w); padding: 0; background: var(--bg); border-left: 1px solid var(--line); }
+  body.view-list #overlay:not(.open) #panel { display: none; }
+  body.view-list #overlay:not(.open) #dock-empty { display: grid; place-items: center; flex: 1; padding: 24px; color: var(--muted); text-align: center; }
+  body.view-list #panel { display: flex; flex-direction: column; overflow-y: auto; border-radius: 0; box-shadow: none; }
+  body.view-list .side { border-right: 0; overflow: visible; flex: none; padding: 22px 32px 4px; }
+  body.view-list #d-back { display: none; }
+  body.view-list .rows { order: -1; display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0 0 8px; }
+  body.view-list .row { padding: 0; gap: 4px; }
+  body.view-list .row + .row { border-top: 0; }
+  body.view-list .row .lbl, body.view-list .ov-ico.st { display: none; }
+  body.view-list .sel { max-width: none; }
+  body.view-list #d-col-slot::before { content: ""; position: absolute; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); pointer-events: none; }
+  body.view-list #d-col { padding-left: 27px; }
+  body.view-list #d-title { font-size: calc(28px * var(--ts)); }
+  body.view-list .fields { max-width: 640px; }
+  body.view-list .nx-send { flex-direction: row; }
+  body.view-list #d-model { flex: 1; width: auto; }
+  body.view-list #d-send, body.view-list .nx-actions .btn { width: auto; }
+  body.view-list .nx-actions { flex-direction: row; flex-wrap: wrap; }
+  body.view-list .dates { padding-top: 10px; }
+  body.view-list .main { flex: 1 0 auto; }
+  body.view-list .mainbar { padding-left: 32px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+  body.view-list .body { flex: 1 0 auto; overflow: visible; padding: 16px 32px 12px; }
+  body.view-list .composer { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: 10px 32px 12px; }
+}
 </style>
 </head>
 <body>
@@ -727,11 +779,11 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <span class="grow"></span>
         <button class="iconbtn" id="d-more" title="More actions" aria-haspopup="menu" aria-expanded="false"><span data-ico="more" data-s="18"></span></button>
         <button class="iconbtn" id="d-x" title="Close (Esc)"><span data-ico="x" data-s="18"></span></button>
-      </div>
-      <div class="menu" id="d-menu" role="menu" hidden>
-        <button role="menuitem" id="d-copy-attach"><span data-ico="copy" data-s="14"></span><span data-i18n>Copy <code>claude attach</code> command</span></button>
-        <button role="menuitem" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first"><span data-ico="trash" data-s="14"></span>Delete worktree…</button>
-        <button role="menuitem" class="danger" id="d-delete"><span data-ico="trash" data-s="14"></span>Delete task</button>
+        <div class="menu" id="d-menu" role="menu" hidden>
+          <button role="menuitem" id="d-copy-attach"><span data-ico="copy" data-s="14"></span><span data-i18n>Copy <code>claude attach</code> command</span></button>
+          <button role="menuitem" id="d-wt-del" title="Remove this task's worktree folder and its branch now, without merging. If it holds work that would be lost, you are asked first"><span data-ico="trash" data-s="14"></span>Delete worktree…</button>
+          <button role="menuitem" class="danger" id="d-delete"><span data-ico="trash" data-s="14"></span>Delete task</button>
+        </div>
       </div>
       <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
       <div class="body" id="d-body">
@@ -769,6 +821,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       </div>
     </section>
   </div>
+  <div id="dock-empty">Pick a task on the left to see it here.</div>
 </div>
 <input type="file" id="d-file" accept="image/*" multiple hidden>
 <div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
@@ -1240,6 +1293,7 @@ function matches(t, q) {
 
 function render() {
   if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
+  document.body.classList.toggle("view-list", view === "list");
   if (view === "list") return renderList();
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
@@ -1377,21 +1431,38 @@ function addCardEl(col) {
 }
 
 // ---------------------------------------------------------------- list layout
-// No drag and drop here: rows open the task panel, cards change column the same ways as on the board.
+// No drag and drop here: cards open the task panel, cards change column the same ways as on the board.
+const lfold = new Set();   // columns folded in the list, per browser
+try { JSON.parse(localStorage.getItem(LS_KEY + ":lfold") || "[]").forEach((id) => lfold.add(id)); } catch (_) {}
+let lfOpen = false;        // the Filter panel is shown
+const LICO = {
+  funnel: `<path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/>`,
+  plus: `<path d="M12 5v14M5 12h14"/>`,
+  chat: `<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/>`,
+};
+const licon = (k, s = 16) => icon("x", s).replace(ICONS.x, LICO[k] || ICONS[k]);
+// Status dot: done green, review purple, in progress blue, the rest grey.
+const ldot = (c) => c.done ? "var(--ok)" : c.role === "review" ? "var(--accent)" : c.role === "progress" ? "var(--blue)" : "var(--muted)";
+
 function renderList() {
   queueMicrotask(tickCache);
   const board = $("#board");
   board.classList.add("list");
-  let rail = board.querySelector(".lrail"), main = board.querySelector(".lmain");
+  let rail = board.querySelector(".lfpanel"), main = board.querySelector(".lmain");
   if (!rail || !main) {
-    board.innerHTML = `<aside class="lrail"></aside><div class="lmain"></div>`;
-    rail = board.querySelector(".lrail"); main = board.querySelector(".lmain");
+    board.innerHTML = `<div class="ltop"><button type="button" class="btn lfbtn">${licon("funnel", 14)}<span>${t("Filter")}</span><span class="n" hidden></span></button></div><div class="lfpanel" hidden></div><div class="lmain"></div>`;
+    rail = board.querySelector(".lfpanel"); main = board.querySelector(".lmain");
+    board.querySelector(".lfbtn").onclick = () => { lfOpen = !lfOpen; render(); };
   }
   // Polls render often: the filters are rebuilt only when their choices change and nobody is using them.
   const tags = listTags();
   for (const k of lf.tags) if (!tags.some((g) => g.toLowerCase() === k)) lf.tags.delete(k);
   const sig = JSON.stringify([LANG, state.columns.map((c) => [c.id, c.name]), tags]);
   if (rail.dataset.sig !== sig && !rail.contains(document.activeElement)) { buildRail(rail, tags); rail.dataset.sig = sig; }
+  rail.hidden = !lfOpen;
+  const nf = lf.cols.size + lf.prios.size + lf.tags.size + (lf.running ? 1 : 0), fb = board.querySelector(".lfbtn"), fn = fb.querySelector(".n");
+  fb.setAttribute("aria-expanded", lfOpen); fb.classList.toggle("on", !!nf);
+  fn.hidden = !nf; fn.textContent = nf;
 
   const q = $("#search").value.trim().toLowerCase();
   const showSubs = $("#show-subs").checked;
@@ -1409,10 +1480,15 @@ function renderList() {
     const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && pass(x)).sort((a, b) => a.order - b.order);
     if (!rows.length && narrowed) continue;
     const shown = new Set(rows.map((x) => x.id));
-    const sec = document.createElement("section");
-    sec.className = "lgrp";
-    sec.innerHTML = `<div class="lgrp-head"><b>${esc(t(col.name))}</b><span class="count">${rows.length}</span></div>`;
-    sec.firstChild.appendChild(addCardEl(col));
+    const sec = document.createElement("section"), shut = lfold.has(col.id);
+    sec.className = "lgrp" + (shut ? " folded" : "");
+    sec.innerHTML = `<div class="lgrp-head"><button type="button" class="lfold" aria-expanded="${!shut}" title="${shut ? t("Expand") : t("Collapse")}">${icon("chev", 18)}</button><span class="ldot" style="background:${ldot(col)}"></span><b>${esc(t(col.name))}</b><span class="count">${rows.length}</span><button type="button" class="ladd" title="${t("Add task")}">${licon("plus", 18)}</button></div>`;
+    sec.querySelector(".lfold").onclick = () => {
+      lfold.has(col.id) ? lfold.delete(col.id) : lfold.add(col.id);
+      try { localStorage.setItem(LS_KEY + ":lfold", JSON.stringify([...lfold])); } catch (_) {}
+      render();
+    };
+    sec.querySelector(".ladd").onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
     // Same nesting as the board: a subtask goes under its parent when the parent is shown in this column too.
     const add = (x, depth) => { sec.appendChild(listRowEl(x, depth)); rows.filter((k) => k.parent === x.id).forEach((k) => add(k, depth + 1)); };
     rows.filter((x) => !shown.has(x.parent)).forEach((x) => add(x, 0));
@@ -1468,16 +1544,22 @@ function buildRail(rail, tags) {
 function listRowEl(x, depth) {
   const ag = x.agent && agents[x.id];
   const el = document.createElement("div");
-  el.className = "lrow" + (isDone(x) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(x) ? " unread" : "");
+  el.className = "lcard" + (x.id === openId ? " cur" : "") + (isDone(x) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(x) ? " unread" : "");
   el.dataset.id = x.id;
   el.tabIndex = 0;
   el.setAttribute("role", "button");
-  if (depth) el.style.paddingLeft = 8 + depth * 20 + "px";
-  el.innerHTML = `${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span>
+  if (depth) el.style.marginLeft = depth * 20 + "px";
+  // Branch: the worktree the launch made, stored on the card. Messages: the entries the panel's Conversation shows.
+  const br = x.agent && x.agent.worktree && x.agent.worktree.branch, n = ((ag && ag.log) || []).length;
+  const l2 = `${br ? `<span class="lbr" title="${esc(br)}">${icon("branch", 15)}<span>${esc(br)}</span></span>` : ""}
     ${x.agent ? `<span class="agent ${ag ? ag.phase : ""}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? t("Code review") : `${who(x)}: ${esc(phaseLabel(ag))}`}</span>` : ""}
-    ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}`;
+    ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
+    ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
+  el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span><button type="button" class="lmore" title="${t("Open task")}">${icon("more", 18)}</button></div>
+    ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}`;
+  el.querySelector(".lmore").onclick = (e) => { e.stopPropagation(); openDetail(x.id); };
   el.onclick = () => openDetail(x.id);
-  el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(x.id); } };
+  el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(x.id); } };
   return el;
 }
 
@@ -1550,7 +1632,7 @@ function onDrop(e, col) {
 function openDetail(id) {
   if (id !== openId) { replyImages = []; showPanelError(""); }
   openId = id;
-  if (markSeen([id])) render();
+  if (markSeen([id]) || view === "list") render();   // the list highlights the open card
   $("#overlay").classList.add("open");
   renderDetail();
   const t = task(id);
