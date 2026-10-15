@@ -1488,7 +1488,7 @@ function renderList() {
       try { localStorage.setItem(LS_KEY + ":lfold", JSON.stringify([...lfold])); } catch (_) {}
       render();
     };
-    sec.querySelector(".ladd").onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
+    sec.querySelector(".ladd").onclick = () => { settleDraft(); const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
     // Same nesting as the board: a subtask goes under its parent when the parent is shown in this column too.
     const add = (x, depth) => { sec.appendChild(listRowEl(x, depth)); rows.filter((k) => k.parent === x.id).forEach((k) => add(k, depth + 1)); };
     rows.filter((x) => !shown.has(x.parent)).forEach((x) => add(x, 0));
@@ -1630,6 +1630,7 @@ function onDrop(e, col) {
 
 // ---------------------------------------------------------------- detail panel
 function openDetail(id) {
+  if (draftId && draftId !== id) settleDraft();   // the docked list panel switches tasks without closing
   if (id !== openId) { replyImages = []; showPanelError(""); }
   openId = id;
   if (markSeen([id]) || view === "list") render();   // the list highlights the open card
