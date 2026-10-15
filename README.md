@@ -22,7 +22,8 @@ results back onto the card.
 - Optional: OpenAI's [Codex CLI](https://github.com/openai/codex) (the `codex` command), to send a task
   or a code review to an OpenAI model
 
-Desktop notifications are macOS only. The **Open folder…** dialog works on macOS and Windows;
+Turn on **Notifications** in the **View** menu to get a browser pop-up when Claude needs you or is done.
+The **Open folder…** dialog works on macOS and Windows;
 on Linux, paste the folder's path. Everything else works the same on all three.
 
 ## Install
@@ -123,7 +124,8 @@ the git repo you run it from.
    Tick **Answer only** when you just want an answer: Claude looks into it and reports back
    on the card, but changes no files and makes no commits.
 4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
-   and on macOS you get a notification when it needs you or finishes. Cards move on their own:
+   and with **Notifications** on in the **View** menu your browser tells you when it needs you or
+   finishes. Cards move on their own:
    to **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
    click **Move to done** (hidden while Claude still has work on it). Drag a card up or down to
    reorder it inside its column (a subtask stays among its siblings); it can't be dragged to

@@ -1,5 +1,4 @@
-"""Alerts reach open board pages over /api/alerts/stream, and macOS's own notification is skipped while a page
-that shows browser notifications (notify=1) is listening.
+"""Alerts reach open board pages over /api/alerts/stream; there is no other alert (no macOS notification).
 
 Run: python3 tests/test_alert_stream.py  (stdlib only; a fresh temp HOME, a real server on a free port)."""
 import http.client
@@ -22,8 +21,9 @@ proj = os.path.join(TMP, "proj")
 os.makedirs(proj)
 p = server.Project(proj)
 os.makedirs(p.board)
-notified = []
-server.notify = lambda *a: notified.append(a)
+published = []
+publish = server.ALERTS.publish
+server.ALERTS.publish = lambda a: (published.append(a), publish(a))
 server.ALERT_PING = 60  # no ping can find a closed page here; (c) lowers it to see a ping
 W = server.WATCH
 httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -77,7 +77,7 @@ def wait(cond, secs=5):
     return False
 
 
-# (a) a page that shows notifications gets the event; macOS stays quiet.
+# (a) a page that shows notifications gets the event.
 c, r = connect("?notify=1")
 check(r.status == 200 and r.getheader("Content-Type") == "text/event-stream"
       and r.getheader("Cache-Control") == "no-cache", "the stream answers with event-stream headers")
@@ -91,24 +91,21 @@ want = {"project": p.id, "task": "t1", "title": "Claude finished", "sub": "proj:
         "phase": "needs_you"}
 check(data is not None and isinstance(data.get("seq"), int) and {k: data[k] for k in want} == want,
       "the alert event carries the card's details", ev)
-check(notified == [], "no macOS notification while a notify=1 page listens", notified)
 first_seq = data and data["seq"]
 r.close()  # the response holds the socket too
 c.close()
 
-# (d) a closed page is noticed within about a second, with no write to it: the next alert goes to macOS.
+# (d) a closed page is noticed within about a second, with no write to it.
 time.sleep(1.5)
-fire("t2")
-check(len(notified) == 1, "an alert 1.5 s after the page closed goes to macOS", notified)
 check(not server.ALERTS.subs, "the closed page is dropped", server.ALERTS.subs)
 
-# (b) no page at all: macOS shows it.
-notified.clear()
+# (b) no page at all: the alert is still sent at once (a page opened later does not get it).
+published.clear()
 fire("t3")
-check(notified == [("Claude finished", "proj: t3", "All done.")], "no page: macOS notification", notified)
+check([a["task"] for a in published] == ["t3"] and not server.WATCH.alerts, "no page: the alert is sent, not kept",
+      (published, server.WATCH.alerts))
 
-# (c) a page that does not show notifications still gets the event, and macOS still shows it.
-notified.clear()
+# (c) a page that does not show notifications still gets the event.
 server.ALERT_PING = 1
 c, r = connect()
 read_event(r)
@@ -117,11 +114,10 @@ fire("t4")
 ev = read_event(r, pings=False)
 data = json.loads(ev[1][len("data: "):]) if ev and len(ev) == 2 else None
 check(data is not None and data["task"] == "t4" and data["seq"] > first_seq, "a plain page gets the event", ev)
-check(len(notified) == 1, "and macOS still shows it", notified)
 ev = read_event(r)
 check(ev == [": ping"], "a ping keeps the stream alive", ev)
 
-# A foreign page may not listen (it would silence macOS alerts).
+# A foreign page may not listen (it could read the alerts).
 c2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
 c2.request("GET", "/api/alerts/stream?notify=1", headers={"Origin": "http://evil.example"})
 check(c2.getresponse().status == 403, "another site's page is refused")
