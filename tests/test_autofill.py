@@ -131,6 +131,20 @@ const post = (url, body) => { calls.push(url); return url === "/api/autofill"
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
     check("Send redraws the open panel with the launch pending before any server call ends", got, [[], ["launch"]])
 
+    # The first send's project check (a Claude call) runs behind the swapped panel. When the task belongs to another
+    # project, the launch is dropped and the panel goes back to the form under the question.
+    checked = (shown.replace("const needsProjectCheck = () => false;",
+                             "const needsProjectCheck = () => true; let resolveCheck, asked = 0; const askProject = () => asked++;"
+                             " const checkProject = () => new Promise((r) => (resolveCheck = r));")
+                    .replace(", dropPending = () => {},", ", dropPending = (t, m) => { pending = pending.filter((x) => x !== m); },")
+                    .replace("resolveCall(); await send;", "const during = panel.slice(); resolveCheck({ project: { id: 'q' } }); await send;")
+                    .replace("console.log(JSON.stringify(panel[0] || null));",
+                             "console.log(JSON.stringify([during, panel, pending.length, asked, calls]));"))
+    out = subprocess.run([node, "-e", checked], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("The project check runs behind the swapped panel; another project puts the form back and asks",
+          got, [[[[], ["launch"]]], [[[], ["launch"]], [[], []]], 0, 1, []])
+
     # Another window's board swapped in while the title was coming (the move not on disk yet): Send still launches.
     reload = (harness.replace("resolveCall(); await send;", 'boardGen++; card.column = "todo"; resolveCall(); await send;')
                      .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",
