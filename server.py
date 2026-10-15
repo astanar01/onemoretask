@@ -409,6 +409,8 @@ def answer_only_lines(report):
             "- Do NOT make the changes the task describes: no file edits, no commits, no installs, nothing that "
             "changes the project or the machine. Reading files, searching and running read-only commands to find "
             "the answer is fine, and so is the task-observer log if this prompt asks for one. This holds for any subagents too.",
+            "- Do not create a git worktree or a branch, and do not offer or ask for a merge: an answer-only card has no "
+            "Merge button, so a merge line in the recap misleads the user.",
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
