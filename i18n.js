@@ -566,7 +566,8 @@ const I18N = {
     "the card is not on {name}'s board": "la carte n’est pas sur le tableau de {name}",
     "Could not move the task: {error}": "Impossible de déplacer la tâche : {error}",
     "Checking which project this task is for…": "Vérification du projet de cette tâche…",
-    "The board switched project, so the task was not sent": "Le tableau a changé de projet, la tâche n’a donc pas été envoyée"
+    "The board switched project, so the task was not sent": "Le tableau a changé de projet, la tâche n’a donc pas été envoyée",
+    "Drag to resize, double-click to reset": "Glisser pour redimensionner, double-cliquer pour réinitialiser"
   } /* fr-end */
 };
 

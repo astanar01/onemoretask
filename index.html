@@ -175,6 +175,10 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* List layout (View menu): the list pane is var(--list-w) wide on the left; body.view-list docks the task panel to its right. */
 :root { --list-w: clamp(240px, 17vw, 280px); }
 #board.list { flex: 1 1 auto; width: var(--list-w); flex-direction: column; gap: 0; padding: 0; overflow: hidden; align-items: stretch; min-height: 0; border-right: 1px solid var(--line); }
+#list-resize { display: none; position: fixed; z-index: 3; top: var(--hdr-h, 0px); bottom: 0; left: calc(var(--list-w) - 4px); width: 8px; cursor: col-resize; touch-action: none; }
+#list-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; }
+#list-resize:hover::after, #list-resize:focus-visible::after, body.list-resizing #list-resize::after { background: var(--accent); }
+body.list-resizing { user-select: none; cursor: col-resize; }
 .ltop { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 4px 20px; }
 .lnew { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .lmain { flex: 1; overflow-y: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 20px 20px; }
@@ -670,6 +674,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
    with no task open the dock shows #dock-empty. Under 641px it stays the full-screen overlay above. */
 #dock-empty { display: none; }
 @media (min-width: 641px) {
+  body.view-list #list-resize { display: block; }
+  body:has(#obs-modal.open, #cl-modal.open) #list-resize { display: none; }
   body.view-list #overlay { display: flex; inset: var(--hdr-h, 0px) 0 0 var(--list-w); padding: 0; background: var(--bg); border-left: 1px solid var(--line); }
   body.view-list #overlay:not(.open) #panel { display: none; }
   body.view-list #overlay:not(.open) #dock-empty { display: grid; place-items: center; flex: 1; padding: 24px; color: var(--muted); text-align: center; }
@@ -711,6 +717,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div>
 <div id="banner" data-i18n>Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
+<div id="list-resize" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize, double-click to reset"></div>
 
 <div id="overlay">
   <div id="panel">
@@ -1275,7 +1282,7 @@ function matches(t, q) {
 function render() {
   if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
   document.body.classList.toggle("view-list", view === "list");
-  if (view === "list") return renderList();
+  if (view === "list") { queueMicrotask(syncListAria); return renderList(); }
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
@@ -3094,6 +3101,54 @@ function openObs() {
 function closeObs() { $("#obs-modal").classList.remove("open"); }
 // The task and observations windows start under the header, which wraps to more rows on narrow windows.
 new ResizeObserver(() => document.documentElement.style.setProperty("--hdr-h", $("header").getBoundingClientRect().bottom + "px")).observe($("header"));
+
+// List view: drag (or arrow keys on) the edge between the list and the task panel to set --list-w.
+const listResize = $("#list-resize");
+function setListW(w, save) {
+  w = Math.round(Math.min(Math.max(w, 200), Math.max(200, Math.min(innerWidth - 360, innerWidth * 0.7))));
+  document.documentElement.style.setProperty("--list-w", w + "px");
+  listResize.setAttribute("aria-valuenow", w);
+  if (save) try { localStorage.setItem(LS_KEY + ":listw", String(w)); } catch (_) {}
+}
+function applySavedListW() {
+  let v = null;
+  try { v = localStorage.getItem(LS_KEY + ":listw"); } catch (_) {}
+  if (v !== null && !isNaN(parseFloat(v))) setListW(parseFloat(v), false);
+  else syncListAria();
+}
+// With no width set by hand, aria-valuenow follows the CSS default width.
+function syncListAria() {
+  if (!document.documentElement.style.getPropertyValue("--list-w") && view === "list")
+    $("#list-resize").setAttribute("aria-valuenow", Math.round($("#board").getBoundingClientRect().width));
+}
+applySavedListW();
+addEventListener("resize", applySavedListW);
+listResize.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  listResize.setPointerCapture(e.pointerId);
+  document.body.classList.add("list-resizing");
+});
+listResize.addEventListener("pointermove", (e) => {
+  if (listResize.hasPointerCapture(e.pointerId)) setListW(e.clientX, false);
+});
+const endListResize = (e) => {
+  if (!document.body.classList.contains("list-resizing")) return;
+  document.body.classList.remove("list-resizing");
+  setListW(e.clientX, true);
+};
+listResize.addEventListener("pointerup", endListResize);
+listResize.addEventListener("pointercancel", () => document.body.classList.remove("list-resizing"));
+listResize.addEventListener("dblclick", () => {
+  document.documentElement.style.removeProperty("--list-w");
+  try { localStorage.removeItem(LS_KEY + ":listw"); } catch (_) {}
+  syncListAria();
+});
+listResize.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  setListW($("#board").getBoundingClientRect().width + (e.key === "ArrowRight" ? 16 : -16), true);
+});
 
 function renderObs() {
   const d = obs.data || { sources: [], observations: [] }, list = obsList();
