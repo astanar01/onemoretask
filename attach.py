@@ -145,7 +145,9 @@ def menu_options(shown):
     if at < 0:
         return []
     menu = shown[at:].split("Esc to cancel")[0]
-    return [(k, " ".join(v.split())) for k, v in
+    # A menu drawn in a box puts its right border, and text beside or under the box ("+1 file edited before this
+    # session (show)"), after a label: keep what comes before the first border.
+    return [(k, " ".join(re.split(r"\s[│┃║|]", v)[0].split())) for k, v in
             re.findall(r"(\d)\.\s+(.*?)(?=\s+(?:❯\s*)?\d\.\s|\s*$)", menu, re.S)]
 
 
