@@ -1049,12 +1049,12 @@ def handback(p, task_id, text=""):
     if not s:
         raise LookupError("the session that did the work no longer exists")
     rev = "Codex" if info and info.get("cli") == "codex" else "Claude"
-    ask = text.strip() or "Fix the findings you agree with; say which ones you skip and why."
+    ask = text.strip() or reports.HANDBACK_ASK
     message = "\n\n".join([f"A {rev} code review looked at your commits on this task. Its report:", findings[-1],
                            "The user says: " + ask,
                            "Make the fixes, verify them, commit (never push unless the user tells you to), and report done."])
     aid = resume(p, {"id": worker, "sessionId": s.get("sessionId")}, message + board_tail(p, task_id))
-    reports.append(p.board, task_id, "reply", f"Sent the review findings back to {'Codex' if is_codex(s) else 'Claude'}: {ask}",
+    reports.append(p.board, task_id, "reply", reports.HANDBACK.format("Codex" if is_codex(s) else "Claude") + ask,
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid

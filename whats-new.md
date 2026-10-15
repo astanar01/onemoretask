@@ -4,6 +4,7 @@
 
 - When Claude picks between options, its card now shows the choice as a small tree: what was asked, each option, which one was picked and who picked it.
 - A card that only answers now gets a Create new task button when you ask it for work. The work goes to a new card that starts from this one's summary, so this card stays as it was.
+- Claude can no longer post a card message in another language than the one you wrote in. If you write in English, a message in French gets stopped, and Claude has to write it again in English.
 
 ## 2026-10-14
 
