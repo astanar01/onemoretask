@@ -225,8 +225,6 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .card.unread { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .card.unread .title { font-weight: 600; }
 .card.unread .title::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: .8em; vertical-align: 1px; }
-.btn.to-done { border-color: var(--ok); color: var(--ok); }
-.btn.to-done:hover { background: var(--ok); color: #fff; }
 .btn.review { border-color: var(--accent); color: var(--accent); }
 .btn.review:hover { background: var(--accent); color: #fff; }
 #busy { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.5); display: none; justify-content: center; align-items: center; cursor: wait; }
@@ -235,12 +233,12 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #busy svg { animation: spin 1.2s linear infinite; color: var(--accent); }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
-.card .to-done { margin-top: 7px; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh .btn { padding: 2px 8px; font-size: calc(12px * var(--ts)); }
-.fit { border-radius: 4px; padding: 0 6px; border: 1px solid var(--ok); color: var(--ok); }
-.fit.bad { border-color: var(--wait); color: var(--wait); }
-.fresh-est { flex-basis: 100%; color: var(--muted); }
+.btn.go { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn.go:hover { filter: brightness(1.1); }
+.fit { color: var(--ok); cursor: help; }
+.fit.bad { color: var(--danger); }
 #fresh-modal textarea { width: 100%; min-height: 80px; margin: 6px 0 10px; box-sizing: border-box; font: inherit; }
 #fresh-modal .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
 #fresh-msg { color: var(--muted); }
@@ -1263,11 +1261,9 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
-    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}${canFinish(t) ? `<button class="btn to-done" title="${window.t("The work is finished — move it to the done column")}">✓ ${window.t("Mark as done")}</button>` : ""}
+    ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}
     ${freshRow(t, ag)}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
-  const td = el.querySelector(".to-done");
-  if (td) td.addEventListener("click", (e) => { e.stopPropagation(); moveToDone(t.id); });
   const rv = el.querySelector(".review");
   if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(t); });
   const fr = el.querySelector(".fresh .btn");
@@ -1615,9 +1611,16 @@ function freshRow(t, ag) {
   if (!freshOk(ag)) return "";
   const f = ag.fresh_start, good = f.fit === "good";
   const fit = good ? window.t("good fit") : window.t("check first: {reasons}", { reasons: (f.reasons || []).join(", ") });
-  return `<div class="fresh"><button class="btn" title="${window.t("Claude writes a short summary of this card's work, and a new card starts from it.")}">${window.t("New task from this")}</button>
-    <span class="fit ${good ? "good" : "bad"}">${esc(fit)}</span>
-    <span class="fresh-est">${window.t("resume ~{resume} tokens · new task ~{new}", { resume: fmtTokens(f.resume_tokens || 0), new: fmtTokens(f.new_tokens || 0) })}</span></div>`;
+  return `<div class="fresh"><button class="btn go" title="${window.t("Claude writes a short summary of this card's work, and a new card starts from it.")}">${window.t("New task from this")}</button>
+    <span class="fit ${good ? "good" : "bad"}" title="${freshTip(f)}">${good ? "✓" : "✕"} ${esc(fit)}</span></div>`;
+}
+// The fit's tooltip: what a new card saves (or costs) against resuming this one, in tokens.
+function freshTip(f) {
+  const resume = f.resume_tokens || 0, fresh = f.new_tokens || 0, d = resume - fresh;
+  const both = { resume: fmtTokens(resume), new: fmtTokens(fresh), diff: fmtTokens(Math.abs(d)) };
+  return d > 0 ? window.t("Saves ~{diff} tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
+    : d < 0 ? window.t("Costs ~{diff} more tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
+    : window.t("Same cost either way: resuming re-reads ~{resume}, a new task reads ~{new}", both);
 }
 let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
