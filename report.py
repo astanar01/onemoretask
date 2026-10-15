@@ -12,6 +12,10 @@ containing the current directory.
 Works whether or not server.py is running: it appends to
 <board>/agent_reports/<task_id>.json, which the board reads. After `question`,
 end your turn; the answer arrives as your next message.
+
+A report plainly written in another language than the user's latest message on
+the card is refused. When the user asked for that language, pass
+`--lang <language>` to post it anyway.
 """
 import sys
 
@@ -19,19 +23,26 @@ import reports
 
 STATUSES = ("progress", "question", "done")
 
-args, files, board = [], [], None
+args, files, board, lang = [], [], None, None
 it = iter(sys.argv[1:])
 for a in it:
     if a == "--image":
         files.append(next(it, None) or sys.exit("--image needs a file"))
     elif a == "--board":
         board = next(it, None) or sys.exit("--board needs a folder")
+    elif a == "--lang":
+        lang = next(it, None) or sys.exit("--lang needs a language")
     else:
         args.append(a)
 if len(args) != 3 or args[1] not in STATUSES:
     sys.exit(__doc__)
 task_id, status, message = args
 board = board or reports.board_dir(reports.project_root())
+mismatch = None if lang else reports.language_mismatch(board, task_id, message)
+if mismatch:
+    sys.exit(f"Not posted: this report is in {mismatch[0]}, but the user's latest message on the card is in "
+             f"{mismatch[1]}. Write it again in {mismatch[1]}. A task ABOUT {mismatch[0]} is not a request to "
+             f"answer in it. Only if the user asked for {mismatch[0]} answers, add --lang {mismatch[0]}.")
 images = []
 for p in files:
     try:

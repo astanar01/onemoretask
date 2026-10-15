@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- Claude can no longer post a card message in another language than the one you wrote in. If you write in English, a message in French gets stopped, and Claude has to write it again in English.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.

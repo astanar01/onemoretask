@@ -250,6 +250,52 @@ LANGUAGE_RULE = ("Answer in the language the user wrote their latest message in 
                  "of the user's latest message each time you write a report.")
 
 
+# Function words only one of these languages uses; a guess needs several hits and a clear lead.
+LANG_WORDS = {
+    "English": set("the and is are of that this with for was were not be have has what when from but which will "
+                   "can does should would there they we my your it's don't i'm".split()),
+    "French": set("le les des du est et une un pas pour dans avec sur ce cette je tu il nous vous sont mais ou au aux "
+                  "c'est j'ai n'est ne plus fait être très ça qu'il aussi".split()),
+    "Spanish": set("el los las es y por para con del pero como está muy yo también una".split()),
+    "German": set("der die das und ist nicht ein eine mit für auf ich sie wir auch nur wenn aber oder".split()),
+}
+_NOT_PROSE = re.compile(r"```.*?```|`[^`]*`|https?://\S+|\S*[/\\]\S*", re.S)
+
+
+def guess_language(text):
+    """The language `text` is written in, or None when it is too short or mixed to tell. Code, URLs and paths
+    are ignored, so a report quoting French UI strings in backticks still reads as English."""
+    words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", _NOT_PROSE.sub(" ", text.lower().replace("’", "'")))
+    hits = sorted(((sum(w in ws for w in words), lang) for lang, ws in LANG_WORDS.items()), reverse=True)
+    (best, lang), (second, _) = hits[0], hits[1]
+    return lang if best >= 4 and best >= 3 * second else None
+
+
+USER_SAYS = ("reply", "note")
+
+
+def latest_user_text(board, task_id):
+    """The user's newest message to this task: their last reply or note on the card, else the card's title and
+    notes."""
+    for e in reversed(read(board, task_id)):
+        if e.get("from") == "you" and e.get("status") in USER_SAYS and e.get("message", "").strip():
+            return e["message"]
+    try:
+        with open(os.path.join(board, "tasks.json"), encoding="utf-8") as f:
+            tasks = json.load(f).get("tasks", [])
+    except (OSError, ValueError, AttributeError):
+        return ""
+    t = next((t for t in tasks if isinstance(t, dict) and t.get("id") == task_id), {})
+    return f"{t.get('title', '')}\n\n{t.get('notes', '')}".strip()
+
+
+def language_mismatch(board, task_id, message):
+    """(report language, user language) when a report is plainly in another language than the user's latest
+    message, else None. Unsure on either side means no mismatch: a false refusal costs more than a miss."""
+    mine, theirs = guess_language(message), guess_language(latest_user_text(board, task_id))
+    return (mine, theirs) if mine and theirs and mine != theirs else None
+
+
 def notes_message(board, notes):
     """The text Claude gets for notes typed on the card while it worked."""
     parts = ["Message from the user on the task board, sent while you were working:" if len(notes) == 1 else
