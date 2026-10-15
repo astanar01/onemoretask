@@ -1840,16 +1840,17 @@ function pickPart(b) {
   picks[pi] = +b.dataset.qo;
   b.closest(".qopts").querySelectorAll("button").forEach((x) => { x.classList.toggle("picked", x === b); x.setAttribute("aria-pressed", x === b); });
   const n = parts.filter((_, k) => picks[k] != null).length, wrap = b.closest(".qparts");
-  wrap.querySelector("[data-qsend]").disabled = n < parts.length;
+  wrap.querySelector("[data-qsend]").disabled = n < parts.length || $("#d-reply-send").disabled;
   wrap.querySelector(".qsend span").textContent = window.t("{n} of {m} picked", { n, m: parts.length });
 }
 function sendParts(b) {
   const e = logShown[+b.dataset.qsend], parts = e && qParts(e), picks = e && qPicks[qKey(e)], t = task(openId);
-  if (!t || !parts || !picks || parts.some((_, k) => picks[k] == null)) return;
+  if (!t || !parts || !picks || parts.some((_, k) => picks[k] == null) || $("#d-reply-send").disabled) return;
   const extra = $("#d-reply").value.trim();
   if (extra) setReplyDraft(t.id, "");
   $("#d-log").querySelectorAll("button[data-qo], button[data-qsend]").forEach((x) => (x.disabled = true));   // no double send
-  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""));
+  // A failed send gives back only the typed extra: the picks stay on the buttons and are re-read on retry.
+  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""), extra);
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
@@ -2124,6 +2125,7 @@ function renderAgent(t) {
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
   $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
+  if (recapping) $("#d-log").querySelectorAll("button[data-qsend]").forEach((b) => (b.disabled = true));
   if (recapping) {
     $("#d-reply").placeholder = window.t("Writing the recap — you can send once it is posted.");
     $("#d-reply-send").textContent = window.t("Writing recap…");
@@ -2988,7 +2990,8 @@ function pickReview(key, v) {
 $("#d-review-model").onchange = (e) => pickReview("taskboard.reviewModel", e.target.value);
 
 // pick: a clicked answer button's label, sent instead of the reply box (whose draft and images stay put).
-async function sendReply(pick) {
+// keep: what goes back in the reply box if the send fails (default: the whole text).
+async function sendReply(pick, keep) {
   const chose = typeof pick === "string", t = task(openId), text = chose ? pick.trim() : $("#d-reply").value.trim();
   if (!t || (!text && (chose || !replyImages.length)) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
@@ -3014,7 +3017,8 @@ async function sendReply(pick) {
     if (t.column !== fromCol) { moveTask(t.id, fromCol, null); render(); if (openId === t.id) $("#d-col").value = t.column; }
     // Hand the unsent message back so nothing typed is lost.
     // The text goes back to the card's draft even if you moved on; images only to the open card's box.
-    if (text && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, text, pid);
+    const back = keep === undefined ? text : keep;
+    if (back && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, back, pid);
     if (openId === t.id && P === pid && images.length && !replyImages.length) { replyImages = images; renderReplyImages(); }
     setStatus(window.t("Reply failed: {error}", { error: window.t(e.message) }), true);
   }
