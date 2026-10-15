@@ -2,6 +2,9 @@
 
 ## 2026-10-15
 
+- The little tag on each card now has its own color for what Claude is doing: working, checking the work, writing the recap, merging, waiting for you, finished or gone. Writing the recap and merging now say so in words too.
+- A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
+- In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone. The new task always lands in To Do, and you see it there even when the filter hides To Do.
 - In the list view, the list of tasks is now half as wide, so the open task gets more room. Long names get cut short with "…" instead of spilling out.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, grouped by step, with the task you pick open right beside it, laid out like before: its choices on the left and the chat on the right. A Filter button picks which ones to show. The board view is still there in the View menu.
