@@ -474,6 +474,8 @@ def card_lines(report, answer_only=False):
               '"a) <label>" --option "b) <label>" --part "2. <next question>" --option ...` (1 to 8 parts). The card '
               "shows a row of choices per part and one send button; never ask the user to type letters like \"1a 2b\". "
               "The answer comes back as one line per part: \"<part> → <option>\".",
+              "- Ask only through the report script, never a built-in question pop-up (AskUserQuestion): the pop-up "
+              "stays inside the session and never reaches the card.",
               f'- `{report} decision -` when YOU choose between options (a fork in the work): pipe in JSON (a heredoc) '
               "with the query, the options with a short why each, the index of the one chosen (null while open), by "
               "\"agent\" and why. The card draws it as a tree. Never post a decision for a choice the user just made "
@@ -1100,8 +1102,11 @@ def start_session(p, task_id, name, prompt, model):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
         return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path)
-    r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, *model_args(model),
-                    "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
+    # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
+    # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
+    # A resume keeps it (the job's respawnFlags).
+    r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, "--disallowedTools", "AskUserQuestion",
+                    *model_args(model), "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
@@ -1604,6 +1609,29 @@ def permission_ask(session):
         return ""
     need = re.sub(r"^approve\s+", "", job_detail(session.get("id"), "needs"), flags=re.I)
     return "Claude asks permission: " + (need or "a tool call (attach to see it)")
+
+
+def popup_questions(session):
+    """(message, parts) for the questions a session shows in an AskUserQuestion pop-up, else ("", []). The pop-up
+    shows only inside the session: `claude agents` gives waitingFor "input needed", the job's state.json has the
+    questions under block.questions. parts as reports.check_parts() stores them; the message carries the
+    choices' descriptions."""
+    if not session or "input" not in (session.get("waitingFor") or ""):
+        return "", []
+    try:
+        path = os.path.join(os.path.expanduser("~/.claude/jobs"), session.get("id") or "", "state.json")
+        with open(path, encoding="utf-8") as f:
+            qs = (json.load(f).get("block") or {}).get("questions") or []
+        parts = reports.check_parts([{"q": q.get("question"), "options": [o.get("label") for o in q.get("options") or []]}
+                                     for q in qs])
+    except (OSError, ValueError, AttributeError, TypeError):
+        return "", []
+    lines = []
+    for q in qs:
+        lines += [f"**{q['question'].strip()}**", ""]
+        lines += [f"- {o['label'].strip()}: {o['description'].strip()}" if (o.get("description") or "").strip()
+                  else f"- {o['label'].strip()}" for o in q["options"]] + [""]
+    return "\n".join(lines).strip(), parts
 
 
 def list_sessions(cwd):
@@ -2184,6 +2212,14 @@ class Watcher:
             delivered = reports.delivered(p.board, t["id"])
             phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
             said = [e for e in log if e.get("status") != "note"]
+            asked, parts = ("", []) if is_codex(s) else popup_questions(s)
+            if parts and not (said and said[-1].get("status") == "question" and said[-1].get("parts") == parts):
+                # It asked in an AskUserQuestion pop-up (a session started before the board turned that tool off):
+                # only an attach shows it. Put it on the card; a reply resumes the session with the answer.
+                reports.append(p.board, t["id"], "question", asked, "claude", parts=parts)
+                log = reports.read(p.board, t["id"])
+                said = [e for e in log if e.get("status") != "note"]
+                phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
             if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
                 # It stopped after a card reply without calling report.py: its answer is only in the chat, which
                 # the user never sees. Copy that answer onto the card.
