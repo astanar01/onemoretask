@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- In the list, one Create new task button at the top now makes a new task. The small + next to each group is gone.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, grouped by step, with the task you pick open right beside it. A Filter button picks which ones to show. The board view is still there in the View menu.
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.

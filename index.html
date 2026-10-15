@@ -167,7 +167,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 /* List layout (View menu): the list pane is var(--list-w) wide on the left; body.view-list docks the task panel to its right. */
 :root { --list-w: clamp(320px, 34vw, 560px); }
 #board.list { flex: 1 1 auto; width: var(--list-w); flex-direction: column; gap: 0; padding: 0; overflow: hidden; align-items: stretch; min-height: 0; border-right: 1px solid var(--line); }
-.ltop { display: flex; padding: 12px 16px 4px 20px; }
+.ltop { display: flex; gap: 8px; padding: 12px 16px 4px 20px; }
+.lnew { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .lfbtn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .lfbtn[aria-expanded="true"], .lfbtn.on { color: var(--text); border-color: var(--accent); }
 .lfbtn .n { background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: calc(11px * var(--ts)); font-weight: 600; }
@@ -187,12 +188,11 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .lgrp { display: flex; flex-direction: column; gap: 10px; }
 .lgrp-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; }
 .lgrp-head b { font-size: calc(15px * var(--ts)); }
-.lgrp-head .lfold, .lgrp-head .ladd { border: 0; background: transparent; color: var(--muted); padding: 2px; border-radius: 6px; display: grid; place-items: center; flex: none; }
+.lgrp-head .lfold { border: 0; background: transparent; color: var(--muted); padding: 2px; border-radius: 6px; display: grid; place-items: center; flex: none; }
 .lgrp-head .lfold { margin-left: -6px; }
 .lgrp-head .lfold svg { transition: transform .12s; }
 .lgrp.folded .lfold svg { transform: rotate(-90deg); }
-.lgrp-head .lfold:hover, .lgrp-head .ladd:hover { background: var(--col); color: var(--text); }
-.lgrp-head .ladd { margin-left: auto; }
+.lgrp-head .lfold:hover { background: var(--col); color: var(--text); }
 .ldot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--muted); }
 .lgrp-head .count { color: var(--text); background: var(--col); border: 1px solid var(--line); border-radius: 11px; min-width: 24px; padding: 0 8px; text-align: center; font-size: calc(12px * var(--ts)); }
 .lgrp.folded > .lcard { display: none; }
@@ -1450,9 +1450,10 @@ function renderList() {
   board.classList.add("list");
   let rail = board.querySelector(".lfpanel"), main = board.querySelector(".lmain");
   if (!rail || !main) {
-    board.innerHTML = `<div class="ltop"><button type="button" class="btn lfbtn">${licon("funnel", 14)}<span>${t("Filter")}</span><span class="n" hidden></span></button></div><div class="lfpanel" hidden></div><div class="lmain"></div>`;
+    board.innerHTML = `<div class="ltop"><button type="button" class="btn primary lnew">${licon("plus", 14)}<span>${t("Create new task")}</span></button><button type="button" class="btn lfbtn">${licon("funnel", 14)}<span>${t("Filter")}</span><span class="n" hidden></span></button></div><div class="lfpanel" hidden></div><div class="lmain"></div>`;
     rail = board.querySelector(".lfpanel"); main = board.querySelector(".lmain");
     board.querySelector(".lfbtn").onclick = () => { lfOpen = !lfOpen; render(); };
+    board.querySelector(".lnew").onclick = () => { settleDraft(); const t = withDelegateChoice(addTask("", firstOpenCol())); save(); draftId = t.id; render(); openDetail(t.id); };
   }
   // Polls render often: the filters are rebuilt only when their choices change and nobody is using them.
   const tags = listTags();
@@ -1482,13 +1483,12 @@ function renderList() {
     const shown = new Set(rows.map((x) => x.id));
     const sec = document.createElement("section"), shut = lfold.has(col.id);
     sec.className = "lgrp" + (shut ? " folded" : "");
-    sec.innerHTML = `<div class="lgrp-head"><button type="button" class="lfold" aria-expanded="${!shut}" title="${shut ? t("Expand") : t("Collapse")}">${icon("chev", 18)}</button><span class="ldot" style="background:${ldot(col)}"></span><b>${esc(t(col.name))}</b><span class="count">${rows.length}</span><button type="button" class="ladd" title="${t("Add task")}">${licon("plus", 18)}</button></div>`;
+    sec.innerHTML = `<div class="lgrp-head"><button type="button" class="lfold" aria-expanded="${!shut}" title="${shut ? t("Expand") : t("Collapse")}">${icon("chev", 18)}</button><span class="ldot" style="background:${ldot(col)}"></span><b>${esc(t(col.name))}</b><span class="count">${rows.length}</span></div>`;
     sec.querySelector(".lfold").onclick = () => {
       lfold.has(col.id) ? lfold.delete(col.id) : lfold.add(col.id);
       try { localStorage.setItem(LS_KEY + ":lfold", JSON.stringify([...lfold])); } catch (_) {}
       render();
     };
-    sec.querySelector(".ladd").onclick = () => { settleDraft(); const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
     // Same nesting as the board: a subtask goes under its parent when the parent is shown in this column too.
     const add = (x, depth) => { sec.appendChild(listRowEl(x, depth)); rows.filter((k) => k.parent === x.id).forEach((k) => add(k, depth + 1)); };
     rows.filter((x) => !shown.has(x.parent)).forEach((x) => add(x, 0));

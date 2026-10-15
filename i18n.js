@@ -548,7 +548,6 @@ const I18N = {
     "Filter": "Filtrer",
     "Expand": "Déplier",
     "Collapse": "Replier",
-    "Add task": "Ajouter une tâche",
     "Open task": "Ouvrir la tâche",
     "1 message": "1 message",
     "{n} messages": "{n} messages",
