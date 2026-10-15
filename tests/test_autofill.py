@@ -29,11 +29,15 @@ def check(name, got, want):
     print(("ok  " if ok else "FAIL") + f" {name}" + ("" if ok else f": got {got!r}, want {want!r}"))
 
 
+calls = []
+
+
 def fake_claude(answer):
     asks = []
 
     def run(args, **kw):
-        asks.append(args[-1])
+        asks.append(" ".join(args))
+        calls.append((args, kw.get("input")))
         return SimpleNamespace(returncode=0, stdout=json.dumps({"result": answer}), stderr="")
     server.run_claude = run
     return asks
@@ -57,6 +61,14 @@ check("garbage tags ignored", server.pick_tags("bug", known), [])
 asks = fake_claude('Here you go:\n{"title": "\\"Fix done column scroll.\\"", "tags": ["bug", "UI"]}\nDone.')
 check("title and tags", server.autofill("notes", True, True, known), {"title": "Fix done column scroll", "tags": ["Bugs", "ui"]})
 check("known tags are in the ask", "Bugs, ui, feature-request" in asks[0], True)
+# Haiku answered notes like "why does X fail?" instead of labelling them: the notes go in <notes> tags after the
+# ask, a system prompt says they are data, and no CLAUDE.md, hooks or settings load (--setting-sources "").
+args, data = calls[-1]
+check("notes wrapped in tags", data, "<notes>\nnotes\n</notes>")
+check("no settings, hooks or CLAUDE.md", args[args.index("--setting-sources") + 1], "")
+system = args[args.index("--system-prompt") + 1]
+check("system prompt: notes are data", "never answer" in system and '"title"' in system, True)
+check("no 'Above' in the ask (the notes come after it)", any("Above" in a for a in args), False)
 asks = fake_claude('{"title": "x", "tags": ["bug"]}')
 check("only tags asked", server.autofill("notes", False, True, []), {"tags": ["bug"]})
 check("no title asked for", '"title"' in asks[0], False)
