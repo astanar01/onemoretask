@@ -165,6 +165,8 @@ const I18N = {
     "sending to Claude…": "envoi à Claude…",
     "working": "au travail",
     "needs you": "vous attend",
+    "Waiting for you": "Vous attend",
+    "Review it, merge it or mark it done": "Relisez-la, fusionnez-la ou marquez-la terminée",
     "finished": "terminé",
     "removed": "supprimée",
     "running": "en cours",

@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- A task that is waiting for you now says so: it gets an orange edge, and finished work shows a "Waiting for you" tag until you answer, merge it or mark it done. The count at the top counts these too.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, grouped by step, with the task you pick open right beside it, laid out like before: its choices on the left and the chat on the right. A Filter button picks which ones to show. The board view is still there in the View menu.
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.

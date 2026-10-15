@@ -269,6 +269,7 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .agent.working { background: var(--accent); color: #fff; }
 .agent.needs_you { background: var(--wait); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
 .agent.finished { background: var(--ok); color: #fff; }
+.yours { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; border: 1px solid var(--wait); color: var(--wait); font-weight: 600; white-space: nowrap; flex: none; }
 @keyframes pulse { 50% { opacity: .55; } }
 .card-subs { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .card-subs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: calc(12px * var(--ts)); min-width: 0; }
@@ -1366,7 +1367,7 @@ function groupEl(t, kidsOf, top) {
 function cardEl(t, top, nestedCount) {
   const el = document.createElement("div");
   const ag = t.agent && agents[t.id];
-  el.className = "card" + (isDone(t) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
+  el.className = "card" + (isDone(t) ? " is-done" : "") + (waitsOnYou(t) ? " needs-you" : "") + (isUnread(t) ? " unread" : "");
   el.dataset.id = t.id;
   const kids = descendants(t.id);
   const doneKids = kids.filter(isDone).length;
@@ -1384,7 +1385,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
       ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? window.t("Code review") : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${t.agent ? `<span class="agent ${ag ? ag.phase : ""}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? window.t("Code review") : `${who(t)}: ${esc(phaseLabel(ag))}`}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1525,7 +1526,7 @@ function buildRail(rail, tags) {
 function listRowEl(x, depth) {
   const ag = x.agent && agents[x.id];
   const el = document.createElement("div");
-  el.className = "lcard" + (x.id === openId ? " cur" : "") + (isDone(x) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(x) ? " unread" : "");
+  el.className = "lcard" + (x.id === openId ? " cur" : "") + (isDone(x) ? " is-done" : "") + (waitsOnYou(x) ? " needs-you" : "") + (isUnread(x) ? " unread" : "");
   el.dataset.id = x.id;
   el.tabIndex = 0;
   el.setAttribute("role", "button");
@@ -1533,7 +1534,7 @@ function listRowEl(x, depth) {
   // Branch: the worktree the launch made, stored on the card. Messages: the entries the panel's Conversation shows.
   const br = x.agent && x.agent.worktree && x.agent.worktree.branch, n = ((ag && ag.log) || []).length;
   const l2 = `${br ? `<span class="lbr" title="${esc(br)}">${icon("branch", 15)}<span>${esc(br)}</span></span>` : ""}
-    ${x.agent ? `<span class="agent ${ag ? ag.phase : ""}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? t("Code review") : `${who(x)}: ${esc(phaseLabel(ag))}`}</span>` : ""}
+    ${x.agent ? `<span class="agent ${ag ? ag.phase : ""}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? t("Code review") : `${who(x)}: ${esc(phaseLabel(ag))}`}</span>${yoursChip(x, ag)}` : ""}
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
   el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span><button type="button" class="lmore" title="${t("Open task")}">${icon("more", 18)}</button></div>
@@ -1944,6 +1945,16 @@ function canFinish(t) {
   if ((pending[t.id] || []).length) return false;
   return !ag || ag.phase === "gone" || (ag.phase !== "working" && !(last && last.from === "you"));
 }
+// The card waits on the user: Claude asks or stopped, or its work is finished and only a review, merge or move is left.
+function waitsOnYou(t) {
+  const ag = t.agent && agents[t.id];
+  if (!ag || isDone(t) || ag.recapping || (pending[t.id] || []).length) return false;
+  if (ag.phase === "needs_you") return true;
+  if (ag.phase !== "finished" && ag.phase !== "gone") return false;
+  return !inReview(t) || canFinish(t);
+}
+// "Claude: needs you" already says it; finished work gets its own chip.
+const yoursChip = (t, ag) => ag && ag.phase !== "needs_you" && waitsOnYou(t) ? `<span class="yours" title="${window.t("Review it, merge it or mark it done")}">${window.t("Waiting for you")}</span>` : "";
 // A finished task in Review that made a commit (its card names the sha) can be handed to a fresh reviewer
 // session (server: review()). An "Answer only" task gets the button once a later reply had it commit.
 const canReview = (t) => useServer && !!t.agent && canFinish(t) && !!agents[t.id] && agents[t.id].phase !== "gone" && !!agents[t.id].commits;
@@ -3037,7 +3048,8 @@ async function pollAgents() {
 }
 
 function updateWaiting() {
-  const waiting = state.tasks.filter((t) => t.agent && agents[t.id] && agents[t.id].phase === "needs_you");
+  // Questions and stops first: the button opens the first one.
+  const waiting = state.tasks.filter(waitsOnYou).sort((a, b) => (agents[b.id].phase === "needs_you") - (agents[a.id].phase === "needs_you"));
   const name = project() ? project().name + " · Task Board" : "Task Board";
   document.title = waiting.length ? `(${waiting.length}) ${t("Claude needs you")} · ${name}` : name;
   const b = $("#waiting");
