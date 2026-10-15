@@ -33,20 +33,34 @@ print(d.get('tool_input',{}).get('command','') or '')
   # targets are written content, not navigation; a bare `<` input redirect still counts.
   GATE=$(BASH_CMD="$BASH_CMD" omt_py - <<'PY' 2>/dev/null
 import os, re, shlex
-cmd = os.environ.get("BASH_CMD", "").split("<<")[0]
+full = os.environ.get("BASH_CMD", "")
+cmd = full.split("<<")[0]
 cmd = re.sub(r"\d*(>&|&>>?|>>?)\|?\s*[^\s|;&()]*", " ", cmd)
 ext = re.compile(r"\.(py|gd|js|jsx|mjs|ts|tsx|go|php|cs|java|kt|c|cc|cpp|h|hpp|cu)$")
 src_dir = re.compile(r"(^|/)(src|app|apps|lib|pkg|internal|hooks|agents|scripts)/")
+feed_dir = re.compile(r"(^|/)(src|app|apps|lib|pkg|internal|hooks|agents|scripts)(/|$)")
 nav = {"grep", "egrep", "rg", "cat", "head", "tail", "awk", "less", "nl"}
 dir_nav = {"grep", "rg", "find", "cat", "head", "tail", "wc"}
 dir_hit = False
+BQ, SUB = chr(96), "$" + chr(40)
 def segments(s):
-    # Split on | ; & ( ) and newlines outside quotes: `grep "a|b" x.py` is one command.
+    # Split on | ; & ( ) and newlines outside quotes: `grep "a|b" x.py` is one command. The inside of a
+    # backtick or of a command substitution in double quotes is scanned as commands too (BQ/SUB: bash 3.2
+    # misreads those characters in this heredoc).
     segs, cur, q, i = [], "", "", 0
     while i < len(s):
         c = s[i]
         if c == "\\" and q != "'":
             cur += s[i:i + 2]; i += 2; continue
+        if c == BQ and q != "'":
+            j = s.find(BQ, i + 1)
+            j = len(s) if j < 0 else j
+            segs += segments(s[i + 1:j]); i = j + 1; continue
+        if q == '"' and s.startswith(SUB, i):
+            j, depth = i + 2, 1
+            while j < len(s) and depth:
+                depth += {"(": 1, ")": -1}.get(s[j], 0); j += 1
+            segs += segments(s[i + 2:j - 1]); i = j; continue
         if q:
             q = "" if c == q else q
         elif c in "'\"":
@@ -55,16 +69,44 @@ def segments(s):
             segs.append(cur); cur = ""; i += 1; continue
         cur += c; i += 1
     return segs + [cur]
+# The cmm-exempt marker counts only as the trailing comment: its # outside quotes, nothing after it.
+exempt = False
+marker = "# cmm-exempt"
+tail = segments(full)[-1].rstrip()
+if tail.endswith(marker) and (tail[:-len(marker)][-1:] or " ").isspace():
+    try:
+        exempt = shlex.split(tail, comments=True) == shlex.split(tail[:-len(marker)], comments=True)
+    except ValueError:
+        pass
+print("exempt" if exempt else "-")
+feeder = ""
 for seg in segments(cmd):
     try:
         w = shlex.split(seg, comments=True)
     except ValueError:
         w = seg.split()
+    piped = False
     while w and (re.match(r"^\w+=", w[0]) or w[0] in ("sudo", "command", "env", "xargs")):
+        if w[0] == "xargs":
+            # find scripts -name "*.py" | xargs grep foo: the nav verb reads the paths the finder printed.
+            piped = True
+            w = w[1:]
+            while w and w[0].startswith("-"):
+                w = w[2:] if w[0] in ("-I", "-J", "-n", "-L", "-P", "-d", "-E", "-s", "-R") else w[1:]
+            continue
         w = w[1:]
     if not w:
         continue
     verb = os.path.basename(w[0])
+    if verb in ("find", "ls", "fd"):
+        feeder = next((t for t in w[1:] if ext.search(t)), "") or feeder
+        if not feeder and any(feed_dir.search(t) for t in w[1:]):
+            feeder = "dir"
+    if piped and feeder and (verb in nav or verb in dir_nav):
+        if feeder != "dir":
+            print("src " + os.path.basename(feeder))
+            break
+        dir_hit = True
     if verb in nav or (verb == "sed" and "-n" in w):
         hit = next((t for t in w[1:] if ext.search(t)), "")
         if hit:
@@ -77,11 +119,13 @@ else:
         print("dir")
 PY
 )
+  EXEMPT=$(printf '%s\n' "$GATE" | sed -n 1p)
+  GATE=$(printf '%s\n' "$GATE" | sed 1d)
   SRC_READ=
   case $GATE in "src "*) SRC_READ=${GATE#src } ;; esac
 
   # # cmm-exempt bypasses the block, except on a source read (agents had made it the default for those).
-  if [ -z "$SRC_READ" ] && echo "$BASH_CMD" | grep -q '# cmm-exempt'; then
+  if [ -z "$SRC_READ" ] && [ "$EXEMPT" = exempt ]; then
     exit 0
   fi
 

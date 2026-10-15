@@ -254,7 +254,8 @@ def add_env_line(path, line, dry):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             text = f.read()
-        if any(l.strip().split("=", 1)[0].strip() == key for l in text.splitlines()):
+        # `export KEY=…` sets the same key.
+        if any(l.split("=", 1)[0].split() in ([key], ["export", key]) for l in text.splitlines()):
             return False
     if not dry:
         os.makedirs(os.path.dirname(path), exist_ok=True)

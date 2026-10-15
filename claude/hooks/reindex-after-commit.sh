@@ -31,6 +31,12 @@ printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])git([[:space:]]+-[cC][[:spac
 case "$STDOUT" in
   *"nothing to commit"*|*"no changes"*) exit 0 ;;
 esac
+# A commit that landed prints `[branch sha] msg`; a rejected one (pre-commit hook, error) does not.
+# `-q` prints nothing either way, so a quiet commit still counts.
+if ! printf '%s\n' "$STDOUT" | grep -qE '^\[[^]]* [0-9a-f]{4,40}\] ' &&
+   ! printf '%s\n' "$CMD" | grep -qE 'commit([[:space:]]+[^[:space:];&|]+)*[[:space:]]+(-[[:alnum:]]*q[[:alnum:]]*|--quiet)([[:space:]]|$)'; then
+  exit 0
+fi
 
 # --- Write Stale Marker ---
 echo "stale" > "$CMM_SENTINEL"

@@ -56,13 +56,29 @@ if "# cwd-exempt" in cmd:
     print("ALLOW"); sys.exit(0)
 
 # Remove subshell / command-substitution groups: a `cd` inside `( ... )` or
-# `$( ... )` runs in a child shell and does NOT persist. Strip innermost
-# parens repeatedly until stable so nested groups are handled too.
-stripped = cmd
-prev = None
-while prev != stripped:
-    prev = stripped
-    stripped = re.sub(r"\([^()]*\)", " ", stripped)
+# `$( ... )` runs in a child shell and does NOT persist. Parens inside quotes
+# (`echo "("`) are text, not a group; nested groups go with their outer one.
+def strip_groups(s):
+    out, q, depth, i = "", "", 0, 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and q != "'":
+            out += s[i:i + 2] if not depth else ""; i += 2; continue
+        if q:
+            q = "" if c == q else q
+        elif c in "'\"":
+            q = c
+        elif c == "(":
+            depth += 1
+            out += " " if depth == 1 else ""; i += 1; continue
+        elif c == ")" and depth:
+            depth -= 1; i += 1; continue
+        if not depth:
+            out += c
+        i += 1
+    return out
+
+stripped = strip_groups(cmd)
 
 # Split into top-level segments on ; && || | and newlines outside quotes (a commit message saying
 # "build && cd docs" changes no directory). A backgrounding `&` stays at the end of its segment.
