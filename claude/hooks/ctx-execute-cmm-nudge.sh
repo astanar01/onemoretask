@@ -349,7 +349,8 @@ done
 [ "$CMM_FOUND" = false ] && exit 0
 
 # --- Indexed-repo sentinel probe ---
-PROJECT_HASH=$(omt_md5 "$REPO_ROOT")
+_HOOK_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+PROJECT_HASH=$(cd "$REPO_ROOT" 2>/dev/null && . "$_HOOK_DIR/lib/project-root.sh" && printf '%s' "$PROJECT_HASH")  # a worktree maps to the main checkout
 [ -z "$PROJECT_HASH" ] && exit 0
 CMM_SENTINEL="$OMT_TMP/cmm-session-ready-${PROJECT_HASH}"
 # If project not indexed for this session, fail open

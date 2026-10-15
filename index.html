@@ -1388,7 +1388,7 @@ function cardEl(t, top, nestedCount) {
     ${parent ? `<div class="parent">↳ ${esc(parent.title)}</div>` : ""}
     <div class="row">
       ${nestedCount ? `<button class="twisty${shut ? " shut" : ""}" title="${shut ? window.t("Expand subtasks") : window.t("Collapse subtasks")}"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ""}
-      <div class="title">${t.priority ? `<span class="prio p-${t.priority}" title="${{ high: window.t("High priority"), med: window.t("Medium priority"), low: window.t("Low priority") }[t.priority]}"></span>` : ""}${esc(t.title)}</div>
+      <div class="title">${t.priority ? `<span class="prio p-${esc(t.priority)}" title="${{ high: window.t("High priority"), med: window.t("Medium priority"), low: window.t("Low priority") }[t.priority]}"></span>` : ""}${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="${window.t("Hidden subtasks")}">+${nestedCount}</span>` : ""}
     </div>
     ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length) ? `<div class="meta">
@@ -1396,7 +1396,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
       ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${pillCls(ag)}" title="${window.t("{who} session {id}", { who: who(t), id: t.agent.id })}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(t))}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${t.agent ? `<span class="agent ${pillCls(ag)}" title="${window.t("{who} session {id}", { who: who(t), id: esc(t.agent.id) })}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(t))}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1495,7 +1495,7 @@ function listRowEl(x, depth) {
     ${x.agent ? `<span class="agent ${pillCls(ag)}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(x))}</span>${yoursChip(x, ag)}` : ""}
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
-  el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
+  el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${esc(x.priority)}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
     ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}`;
   el.onclick = () => openDetail(x.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(x.id); } };
@@ -1627,14 +1627,14 @@ function renderDetail() {
   const chain = [];
   for (let p = t.parent && task(t.parent); p; p = p.parent && task(p.parent)) chain.unshift(p);
   $("#d-crumb").innerHTML = chain.length
-    ? window.t("Subtask of {chain}", { chain: chain.map((p) => `<a data-id="${p.id}">${esc(p.title)}</a>`).join(" › ") })
+    ? window.t("Subtask of {chain}", { chain: chain.map((p) => `<a data-id="${esc(p.id)}">${esc(p.title)}</a>`).join(" › ") })
     : window.t("Task");
   const sent = !!t.agent || !!launchOf(t);
   $("#d-crumb").style.display = sent && !chain.length ? "none" : "";
   $("#d-crumb").querySelectorAll("a").forEach((a) => (a.onclick = () => { openId = a.dataset.id; renderDetail(); }));
 
   $("#d-title").value = t.title;
-  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(window.t(c.name))}</option>`).join("");
+  $("#d-col").innerHTML = state.columns.map((c) => `<option value="${esc(c.id)}">${esc(window.t(c.name))}</option>`).join("");
   $("#d-col").value = t.column;
   $("#d-prio").value = t.priority;
   $("#d-tags").value = t.tags.join(", ");
@@ -3564,7 +3564,7 @@ $("#theme").addEventListener("click", () => {
 });
 showTheme();
 // Update: server.py compares the installed commit with GitHub; the button is green when an update can be installed.
-let upd = null, updBusy = false;
+let upd = null, updBusy = false, updTimer = null;
 const short = (s) => (s ? s.slice(0, 7) : "?");
 const again = (s) => s.replace(/\.?$/, ". " + t("Click to check again"));
 function showUpdate(label, cls, title) {
@@ -3587,7 +3587,8 @@ async function checkUpdate(force) {
   else if (u.settingUp) showUpdate(t("Setting up tools…"), "", t("Installing the tools Claude works with. The board works meanwhile."));
   else $("#update").hidden = true;
   // The server sets up the tools in the background after a start; look again until it is done.
-  if (u.settingUp) setTimeout(() => checkUpdate(false), 5000);
+  clearTimeout(updTimer);
+  if (u.settingUp) updTimer = setTimeout(() => checkUpdate(false), 5000);
 }
 // After a restarting update, wait for the old server to go down and the new one to answer, then reload.
 async function runUpdate() {

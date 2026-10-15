@@ -6,6 +6,8 @@
     python3 report.py [--board DIR] <task_id> done "what I did, what is left"
     python3 report.py [--board DIR] <task_id> decision -   < decision.json   (or a JSON string instead of -)
 
+A message of `-` is read from stdin, for every status.
+
 A decision is a choice between options; the card draws it as a tree. Its JSON:
 {"query": "what was asked", "options": [{"label": "...", "why": "..."}, ...], "chosen": 0, "by": "agent", "why": "..."}
 "chosen" is the option's index (null while still open); "by" is "agent" or "you"; 2 to 6 options.
@@ -55,6 +57,14 @@ for a in it:
 if len(args) != 3 or args[1] not in STATUSES + ("decision",):
     sys.exit(__doc__)
 task_id, status, message = args
+if message == "-":
+    message = sys.stdin.read()
+try:
+    reports._path("", task_id)
+except ValueError as e:
+    sys.exit(str(e))
+if status != "decision" and not message.strip():
+    sys.exit(f"{status} needs a message")
 if options:
     if status != "question":
         sys.exit("--option only goes with question")
@@ -73,9 +83,8 @@ if parts:
         sys.exit(f"question: {e}")
 decision = None
 if status == "decision":
-    raw = sys.stdin.read() if message == "-" else message
     try:
-        decision = reports.check_decision(json.loads(raw))
+        decision = reports.check_decision(json.loads(message))
     except (ValueError, TypeError) as e:
         sys.exit(f"decision: {e}")
     message, status = reports.decision_message(decision), "progress"

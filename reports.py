@@ -87,8 +87,16 @@ def store_image(data, folder):
     name = hashlib.sha256(data).hexdigest()[:16] + ext
     path = os.path.join(folder, name)
     if not os.path.exists(path):
-        with open(path, "wb") as f:
-            f.write(data)
+        # Write aside and swap in whole: a cut-off file would pass the exists() check forever.
+        fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
     return name
 
 
@@ -126,12 +134,28 @@ def read_recap(board, task_id):
         return ""
 
 
+def _load(path):
+    with open(path, encoding="utf-8") as f:
+        log = json.load(f)
+    if not isinstance(log, list):
+        raise ValueError("not a list")
+    return log
+
+
 def read(board, task_id):
     try:
-        with open(_path(board, task_id), encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+        return _load(_path(board, task_id))
+    except (FileNotFoundError, ValueError):  # ValueError covers bad JSON and bad UTF-8
         return []
+
+
+def _set_aside(path):
+    """Move a log that does not parse to <path>.bad (or .bad2, ...) so the next write does not wipe it."""
+    bad, n = path + ".bad", 1
+    while os.path.exists(bad):
+        n += 1
+        bad = f"{path}.bad{n}"
+    os.replace(path, bad)
 
 
 def _lock(f):
@@ -267,7 +291,13 @@ def append(board, task_id, status, message, sender, session=None, images=None, d
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
     with _Locked(path):
-        log = read(board, task_id)
+        try:
+            log = _load(path)
+        except FileNotFoundError:
+            log = []
+        except ValueError:
+            _set_aside(path)
+            log = []
         log.append(entry)
         _write_json(path, log)
     return entry

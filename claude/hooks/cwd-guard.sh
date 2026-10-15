@@ -56,16 +56,51 @@ if "# cwd-exempt" in cmd:
     print("ALLOW"); sys.exit(0)
 
 # Remove subshell / command-substitution groups: a `cd` inside `( ... )` or
-# `$( ... )` runs in a child shell and does NOT persist. Strip innermost
-# parens repeatedly until stable so nested groups are handled too.
-stripped = cmd
-prev = None
-while prev != stripped:
-    prev = stripped
-    stripped = re.sub(r"\([^()]*\)", " ", stripped)
+# `$( ... )` runs in a child shell and does NOT persist. Parens inside quotes
+# (`echo "("`) are text, not a group; nested groups go with their outer one.
+def strip_groups(s):
+    out, q, depth, i = "", "", 0, 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and q != "'":
+            out += s[i:i + 2] if not depth else ""; i += 2; continue
+        if q:
+            q = "" if c == q else q
+        elif c in "'\"":
+            q = c
+        elif c == "(":
+            depth += 1
+            out += " " if depth == 1 else ""; i += 1; continue
+        elif c == ")" and depth:
+            depth -= 1; i += 1; continue
+        if not depth:
+            out += c
+        i += 1
+    return out
 
-# Split into top-level segments on ; && || | and newlines.
-segments = re.split(r";|&&|\|\||\||\n", stripped)
+stripped = strip_groups(cmd)
+
+# Split into top-level segments on ; && || | and newlines outside quotes (a commit message saying
+# "build && cd docs" changes no directory). A backgrounding `&` stays at the end of its segment.
+def split_segments(s):
+    segs, cur, q, i = [], "", "", 0
+    while i < len(s):
+        c = s[i]
+        nxt = s[i + 1] if i + 1 < len(s) else ""
+        if c == "\\" and q != "'":
+            cur += s[i:i + 2]; i += 2; continue
+        if q:
+            q = "" if c == q else q
+        elif c in "'\"":
+            q = c
+        elif c in ";|\n" or (c == "&" and nxt == "&"):
+            segs.append(cur); cur = ""; i += 2 if nxt == c else 1; continue
+        elif c == "&" and nxt != ">" and not cur.endswith(">"):
+            segs.append(cur + "&"); cur = ""; i += 1; continue
+        cur += c; i += 1
+    return segs + [cur]
+
+segments = split_segments(stripped)
 
 ALLOWED_TARGET_TOKENS = {
     "$CLAUDE_PROJECT_DIR", '"$CLAUDE_PROJECT_DIR"', "${CLAUDE_PROJECT_DIR}",
@@ -96,6 +131,8 @@ def target_is_root(tok):
 # an unknown prior stack dir, so any top-level `popd` is treated as drift.
 DRIFT_WITH_TARGET = {"cd", "pushd"}
 ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# `if cd x; then cd y; fi`, `{ cd x; }`, `builtin cd x` all change the shell's directory.
+LEADING_WORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!", "builtin", "command"}
 
 def cd_target(rest):
     # Skip leading option flags (e.g. `cd -P`, `cd -L`, `cd --`) to find the path.
@@ -141,7 +178,7 @@ for seg in segments:
         continue
     # Skip leading NAME=VALUE env-assignment prefixes (e.g. `FOO=1 cd sub`).
     idx = 0
-    while idx < len(toks) and ENV_ASSIGN.match(toks[idx]):
+    while idx < len(toks) and (ENV_ASSIGN.match(toks[idx]) or toks[idx] in LEADING_WORDS):
         idx += 1
     if idx >= len(toks):
         continue

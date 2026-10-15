@@ -4,6 +4,13 @@
 
 - When Claude asks you several things at once, you now click one answer for each, then press "Send answers". No more typing letters like "1a 2b".
 - Notes that pop up now make a little sound, also in Chrome and Edge. You can turn the sound off under View, "Notification sound".
+- Pressing Send twice by mistake no longer starts two helpers on the same task.
+- A reply that starts with a list ("- fix this") now reaches Claude. Before, it failed.
+- Claude can no longer post an empty update on a task, or one that is just a dash.
+- If a task's saved messages get damaged, they are kept aside instead of being wiped out by the next message.
+- Tasks keep updating even when Claude's chat history folder is missing.
+- If sending a task fails halfway, Claude no longer keeps working on it out of sight.
+- If another app already uses the board's address, the board tells you so instead of opening that app.
 - If Claude saved work in a side place the task does not know about, the task now tells you, so that work is not lost.
 - A new task now gets its name much more often. Before, a task written as a question ("why does this break?") often stayed "Untitled".
 - The three dots on task cards are gone. Click the card to open it, like before.

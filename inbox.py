@@ -22,6 +22,8 @@ try:
     event = json.load(sys.stdin)
 except ValueError:
     event = {}
+if not isinstance(event, dict):
+    event = {}
 name = event.get("hook_event_name")
 if event.get("agent_id") or name not in ("PostToolUse", "Stop"):
     sys.exit(0)

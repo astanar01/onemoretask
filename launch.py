@@ -4,6 +4,7 @@ Usage: python3 launch.py [server.py options]   (e.g. --port 9000, --project PATH
 bin/onemoretask (macOS/Linux) and bin\\onemoretask.cmd (Windows) run this.
 Ctrl-C stops the server.
 """
+import json
 import os
 import runpy
 import shutil
@@ -33,13 +34,14 @@ def port_from(args):
 
 
 def answers(url):
+    """"board" when the task board answers at `url`, "other" when another program does, None when nothing does."""
     try:
-        OPENER.open(url + "/", timeout=1).close()
-        return True
-    except urllib.error.HTTPError:
-        return True  # it answered, just not with 200
+        with OPENER.open(url + "/api/projects", timeout=1) as r:
+            return "board" if isinstance(json.loads(r.read()), list) else "other"
+    except (urllib.error.HTTPError, ValueError):
+        return "other"  # it answered, but not as the board
     except Exception:
-        return False
+        return None
 
 
 def start_muninn():
@@ -62,7 +64,7 @@ def start_muninn():
 
 def open_when_up(url):
     for _ in range(50):
-        if answers(url):
+        if answers(url) == "board":
             webbrowser.open(url)
             return
         time.sleep(0.2)
@@ -75,10 +77,13 @@ def main(args):
         return
     url = "http://127.0.0.1:" + port_from(args)
     start_muninn()
-    if answers(url):
+    found = answers(url)
+    if found == "board":
         print("Task board already running: " + url)
         webbrowser.open(url)
         return
+    if found == "other":
+        sys.exit(f"Another program, not the task board, answers on {url}. Pick a free port with --port.")
     threading.Thread(target=open_when_up, args=(url,), daemon=True).start()
     # Run server.py in this process so Ctrl-C and its exit code behave as if it was started directly.
     sys.argv = [SERVER] + args

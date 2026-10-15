@@ -368,10 +368,18 @@ def remove(board, thread_id):
 # ---------------------------------------------------------------- reading the log
 def last_answer(log_path, reply_text=None):
     """Codex's chat text of the last turn ('' if none)."""
-    texts = [e["item"].get("text", "").strip() for e in _last_turn(log_path)
+    texts = [str(e["item"].get("text") or "").strip() for e in _last_turn(log_path)
              if e.get("type") == "item.completed" and isinstance(e.get("item"), dict)
              and e["item"].get("type") == "agent_message"]
     return "\n\n".join(t for t in texts if t)
+
+
+def _n(v):
+    """A token count from a log; 0 when it is not a number."""
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def usage(log_path):
@@ -389,11 +397,11 @@ def usage(log_path):
     for e in _events(log_path):
         u = e.get("usage") if e.get("type") == "turn.completed" else None
         if isinstance(u, dict):
-            cached = int(u.get("cached_input_tokens") or 0)
-            total[0] += max(0, int(u.get("input_tokens") or 0) - cached)
-            total[1] += int(u.get("cache_write_input_tokens") or 0)
+            cached = _n(u.get("cached_input_tokens"))
+            total[0] += max(0, _n(u.get("input_tokens")) - cached)
+            total[1] += _n(u.get("cache_write_input_tokens"))
             total[2] += cached
-            total[3] += int(u.get("output_tokens") or 0)
+            total[3] += _n(u.get("output_tokens"))
     _usage_memo[log_path] = (key, total)
     return list(total)
 
@@ -517,10 +525,11 @@ def _rollout_info(path):
             elif kind == "task_complete":
                 info["finished"] = True
             elif kind == "token_count" and isinstance(p.get("info"), dict):
-                info["usage"] = p["info"].get("total_token_usage") or info["usage"]
+                if isinstance(p["info"].get("total_token_usage"), dict):
+                    info["usage"] = p["info"]["total_token_usage"] or info["usage"]
                 last = p["info"].get("last_token_usage")
                 if isinstance(last, dict):  # its input count includes the cached part: the whole context
-                    info["context"] = int(last.get("input_tokens") or 0)
+                    info["context"] = _n(last.get("input_tokens"))
                     info["peak"] = max(info["peak"], info["context"])
                 info["window"] = p["info"].get("model_context_window") or info["window"]
             elif kind == "item_completed" and isinstance(p.get("item"), dict):
@@ -578,7 +587,7 @@ def subagents(log_path):
         rows.append({"id": tid, "name": info.get("name") or "Worker", "type": info.get("model") or "codex",
                      "started": info.get("started") or fallback, "updated": info.get("updated") or fallback,
                      "finished": finished, "action": info.get("action") or "", "skills": [],
-                     "tokens": int(usage.get("total_tokens") or 0)})
+                     "tokens": _n(usage.get("total_tokens"))})
     rows.sort(key=lambda r: r["started"])
     return rows
 
@@ -589,11 +598,11 @@ def subagent_usage(log_path):
     total, workers = [0, 0, 0, 0], _workers(log_path)
     for _, info, _ in workers:
         u = (info or {}).get("usage") or {}
-        cached = int(u.get("cached_input_tokens") or 0)
-        total[0] += max(0, int(u.get("input_tokens") or 0) - cached)
-        total[1] += int(u.get("cache_write_input_tokens") or 0)
+        cached = _n(u.get("cached_input_tokens"))
+        total[0] += max(0, _n(u.get("input_tokens")) - cached)
+        total[1] += _n(u.get("cache_write_input_tokens"))
         total[2] += cached
-        total[3] += int(u.get("output_tokens") or 0)
+        total[3] += _n(u.get("output_tokens"))
     return total, len(workers)
 
 

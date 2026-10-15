@@ -11,7 +11,7 @@
 # Read stdin once (can only be consumed once), then check if this is a git commit command.
 # Exit immediately for non-commit Bash calls — avoids the expensive git traversal for ~95% of calls.
 INPUT=$(cat)
-echo "$INPUT" | grep -q '"git commit\|"git  *commit' || exit 0
+echo "$INPUT" | grep -q 'git.*commit' || exit 0
 
 # --- Stable Sentinel Path Computation (lib/project-root.sh: submodules, worktrees) ---
 . "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
@@ -23,16 +23,20 @@ STDOUT=$(echo "$INPUT" | omt_py -c "import sys,json; d=json.load(sys.stdin); r=d
 
 # --- Commit Detection ---
 # Only act on git commit commands; exit immediately for all other Bash calls
-case "$CMD" in
-  *"git commit"*) ;;
-  *) exit 0 ;;
-esac
+# Also `git -C dir commit` and `git add -A && git commit`.
+printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])git([[:space:]]+-[cC][[:space:]]+[^[:space:]]+|[[:space:]]+--[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)' || exit 0
 
 # --- False-Positive Guard ---
 # If git reported no actual commit (nothing staged), skip marking stale
 case "$STDOUT" in
   *"nothing to commit"*|*"no changes"*) exit 0 ;;
 esac
+# A commit that landed prints `[branch sha] msg`; a rejected one (pre-commit hook, error) does not.
+# `-q` prints nothing either way, so a quiet commit still counts.
+if ! printf '%s\n' "$STDOUT" | grep -qE '^\[[^]]* [0-9a-f]{4,40}\] ' &&
+   ! printf '%s\n' "$CMD" | grep -qE 'commit([[:space:]]+[^[:space:];&|]+)*[[:space:]]+(-[[:alnum:]]*q[[:alnum:]]*|--quiet)([[:space:]]|$)'; then
+  exit 0
+fi
 
 # --- Write Stale Marker ---
 echo "stale" > "$CMM_SENTINEL"
