@@ -443,11 +443,15 @@ def card_lines(report, answer_only=False):
               "blank lines (real newlines inside the quoted argument), never one run-on block. A progress line may be "
               "a single sentence. The card renders **bold**, `code` and `## ` headings.",
               f'- `{report} progress "<one line>"` at each milestone.',
-              f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
-              "the answer arrives as your next message. Do not guess on decisions the user should make.",
-              f'- `{report} decision -` when you choose between options (a fork in the work, or a '
-              "choice the user made): pipe in JSON (a heredoc) with the query, the options with a short why each, "
-              "the index of the one chosen (null while open), by (\"agent\" or \"you\") and why. The card draws it as a tree.",
+              f'- `{report} question "<the question>" --option "A. <short label>" --option "B. <short label>"` when '
+              "you need a decision, then END YOUR TURN; the answer arrives as your next message. Give each choice "
+              "(2 to 6) as a short `--option` label, e.g. \"A. Task list (left)\"; explain them in the message. The "
+              "card shows a button per option, and the user can also type an answer. Do not guess on decisions the "
+              "user should make.",
+              f'- `{report} decision -` when YOU choose between options (a fork in the work): pipe in JSON (a heredoc) '
+              "with the query, the options with a short why each, the index of the one chosen (null while open), by "
+              "\"agent\" and why. The card draws it as a tree. Never post a decision for a choice the user just made "
+              "by answering your question: the card already shows their pick.",
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
@@ -2360,7 +2364,7 @@ def worktree_steps(p, task_id, wt, action):
                 f"`{base}`, which is not a branch of this repo.",
                 "- Merge nothing yet. In the worktree, commit anything still uncommitted.",
                 f'- Then ask with `{rep} question "..."` which branch to merge `{branch}` into: list the local '
-                f"branches and say which one the main checkout {main} is on now.",
+                f"branches (one `--option` each) and say which one the main checkout {main} is on now.",
                 "- After the answer: merge there. If anything goes wrong, abort the merge so that checkout is exactly "
                 "as it was and ask again. Never push. On success remove the worktree (`git worktree remove`, no "
                 f"--force) and the branch (`git branch -d {branch}`, never -D), then report the merge commit sha "

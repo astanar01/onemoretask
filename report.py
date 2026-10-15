@@ -2,13 +2,16 @@
 """Post a status update from a Claude session onto its task-board card.
 
     python3 report.py [--board DIR] <task_id> progress "what I'm doing now"
-    python3 report.py [--board DIR] <task_id> question "what I need you to decide"
+    python3 report.py [--board DIR] <task_id> question "what I need you to decide" [--option "A. ..." --option "B. ..."]
     python3 report.py [--board DIR] <task_id> done "what I did, what is left"
     python3 report.py [--board DIR] <task_id> decision -   < decision.json   (or a JSON string instead of -)
 
 A decision is a choice between options; the card draws it as a tree. Its JSON:
 {"query": "what was asked", "options": [{"label": "...", "why": "..."}, ...], "chosen": 0, "by": "agent", "why": "..."}
 "chosen" is the option's index (null while still open); "by" is "agent" or "you"; 2 to 6 options.
+
+A question can list its choices with `--option "<short label>"` (repeatable, 2 to 6, all different);
+the card shows one button per choice that sends it as the answer. Only for `question`.
 
 Add `--image <file>` (repeatable) to attach screenshots; they show on the card.
 --board is the project's board folder; without it, the board of the git repo
@@ -29,11 +32,14 @@ import reports
 
 STATUSES = ("progress", "question", "done")
 
-args, files, board, lang = [], [], None, None
+args, files, board, lang, options = [], [], None, None, []
 it = iter(sys.argv[1:])
 for a in it:
     if a == "--image":
         files.append(next(it, None) or sys.exit("--image needs a file"))
+    elif a == "--option":
+        o = next(it, None)
+        options.append(o if o is not None else sys.exit("--option needs a label"))
     elif a == "--board":
         board = next(it, None) or sys.exit("--board needs a folder")
     elif a == "--lang":
@@ -43,6 +49,13 @@ for a in it:
 if len(args) != 3 or args[1] not in STATUSES + ("decision",):
     sys.exit(__doc__)
 task_id, status, message = args
+if options:
+    if status != "question":
+        sys.exit("--option only goes with question")
+    try:
+        options = reports.check_options(options)
+    except ValueError as e:
+        sys.exit(f"question: {e}")
 decision = None
 if status == "decision":
     raw = sys.stdin.read() if message == "-" else message
@@ -66,5 +79,6 @@ for p in files:
         sys.exit(f"{p}: {e}")
     if name not in images:
         images.append(name)
-reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision)
+reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
+               options=options)
 print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {len(images)} image(s)" if images else ""))
