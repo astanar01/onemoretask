@@ -164,6 +164,44 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .add-card button:hover { background: var(--line); color: var(--text); }
 .add-col { min-width: 220px; }
 
+/* List layout (View menu): filter rail on the left, one-line rows grouped by column. */
+#board.list { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px; overflow: hidden; align-items: stretch; min-height: 0; }
+.lrail { overflow-y: auto; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.lf h4 { margin: 0 0 4px 6px; font-size: calc(11px * var(--ts)); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.lopts { display: flex; flex-direction: column; gap: 1px; }
+.lopts.wrap { flex-direction: row; flex-wrap: wrap; gap: 5px; padding-left: 6px; }
+.lchip { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 6px; cursor: pointer; user-select: none; white-space: nowrap; }
+.lchip:hover { background: var(--col); }
+.lchip input { margin: 0; accent-color: var(--accent); }
+.ltag { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 4px; padding: 1px 7px; font-size: calc(12px * var(--ts)); }
+.ltag:hover { border-color: var(--accent); }
+.ltag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lmain { overflow-y: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 18px; padding-bottom: 16px; }
+.lgrp-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 5px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.lgrp-head .count { color: var(--muted); font-size: calc(12px * var(--ts)); flex: 1; }
+.lgrp-head .add-card { margin: 0; }
+.lgrp-head .add-card button { width: auto; padding: 2px 8px; }
+.lrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.lrow:hover, .lrow:focus-visible { background: var(--card); box-shadow: var(--shadow); outline: none; }
+.lrow .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .prio { margin: 0; vertical-align: 0; flex: none; }
+.lrow .agent { flex: none; white-space: nowrap; }
+.lrow .tags { display: flex; gap: 4px; flex: none; max-width: 35%; overflow: hidden; }
+.lrow .lsub { color: var(--muted); flex: none; }
+.lrow.is-done .title { text-decoration: line-through; color: var(--muted); }
+.lrow.needs-you { box-shadow: inset 3px 0 0 var(--wait); }
+.lrow.unread .title { font-weight: 600; }
+.lempty { color: var(--muted); padding: 24px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+@media (max-width: 640px) {
+  #board.list { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 12px 16px; }
+  .lrail { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 6px; padding-bottom: 4px; }
+  .lf, .lopts, .lopts.wrap { display: contents; }
+  .lf h4 { display: none; }
+  .lchip, .ltag { flex: none; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 3px 10px; }
+  .ltag.on { background: var(--accent); }
+  .lrow .tags { display: none; }
+}
+
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
@@ -588,6 +626,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 <div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
   <button class="pop-row" id="theme"></button>
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
+  <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
   <label class="pop-row"><span>Language</span><select id="lang" title="Language"><option value="en">English</option><option value="fr">Français</option></select></label>
 </div>
@@ -1064,6 +1103,11 @@ function toggleCollapsed(id) {
   render();
 }
 
+// Board or list layout: per-browser like `collapsed`. The list's filters live only in this page.
+let view = "board";
+try { if (localStorage.getItem(LS_KEY + ":view") === "list") view = "list"; } catch (_) {}
+const lf = { cols: new Set(), prios: new Set(), tags: new Set(), running: false };   // hidden columns and priorities; tags = only these (none = all)
+
 // Unsent reply text per card (one shared textarea), kept in this browser across reloads.
 // Read fresh on every use: another board tab may have saved its own drafts since.
 const readDrafts = () => { try { return JSON.parse(localStorage.getItem(LS_KEY + ":drafts") || "{}") || {}; } catch (_) { return {}; } };
@@ -1150,6 +1194,7 @@ function matches(t, q) {
 
 function render() {
   if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
+  if (view === "list") return renderList();
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
@@ -1285,6 +1330,111 @@ function addCardEl(col) {
   btn.onclick = () => { const t = withDelegateChoice(addTask("", col.id)); save(); draftId = t.id; render(); openDetail(t.id); };
   wrap.appendChild(btn);
   return wrap;
+}
+
+// ---------------------------------------------------------------- list layout
+// No drag and drop here: rows open the task panel, cards change column the same ways as on the board.
+function renderList() {
+  queueMicrotask(tickCache);
+  const board = $("#board");
+  board.classList.add("list");
+  let rail = board.querySelector(".lrail"), main = board.querySelector(".lmain");
+  if (!rail || !main) {
+    board.innerHTML = `<aside class="lrail"></aside><div class="lmain"></div>`;
+    rail = board.querySelector(".lrail"); main = board.querySelector(".lmain");
+  }
+  // Polls render often: the filters are rebuilt only when their choices change and nobody is using them.
+  const tags = listTags();
+  for (const k of lf.tags) if (!tags.some((g) => g.toLowerCase() === k)) lf.tags.delete(k);
+  const sig = JSON.stringify([LANG, state.columns.map((c) => [c.id, c.name]), tags]);
+  if (rail.dataset.sig !== sig && !rail.contains(document.activeElement)) { buildRail(rail, tags); rail.dataset.sig = sig; }
+
+  const q = $("#search").value.trim().toLowerCase();
+  const showSubs = $("#show-subs").checked;
+  const narrowed = !!(q || lf.prios.size || lf.tags.size || lf.running);
+  const pass = (x) => {
+    const ag = x.agent && agents[x.id];
+    return matches(x, q) && !lf.prios.has(x.priority || "")
+      && (!lf.tags.size || (x.tags || []).some((g) => lf.tags.has(g.toLowerCase())))
+      && (!lf.running || !!(ag && (ag.phase === "working" || ag.phase === "needs_you")));
+  };
+  const y = main.scrollTop;
+  main.innerHTML = "";
+  for (const col of state.columns) {
+    if (lf.cols.has(col.id)) continue;
+    const rows = state.tasks.filter((x) => x.column === col.id && (showSubs || !x.parent) && pass(x)).sort((a, b) => a.order - b.order);
+    if (!rows.length && narrowed) continue;
+    const shown = new Set(rows.map((x) => x.id));
+    const sec = document.createElement("section");
+    sec.className = "lgrp";
+    sec.innerHTML = `<div class="lgrp-head"><b>${esc(t(col.name))}</b><span class="count">${rows.length}</span></div>`;
+    sec.firstChild.appendChild(addCardEl(col));
+    // Same nesting as the board: a subtask goes under its parent when the parent is shown in this column too.
+    const add = (x, depth) => { sec.appendChild(listRowEl(x, depth)); rows.filter((k) => k.parent === x.id).forEach((k) => add(k, depth + 1)); };
+    rows.filter((x) => !shown.has(x.parent)).forEach((x) => add(x, 0));
+    main.appendChild(sec);
+  }
+  if (!main.children.length) {
+    main.innerHTML = `<div class="lempty"><span>${t("No tasks match these filters.")}</span><button class="btn">${t("Clear filters")}</button></div>`;
+    main.querySelector("button").onclick = () => {
+      lf.cols.clear(); lf.prios.clear(); lf.tags.clear(); lf.running = false;
+      $("#search").value = ""; rail.dataset.sig = ""; render();
+    };
+  }
+  main.scrollTop = y;
+}
+
+// The board's tags, most used first.
+function listTags() {
+  const count = new Map();
+  for (const x of state.tasks) for (const g of x.tags || []) {
+    const k = g.toLowerCase(), c = count.get(k) || { name: g, n: 0 };
+    c.n++; count.set(k, c);
+  }
+  return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).map((c) => c.name);
+}
+
+function buildRail(rail, tags) {
+  const y = rail.scrollTop, x = rail.scrollLeft;
+  const chk = (f, label, on) => `<label class="lchip"><input type="checkbox" data-f="${esc(f)}"${on ? " checked" : ""}>${esc(label)}</label>`;
+  const prios = [["high", t("High")], ["med", t("Medium")], ["low", t("Low")], ["", t("None")]];
+  rail.innerHTML = `
+    <div class="lf"><h4>${t("Status")}</h4><div class="lopts">${state.columns.map((c) => chk("c:" + c.id, t(c.name), !lf.cols.has(c.id))).join("")}</div></div>
+    <div class="lf"><h4>${t("Priority")}</h4><div class="lopts">${prios.map(([p, n]) => chk("p:" + p, n, !lf.prios.has(p))).join("")}</div></div>
+    <div class="lf"><h4>${t("Agent")}</h4><div class="lopts">${chk("a", t("Agent running"), lf.running)}</div></div>
+    ${tags.length ? `<div class="lf"><h4>${t("Tags")}</h4><div class="lopts wrap">${tags.map((g) => {
+      const on = lf.tags.has(g.toLowerCase());
+      return `<button type="button" class="ltag${on ? " on" : ""}" aria-pressed="${on}" title="${esc(t("Show only tasks with this tag"))}">${esc(g)}</button>`;
+    }).join("")}</div></div>` : ""}`;
+  rail.querySelectorAll("input").forEach((i) => (i.onchange = () => {
+    const f = i.dataset.f, v = f.slice(2);
+    if (f === "a") lf.running = i.checked;
+    else { const s = f[0] === "c" ? lf.cols : lf.prios; i.checked ? s.delete(v) : s.add(v); }
+    render();
+  }));
+  rail.querySelectorAll(".ltag").forEach((b) => (b.onclick = () => {
+    const k = b.textContent.toLowerCase();
+    lf.tags.has(k) ? lf.tags.delete(k) : lf.tags.add(k);
+    b.classList.toggle("on", lf.tags.has(k)); b.setAttribute("aria-pressed", lf.tags.has(k));
+    render();
+  }));
+  rail.scrollTop = y; rail.scrollLeft = x;
+}
+
+function listRowEl(x, depth) {
+  const ag = x.agent && agents[x.id];
+  const el = document.createElement("div");
+  el.className = "lrow" + (isDone(x) ? " is-done" : "") + (ag && ag.phase === "needs_you" ? " needs-you" : "") + (isUnread(x) ? " unread" : "");
+  el.dataset.id = x.id;
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  if (depth) el.style.paddingLeft = 8 + depth * 20 + "px";
+  el.innerHTML = `${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${x.priority}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span>
+    ${x.agent ? `<span class="agent ${ag ? ag.phase : ""}">${ag && ag.phase === "working" ? turning(11) : ""}${ag && ag.phase === "working" && reviewing(ag) ? t("Code review") : `${who(x)}: ${esc(phaseLabel(ag))}`}</span>` : ""}
+    ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}`;
+  el.onclick = () => openDetail(x.id);
+  el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(x.id); } };
+  return el;
 }
 
 // ---------------------------------------------------------------- drag & drop
@@ -3235,6 +3385,14 @@ $("#show-subs").addEventListener("change", () => {
   render();
 });
 try { if (localStorage.getItem(LS_KEY + ":subs") === "0") $("#show-subs").checked = false; } catch (_) {}
+$("#layout").value = view;
+$("#layout").addEventListener("change", (e) => {
+  view = e.target.value;
+  try { localStorage.setItem(LS_KEY + ":view", view); } catch (_) {}
+  $("#board").classList.toggle("list", view === "list");
+  $("#board").innerHTML = "";
+  render();
+});
 // Header menus: one open at a time; outside click, Escape, resize or header scroll closes them.
 let popBtn = null;
 function closePop(focusBtn) {

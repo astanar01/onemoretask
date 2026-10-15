@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-15
+
+- You can now see all your tasks in one list, and pick which ones to show on the left. The board view is still there in the View menu.
+
 ## 2026-10-14
 
 - A card that went quiet now has a New task from this button. It writes a short summary of the work and makes a new card from it, so the next one starts light.
