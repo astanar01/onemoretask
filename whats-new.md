@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- Pressing Send twice by mistake no longer starts two helpers on the same task.
+- A reply that starts with a list ("- fix this") now reaches Claude. Before, it failed.
+- Claude can no longer post an empty update on a task.
+
 - If Claude saved work in a side place the task does not know about, the task now tells you, so that work is not lost.
 - A new task now gets its name much more often. Before, a task written as a question ("why does this break?") often stayed "Untitled".
 - The three dots on task cards are gone. Click the card to open it, like before.

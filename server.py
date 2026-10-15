@@ -710,11 +710,28 @@ def no_worktree_tag(t):
     return "observations" in (t.get("tags") or [])
 
 
+LAUNCHING = set()  # (project id, task id) whose session is starting: a second send would start a twin
+LAUNCHING_LOCK = threading.Lock()
+
+
 def launch(p, task_id, model=""):
     """Start the task's session; {"id", "worktree", "cli"} (the worktree record, or None; "claude" or "codex").
 
     The task's own `worktree` field decides the worktree (missing = on); "Answer only" and observations cards
     (Apply / Run full review, tag "observations": they edit the live skills and logs) never get one."""
+    key = (p.id, task_id)
+    with LAUNCHING_LOCK:
+        if key in LAUNCHING:
+            raise PermissionError("already being sent to Claude — wait for it to start")
+        LAUNCHING.add(key)
+    try:
+        return _launch(p, task_id, model)
+    finally:
+        with LAUNCHING_LOCK:
+            LAUNCHING.discard(key)
+
+
+def _launch(p, task_id, model):
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -2382,6 +2399,8 @@ def resume(p, info, message):
     time.sleep(1)  # resuming the instant the pid goes has still produced a copy; the board follows either way
     # No flags here: a bg session keeps its saved options (model and inbox hook included), and any flag on --resume
     # forks a copy.
+    # A message starting with "-" (a reply that opens with a bullet) is read as an unknown option.
+    message = " " + message if message.startswith("-") else message
     r = run_claude(["--bg", "--resume", info["sessionId"], message], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
