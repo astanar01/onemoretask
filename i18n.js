@@ -183,6 +183,7 @@ const I18N = {
     "Still open": "Encore ouvert",
     "Chosen by you": "Choisi par vous",
     "Chosen by Claude": "Choisi par Claude",
+    "Send this as your answer": "Envoyer ceci comme réponse",
     "Start a fresh {who} session that code-reviews this task's commits and posts the findings here": "Lancer une nouvelle session {who} qui relit le code des commits de cette tâche et publie ici ses constats",
     "Board": "Tableau",
     "Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach": "Complétez ce que fait {who} — c’est transmis tout de suite et {who} le lit dès que possible. Cmd+Enter pour envoyer, collez des images pour les joindre",

@@ -370,7 +370,11 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .dtree .dq { font-weight: 600; margin-bottom: 4px; }
 .dtree > ul { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
 .dtree > ul > li { display: flex; gap: 6px; padding: 3px 0 3px 8px; }
-.dtree .dmark { color: var(--muted); }
+.dtree .dmark { flex: none; width: 1em; color: var(--muted); }
+.dtree > ul > li.on .dmark { color: var(--ok); font-weight: 700; }
+.qopts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.qopts .btn { font-size: calc(13px * var(--ts)); text-align: left; white-space: normal; }
+.qopts .btn.picked:disabled { opacity: 1; border-color: var(--ok); color: var(--ok); font-weight: 600; }
 .dtree .dlabel { font-weight: 500; }
 .dtree .dwhy { font-size: calc(12px * var(--ts)); color: var(--muted); }
 .dtree > ul > li.on { color: var(--ok); }
@@ -1829,6 +1833,20 @@ function addPending(t, status, message, images) {
   logFollow = true;   // show what you just sent even if you had scrolled up
   return m;
 }
+// A question's options as answer buttons. A later "you" entry answers it (the matching label is marked);
+// only the newest open question's buttons can be clicked.
+let logShown = [];
+function qChoices(shown, i) {
+  const e = shown[i];
+  if (e.from === "you" || e.status !== "question" || !Array.isArray(e.options) || !e.options.length) return "";
+  const later = shown.slice(i + 1), ans = later.find((x) => x.from === "you");
+  const said = ans ? String(ans.message || "").trim() : null;
+  const live = !ans && !later.some((x) => x.from !== "you" && x.status === "question");
+  return `<div class="qopts">${e.options.map((o, k) => {
+    const picked = said !== null && String(o).trim() === said;
+    return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qo="${k}"${live ? ` title="${esc(window.t("Send this as your answer"))}"` : " disabled"}>${picked ? "✓ " : ""}${esc(String(o))}</button>`;
+  }).join("")}</div>`;
+}
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
 // Send was clicked and the session is on its way: the panel already shows the sent layout (Summary, tabs).
@@ -2056,7 +2074,8 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.decision ? decisionTree(e.decision) : `<div class="msg md">${fmtMsg(e.message)}</div>`}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  logShown = shown;
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.decision ? decisionTree(e.decision) : `<div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}`}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
@@ -2937,14 +2956,15 @@ function pickReview(key, v) {
 }
 $("#d-review-model").onchange = (e) => pickReview("taskboard.reviewModel", e.target.value);
 
-async function sendReply() {
-  const t = task(openId), text = $("#d-reply").value.trim();
-  if (!t || (!text && !replyImages.length) || $("#d-reply-send").disabled) return;
+// pick: a clicked answer button's label, sent instead of the reply box (whose draft and images stay put).
+async function sendReply(pick) {
+  const chose = typeof pick === "string", t = task(openId), text = chose ? pick.trim() : $("#d-reply").value.trim();
+  if (!t || (!text && (chose || !replyImages.length)) || $("#d-reply-send").disabled) return;
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? window.t("Sending note…") : window.t("Sending reply…"));
-  const images = replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
-  setReplyDraft(t.id, ""); replyImages = []; renderReplyImages();
+  const images = chose ? [] : replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
+  if (!chose) { setReplyDraft(t.id, ""); replyImages = []; renderReplyImages(); }
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
   refreshAgent(t);
   // A message to a done task reopens it. Saved before the reply: the server closes a done card's session once it stops.
@@ -2964,13 +2984,21 @@ async function sendReply() {
     // Hand the unsent message back so nothing typed is lost.
     // The text goes back to the card's draft even if you moved on; images only to the open card's box.
     if (text && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, text, pid);
-    if (openId === t.id && P === pid && !replyImages.length) { replyImages = images; renderReplyImages(); }
+    if (openId === t.id && P === pid && images.length && !replyImages.length) { replyImages = images; renderReplyImages(); }
     setStatus(window.t("Reply failed: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t);
   await pollAgents();
 }
-$("#d-reply-send").onclick = sendReply;
+$("#d-reply-send").onclick = () => sendReply();
+$("#d-log").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-qo]");
+  if (!b || b.disabled) return;
+  const e = logShown[+b.dataset.qi], o = e && e.options && e.options[+b.dataset.qo];
+  if (o == null) return;
+  $("#d-log").querySelectorAll("button[data-qo]").forEach((x) => (x.disabled = true));   // no double send
+  sendReply(String(o));
+});
 $("#d-reply-attach").onclick = () => $("#d-file").click();
 $("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files], true); e.target.value = ""; });
 $("#d-reply").addEventListener("input", (e) => { if (e.target.dataset.task) setReplyDraft(e.target.dataset.task, e.target.value); });
@@ -3409,7 +3437,7 @@ function fmtMsg(text) {
 function decisionTree(d) {
   const opts = d.options.map((o, i) => {
     const cls = d.chosen == null ? "" : d.chosen === i ? "on" : "off";
-    return `<li class="${cls}"><span class="dmark">${d.chosen === i ? "●" : "○"}</span><div><div class="dlabel">${esc(o.label)}</div>${o.why ? `<div class="dwhy">${esc(o.why)}</div>` : ""}</div></li>`;
+    return `<li class="${cls}"><span class="dmark">${d.chosen === i ? "✓" : ""}</span><div><div class="dlabel">${esc(o.label)}</div>${o.why ? `<div class="dwhy">${esc(o.why)}</div>` : ""}</div></li>`;
   }).join("");
   const by = d.by === "you" ? window.t("Chosen by you") : window.t("Chosen by Claude");
   const chooser = d.chosen == null ? window.t("Still open") : `${by}${d.why ? `: ${esc(d.why)}` : ""}`;

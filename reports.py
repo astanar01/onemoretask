@@ -11,7 +11,7 @@ already keeps one there, <root>/tools/task_board/). It holds
 
 None of it is committed: a new board folder ignores itself (ensure_board).
 
-A log is a list of {at, status, message, from, images?, session?}. Images are
+A log is a list of {at, status, message, from, images?, decision?, options?, session?}. Images are
 stored by content hash.
 
 A message typed on the card while Claude works is logged as status "note". The session's inbox hook
@@ -212,6 +212,18 @@ def check_decision(d):
             "why": str(d.get("why") or "").strip()}
 
 
+def check_options(labels):
+    """A question's answer choices as stored: 2 to 6 trimmed, non-empty, distinct labels."""
+    clean = [str(o).strip() for o in labels]
+    if not 2 <= len(clean) <= 6:
+        raise ValueError("a question needs 2 to 6 --option choices")
+    if not all(clean):
+        raise ValueError("every --option needs a label")
+    if len(set(clean)) != len(clean):
+        raise ValueError("every --option must be different")
+    return clean
+
+
 def decision_message(d):
     """The plain line a decision also carries (what older readers show)."""
     if d["chosen"] is None:
@@ -219,7 +231,7 @@ def decision_message(d):
     return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
 
 
-def append(board, task_id, status, message, sender, session=None, images=None, decision=None):
+def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
@@ -227,6 +239,8 @@ def append(board, task_id, status, message, sender, session=None, images=None, d
         entry["images"] = images  # names in log_images(board)
     if decision:
         entry["decision"] = decision  # check_decision(); the card draws it as a tree
+    if options:
+        entry["options"] = options  # check_options(); the card shows a button per choice
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
