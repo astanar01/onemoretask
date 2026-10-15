@@ -409,6 +409,8 @@ def answer_only_lines(report):
             "- Do NOT make the changes the task describes: no file edits, no commits, no installs, nothing that "
             "changes the project or the machine. Reading files, searching and running read-only commands to find "
             "the answer is fine, and so is the task-observer log if this prompt asks for one. This holds for any subagents too.",
+            "- Do not create a git worktree or a branch, and do not offer or ask for a merge: an answer-only card has no "
+            "Merge button, so a merge line in the recap misleads the user.",
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
@@ -442,6 +444,9 @@ def card_lines(report, answer_only=False):
               f'- `{report} progress "<one line>"` at each milestone.',
               f'- `{report} question "<the question, with options>"` when you need a decision, then END YOUR TURN; '
               "the answer arrives as your next message. Do not guess on decisions the user should make.",
+              f'- `{report} decision -` when you choose between options (a fork in the work, or a '
+              "choice the user made): pipe in JSON (a heredoc) with the query, the options with a short why each, "
+              "the index of the one chosen (null while open), by (\"agent\" or \"you\") and why. The card draws it as a tree.",
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
@@ -1044,12 +1049,12 @@ def handback(p, task_id, text=""):
     if not s:
         raise LookupError("the session that did the work no longer exists")
     rev = "Codex" if info and info.get("cli") == "codex" else "Claude"
-    ask = text.strip() or "Fix the findings you agree with; say which ones you skip and why."
+    ask = text.strip() or reports.HANDBACK_ASK
     message = "\n\n".join([f"A {rev} code review looked at your commits on this task. Its report:", findings[-1],
                            "The user says: " + ask,
                            "Make the fixes, verify them, commit (never push unless the user tells you to), and report done."])
     aid = resume(p, {"id": worker, "sessionId": s.get("sessionId")}, message + board_tail(p, task_id))
-    reports.append(p.board, task_id, "reply", f"Sent the review findings back to {'Codex' if is_codex(s) else 'Claude'}: {ask}",
+    reports.append(p.board, task_id, "reply", reports.HANDBACK.format("Codex" if is_codex(s) else "Claude") + ask,
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid

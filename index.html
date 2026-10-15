@@ -311,6 +311,17 @@ label.toggle:has(input:disabled) { opacity: .6; }
 #d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
 #d-log .mark.sent { color: var(--ok); font-weight: 700; }
 #d-log .note-state { font-style: italic; }
+.dtree { font-size: calc(13px * var(--ts)); }
+.dtree .dq { font-weight: 600; margin-bottom: 4px; }
+.dtree > ul { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
+.dtree > ul > li { display: flex; gap: 6px; padding: 3px 0 3px 8px; }
+.dtree .dmark { color: var(--muted); }
+.dtree .dlabel { font-weight: 500; }
+.dtree .dwhy { font-size: calc(12px * var(--ts)); color: var(--muted); }
+.dtree > ul > li.on { color: var(--ok); }
+.dtree > ul > li.on .dlabel { font-weight: 700; }
+.dtree > ul > li.off { opacity: .5; }
+.dtree .dwho { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 3px; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1780,10 +1791,10 @@ function freshTip(f) {
 }
 let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
-function openFresh(t) {
+function openFresh(t, text = "") {
   const f = (agents[t.id] && agents[t.id].fresh_start) || {};
   freshFor = t.id;
-  $("#fresh-text").value = "";
+  $("#fresh-text").value = text;
   $("#fresh-close").checked = f.fit === "good";
   $("#fresh-msg").textContent = ""; $("#fresh-msg").className = "";
   $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = false;
@@ -1946,7 +1957,7 @@ function renderAgent(t) {
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.decision ? decisionTree(e.decision) : `<div class="msg md">${fmtMsg(e.message)}</div>`}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
@@ -2108,6 +2119,12 @@ function nextAction(t, ag, g) {
       text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       actions: replyOpen(t) ? [toReply()] : [] };
   }
+  // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
+  // Below the working / needs_you branches so a reply still shows progress and permission buttons.
+  const lastSaid = (ag.log || []).filter((x) => x.from === "you" && x.status !== "note").pop();
+  if (t.answerOnly && lastSaid && lastSaid.status === "reply") return { title: window.t("This asks for work"),
+    text: window.t("An answer-only card changes nothing. Create a new task for the work: it starts from this card's recap."),
+    actions: [act(window.t("Create new task"), "primary", () => openFresh(t, lastSaid.message || ""), { title: window.t("Opens New task from this, with your follow-up as what the new task should do") }), markDone("ghost")] };
   // Finished (or last message is a done report): what is there to review, merge, or complete?
   if (!inReview(t)) return { title: window.t("Agent finished"), text: window.t("The agent reported done, but the task is not in the review column. Move it there to review and finish it."), actions: colRole("review") ? [act(window.t("Move to {col}", { col: window.t(colRole("review").name) }), "sec", () => { moveTask(t.id, colRole("review").id, null); renderDetail(); render(); })] : [] };
   if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
@@ -3229,6 +3246,16 @@ function fmtMsg(text) {
     else out += `<div>${fmtItem(l)}</div>`;
   }
   return out;
+}
+// A decision entry (report.py decision): the query, each option with its why, the chosen one marked, who chose.
+function decisionTree(d) {
+  const opts = d.options.map((o, i) => {
+    const cls = d.chosen == null ? "" : d.chosen === i ? "on" : "off";
+    return `<li class="${cls}"><span class="dmark">${d.chosen === i ? "●" : "○"}</span><div><div class="dlabel">${esc(o.label)}</div>${o.why ? `<div class="dwhy">${esc(o.why)}</div>` : ""}</div></li>`;
+  }).join("");
+  const by = d.by === "you" ? window.t("Chosen by you") : window.t("Chosen by Claude");
+  const chooser = d.chosen == null ? window.t("Still open") : `${by}${d.why ? `: ${esc(d.why)}` : ""}`;
+  return `<div class="dtree"><div class="dq">${esc(d.query)}</div><ul>${opts}</ul><div class="dwho">${chooser}</div></div>`;
 }
 function fmt(iso) { return iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 

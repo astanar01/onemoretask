@@ -189,12 +189,44 @@ def _write_json(path, obj):
             time.sleep(0.05)
 
 
-def append(board, task_id, status, message, sender, session=None, images=None):
+def check_decision(d):
+    """A decision report's JSON as stored: the query, the options (label, why), the index chosen (None = still open), who chose."""
+    if not isinstance(d, dict) or not str(d.get("query") or "").strip():
+        raise ValueError('a decision needs a "query"')
+    opts = d.get("options")
+    if not isinstance(opts, list) or not 2 <= len(opts) <= 6:
+        raise ValueError('"options" needs 2 to 6 entries')
+    clean = []
+    for o in opts:
+        label = str(o.get("label") or "").strip() if isinstance(o, dict) else ""
+        if not label:
+            raise ValueError('every option needs a "label"')
+        clean.append({"label": label, "why": str(o.get("why") or "").strip()})
+    chosen = d.get("chosen")
+    if chosen is not None and (not isinstance(chosen, int) or isinstance(chosen, bool) or not 0 <= chosen < len(clean)):
+        raise ValueError('"chosen" is an option index (0 to %d), or null while open' % (len(clean) - 1))
+    by = d.get("by") or "agent"
+    if by not in ("agent", "you"):
+        raise ValueError('"by" is "agent" or "you"')
+    return {"query": str(d["query"]).strip(), "options": clean, "chosen": chosen, "by": by,
+            "why": str(d.get("why") or "").strip()}
+
+
+def decision_message(d):
+    """The plain line a decision also carries (what older readers show)."""
+    if d["chosen"] is None:
+        return f"Decision open: {d['query']}"
+    return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
+
+
+def append(board, task_id, status, message, sender, session=None, images=None, decision=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
     if images:
         entry["images"] = images  # names in log_images(board)
+    if decision:
+        entry["decision"] = decision  # check_decision(); the card draws it as a tree
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
     # report.py and a board reply can land together; the lock keeps both entries.
@@ -248,6 +280,75 @@ LANGUAGE_RULE = ("Answer in the language the user wrote their latest message in 
                  "reply), even when the app or project you work on uses another language. A task ABOUT a "
                  "language (translating, adding French) is not a request to answer in it: check the language "
                  "of the user's latest message each time you write a report.")
+
+
+# Function words only one of these languages uses; a guess needs several hits and a clear lead.
+LANG_WORDS = {
+    "English": set("the and is are of that this with for was were not be have has what when from but which will "
+                   "can does should would there they we my your it's don't i'm".split()),
+    "French": set("le les des du est et une un pas pour dans avec sur ce cette je tu il nous vous sont mais ou au aux "
+                  "c'est j'ai n'est ne plus fait être très ça qu'il aussi".split()),
+    "Spanish": set("el los las es y por para con del pero como está muy yo también una".split()),
+    "German": set("der die das und ist nicht ein eine mit für auf ich sie wir auch nur wenn aber oder".split()),
+}
+_NOT_PROSE = re.compile(r"```.*?```|`[^`]*`|https?://\S+|\S*[/\\]\S*", re.S)
+
+
+def guess_language(text, need=4):
+    """The language `text` is written in, or None when it is too short or mixed to tell. Code, URLs and paths
+    are ignored, so a report quoting French UI strings in backticks still reads as English."""
+    words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", _NOT_PROSE.sub(" ", text.lower().replace("’", "'")))
+    hits = sorted(((sum(w in ws for w in words), lang) for lang, ws in LANG_WORDS.items()), reverse=True)
+    (best, lang), (second, _) = hits[0], hits[1]
+    return lang if best >= need and best >= 3 * second else None
+
+
+_QUOTED = re.compile(r'"[^"\n]*"|“[^”]*”|«[^»]*»|^>.*$', re.M)
+_PASTE = re.compile(r":[ \t]*\n")
+
+
+def user_language(text):
+    """The language of the user's own words in `text`. Quoted text is left out. Text pasted after a line ending
+    in ':' ("Translate this to English:" + a French paragraph) only counts when the line before it agrees, and
+    paragraphs in two languages mean unsure."""
+    text = _QUOTED.sub(" ", text)
+    if len({guess_language(p) for p in re.split(r"\n\s*\n|:[ \t]*\n", text)} - {None}) > 1:
+        return None
+    lang = guess_language(text)
+    head = _PASTE.split(text, maxsplit=1)
+    return None if lang and len(head) > 1 and guess_language(head[0], need=1) != lang else lang
+
+
+USER_SAYS = ("reply", "note")
+# server.handback writes the user's word on which findings to fix behind this board line, or HANDBACK_ASK when
+# they typed nothing.
+HANDBACK = "Sent the review findings back to {}: "
+HANDBACK_ASK = "Fix the findings you agree with; say which ones you skip and why."
+_HANDBACK = re.compile("^" + re.escape(HANDBACK).replace(r"\{\}", r"\w+"))
+
+
+def latest_user_text(board, task_id):
+    """The user's newest message to this task: their last reply or note on the card, else the card's title and
+    notes. Board-written text is left out."""
+    for e in reversed(read(board, task_id)):
+        if e.get("from") == "you" and e.get("status") in USER_SAYS:
+            said = _HANDBACK.sub("", e.get("message", ""), count=1).strip()
+            if said and said != HANDBACK_ASK:
+                return said
+    try:
+        with open(os.path.join(board, "tasks.json"), encoding="utf-8") as f:
+            tasks = json.load(f).get("tasks", [])
+    except (OSError, ValueError, AttributeError):
+        return ""
+    t = next((t for t in tasks if isinstance(t, dict) and t.get("id") == task_id), {})
+    return f"{t.get('title', '')}\n\n{t.get('notes', '')}".strip()
+
+
+def language_mismatch(board, task_id, message):
+    """(report language, user language) when a report is plainly in another language than the user's latest
+    message, else None. Unsure on either side means no mismatch: a false refusal costs more than a miss."""
+    mine, theirs = guess_language(message), user_language(latest_user_text(board, task_id))
+    return (mine, theirs) if mine and theirs and mine != theirs else None
 
 
 def notes_message(board, notes):
