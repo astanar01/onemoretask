@@ -2,6 +2,7 @@
 
 ## 2026-10-15
 
+- Turn on Notifications in the View menu to get normal pop-ups from your browser when Claude needs you or is done. Click one to open that card. While it is on, the odd "Script Editor" pop-ups stop.
 - The top bar now shows which version the main copy of the app is really on, instead of always saying "main".
 - You can now see all your tasks in one list, and pick which ones to show on the left. The board view is still there in the View menu.
 - When you send a task that looks like it belongs to another of your projects, the board now asks first. You can move it to that project and start it there, or keep it where it is.

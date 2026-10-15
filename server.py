@@ -124,8 +124,11 @@ import hashlib
 import importlib.util
 import json
 import os
+import queue
 import re
+import select
 import shlex
+import socket
 import shutil
 import subprocess
 import sys
@@ -467,6 +470,39 @@ def notify(title, subtitle, message):
     esc = lambda x: x.replace("\\", "\\\\").replace('"', '\\"')[:200]
     subprocess.run(["osascript", "-e", f'display notification "{esc(message)}" with title "{esc(title)}" '
                     f'subtitle "{esc(subtitle)}" sound name "Glass"'], capture_output=True, timeout=10)
+
+
+class AlertStream:
+    """Board pages listening on /api/alerts/stream. Each has its own queue, so no lock is held while writing."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.subs = []  # [(queue, shows notifications)]
+        self.seq = 0
+
+    def subscribe(self, shows):
+        sub = (queue.Queue(), shows)
+        with self.lock:
+            self.subs.append(sub)
+        return sub
+
+    def drop(self, sub):
+        with self.lock:
+            if sub in self.subs:
+                self.subs.remove(sub)
+
+    def publish(self, alert):
+        """Send an alert to every page; True when one of them shows it as a browser notification."""
+        with self.lock:
+            self.seq += 1
+            event = {"seq": self.seq, **alert}
+            for q, _ in self.subs:
+                q.put(event)
+            return any(shows for _, shows in self.subs)
+
+
+ALERTS = AlertStream()
+ALERT_PING = 20  # seconds between keep-alive comments: a write to a closed page fails and drops it
 
 
 CODEX_SKILL_PATHS = ("the SKILL.md files to read first (user skills: ~/.claude/skills/<name>/SKILL.md, project: "
@@ -2180,7 +2216,10 @@ class Watcher:
                 if self.alerts.get(key) is not a:
                     continue
                 del self.alerts[key]
-            notify(a["title"], a["sub"], a["reason"])
+            shown = ALERTS.publish({"project": a["p"].id, "task": a["id"], "title": a["title"], "sub": a["sub"],
+                                    "reason": a["reason"], "phase": a["phase"]})
+            if not shown:  # an open page shows it itself; macOS shows it as from "Script Editor"
+                notify(a["title"], a["sub"], a["reason"])
 
     def run(self):
         last = 0
@@ -3252,6 +3291,43 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)})
 
+    def _alert_stream(self):
+        """Server-sent events: every project's alerts, plus a ping comment every ALERT_PING seconds. The handler is
+        HTTP/1.0 with no Content-Length, so the response simply lasts until either side closes."""
+        origin = self.headers.get("Origin")
+        if origin not in (f"http://{self.headers.get('Host', '')}", None):
+            self._json(403, {"error": "cross-origin request refused"})  # else any page could silence macOS alerts
+            return
+        shows = parse_qs(urlsplit(self.path).query).get("notify", [""])[0] == "1"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        sub = ALERTS.subscribe(shows)
+        try:
+            self.wfile.write(b"retry: 5000\n: hello\n\n")
+            self.wfile.flush()
+            last = time.time()
+            # Checked each second, so a restart or a closed server ends the stream.
+            while not RESTART.is_set() and self.server.socket.fileno() != -1:
+                try:
+                    data = b"event: alert\ndata: " + json.dumps(sub[0].get(timeout=1)).encode() + b"\n\n"
+                except queue.Empty:
+                    # A closed page reads as end-of-stream: drop it now, so its alerts go to macOS instead.
+                    if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                        break
+                    if time.time() - last < ALERT_PING:
+                        continue
+                    data = b": ping\n\n"
+                self.wfile.write(data)
+                self.wfile.flush()
+                last = time.time()
+        except OSError:
+            pass  # the page went away
+        finally:
+            ALERTS.drop(sub)
+            self.close_connection = True
+
     def do_HEAD(self):
         self._send(404)
 
@@ -3269,6 +3345,8 @@ class Handler(SimpleHTTPRequestHandler):
                     ext = f.rsplit(".", 1)[1]
                     self._send(200, fh.read(), "image/" + ("jpeg" if ext == "jpg" else ext))
             self._errors(serve)
+        elif path == "/api/alerts/stream":
+            self._alert_stream()
         elif path == "/api/projects":
             self._json(200, [{**p.info(), "attention": WATCH.attention(p.id)} for p in projects()])
         elif path == "/api/tasks":
