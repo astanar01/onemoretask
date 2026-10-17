@@ -4,11 +4,11 @@ A local kanban board that hands cards to Claude Code (or OpenAI's Codex). Write 
 **Send to Claude**, and the agent works on it in the background, posting its progress, questions and
 results back onto the card.
 
-![The board: a task Claude splits across subagents, a question and a permission request waiting on you, a finished task, and one under code review](docs/screenshots/board.png)
+![The board: a task Claude splits across subagents, a question and a permission request waiting on you, a finished task waiting for you, and one under code review](docs/screenshots/board.png)
 
-| Claude asks you a question | Claude asks permission |
+| List view: Claude asks you to pick | Claude asks permission |
 |---|---|
-| ![A card with Claude's question, a Reply in Conversation button and the reply box](docs/screenshots/question.png) | ![A card asking to run npm install, with Allow, Allow always and Deny buttons](docs/screenshots/permission.png) |
+| ![The list view: tasks grouped by step on the left, the open card on the right with a choice Claude made drawn as a tree and a question with one button per answer](docs/screenshots/list.png) | ![A card asking to run npm install, with Allow, Allow always and Deny buttons](docs/screenshots/permission.png) |
 
 | Claude is done: merge or review | Claude works with subagents |
 |---|---|
@@ -114,44 +114,62 @@ the git repo you run it from.
    stays out of git: tasks are not committed. A project with work
    waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions, plus
    finished cards you have not opened yet. A turning arrow marks projects where Claude is working.
-2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes.
+2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes. The tags
+   you use most show under **Tags**; click one to add it.
 3. **Send to Claude.** Pick a model (or leave the default) and send. A background Claude
    session starts in the project folder with the task as its prompt. Pick an OpenAI model and
-   the task runs in Codex instead; the card works the same. Tick
+   the task runs in Codex instead; the card works the same. A task with no title or no tags gets
+   them from Haiku, which reads your notes and reuses the tags you already have. If the task looks
+   like it belongs to another of your projects, the board asks first: move it there and send, or
+   keep it here. Tick
    **Divide in subtasks / use subagents** to let it split the work; Claude picks the skills each
    part needs and tells that subagent to load them first. The card then lists each
    subagent (running, finished or stopped), what a running one is doing now and the skills it used.
    Tick **Answer only** when you just want an answer: Claude looks into it and reports back
-   on the card, but changes no files and makes no commits.
-4. **Follow the card.** It shows whether the agent is working, needs you, or is finished,
-   and with **Notifications** on in the **View** menu your browser tells you when it needs you or
-   finishes. Cards move on their own:
-   to **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
-   click **Move to done** (hidden while Claude still has work on it). Drag a card up or down to
+   on the card, but changes no files and makes no commits. It picks a quick, cheap model for you
+   (Haiku, or Luna when only Codex is set up). If you then ask that card for real work, a
+   **Create new task** button moves the work to a new card that starts from its summary.
+4. **Follow the card.** Its tag says what Claude is doing, each in its own color: working, code
+   review, writing the recap, merging, needs you, finished or gone. A card waiting on you (a question,
+   a permission request, or finished work not merged or done yet) gets an orange edge and a
+   **Waiting for you** tag, and the count at the top counts it. With **Notifications** on in the
+   **View** menu your browser tells you when Claude needs you or finishes (with a chime you can turn
+   off under **Notification sound**). Cards move on their own:
+   to the top of **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
+   click **Mark as done** in the open card (hidden while Claude still has work on it). Drag a card up or down to
    reorder it inside its column (a subtask stays among its siblings); it can't be dragged to
    another column. To move one by hand, use the Status menu in its panel. Columns drag to reorder.
    A **cache** chip counts down the session's prompt cache. Reply before it runs out
    ("cache cold") and the reply reads the context from cache, at a lower price. A **ctx** chip
    (e.g. `38% ctx`) shows how full the session's context is; it turns orange, then red, near the limit.
    If Claude stops because auto mode's safety check keeps failing, the board starts it again after a minute.
+   Once the cache is cold, a **New task from this** button says whether a fresh start is a good fit
+   (✓ good fit, or ✕ with the reasons) and what it saves. Click it and Haiku writes a short summary of the
+   work, and a new card starts from it instead of re-reading the whole old session.
 5. **Open the card.** The left side holds the status, the priority and a **Next action** box that
    says what to do now (wait, answer, merge, review, mark done) with the button for it. Fold-out rows
    under it show the subtasks, the subagents, the skills used, the context size, the tokens used
    (subagents included) and the exact prompt. The right side has four tabs: **Summary** (Claude's
    result, its commits and whether they are merged), **Changes** (files and commits; click one to see
    its diff), **Conversation** (every message, with the reply box) and **Images**.
-6. **Answer permission requests.** When Claude stops to ask before running something, the card says
+   Claude's messages show headings, lists, tables, code boxes and quotes; each code review finding sits in
+   its own box with how serious it is. When Claude picks between options on its own, the card draws the
+   choice as a small tree: what was asked, each option with why, and a check mark on the one picked.
+6. **Answer questions.** When Claude asks you to pick, each choice is a button: click one to answer, or
+   type your own. When it asks several things at once, click one answer per row, then **Send answers**.
+7. **Answer permission requests.** When Claude stops to ask before running something, the card says
    "Claude asks permission" with the command. Click **Allow**, **Allow always** or **Deny** on the card;
    the board answers the prompt in the session for you (macOS and Linux).
-7. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
+8. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
    session. You can also write while Claude is still working, to add information or change
    course. That message is a **note**. The board types it straight into the running
    session (`claude attach`, like typing in Claude Code yourself), so Claude reads it as
    soon as it can, even while it waits on a long command. The card shows "Claude has it"
    once it is in. If a permission prompt is on screen, or on Windows, a hook the board
    installs on each session (`inbox.py`) hands it over after the current step instead. Claude answers in the
-   language you wrote in, even if the project is in another one.
-8. **Review the code.** A finished card in the Review column has a **Review code** button
+   language you wrote in, even if the project is in another one: a card message plainly in another language
+   is refused, and Claude has to write it again.
+9. **Review the code.** A finished card in the Review column has a **Review code** button
    once the task made a commit (a Claude message on the card names its sha). An **Answer only**
    card gets it only after a reply had Claude go ahead and commit.
    It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
@@ -163,9 +181,16 @@ the git repo you run it from.
    findings. When the other agent reviewed (Codex on Claude's work, or the reverse),
    **Send findings to Claude** (or Codex) hands them back to the session that did the work, with
    your reply box text as the word on which to fix.
-9. **Finish.** **Mark as done** (or **Move to done**) puts the card in Done. Once its session is idle,
+10. **Finish.** **Mark as done** (or the Status menu) puts the card in Done. Once its session is idle,
    Claude writes a short recap on the card (what was decided, why, how, what came out) and the board
    removes the session. A later reply on the card starts a fresh session from that recap.
+
+### List view
+
+**View → Layout → List** shows every task in one list, grouped by column, with the open task docked on the
+right (its options and its conversation side by side). **Create new task** at the top adds one to To Do, and
+the search box at the top filters the list. Drag the list's edge to make it wider or narrower; double-click
+the edge to reset it. The board view is one click back in the same menu.
 
 ### Use a worktree
 
@@ -185,6 +210,11 @@ hears of: no Run app or Merge buttons, the Changes tab reading the main folder, 
 from the main folder without the task's branch. A task sent with the box off is also told in its
 prompt to work in the project folder and not to make a worktree.
 
+Every session also gets a hook (`branch_guard.py`) that stops it from switching the branch of your main
+checkout (`git switch`, `git checkout <branch>`, also inside `sh -c`). Tasks without a worktree share that
+checkout, and merges need it on its base branch. Switching back to the default branch is allowed, and
+worktrees are left alone.
+
 A finished card in Review then has two more buttons:
 
 - **Run app from worktree**: Claude starts the app from the worktree (a dev server on a spare port,
@@ -195,7 +225,9 @@ A finished card in Review then has two more buttons:
 
 A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
 `git init` and commits everything as "Initial commit", except the board folder and `.env` files (`.env`, `.env.*`; `.env.example`,
-`.env.sample` and `.env.template` are kept), which it lists in `.git/info/exclude`.
+`.env.sample` and `.env.template` are kept), which it lists in `.git/info/exclude`. It also lists the
+biggest folders with their size, so you can tick the ones to leave out. On a very big folder it can take a
+few minutes; the window says so and waits.
 
 A send that fails takes its new worktree and branch away again. A card moved to done before its merge says so
 under **Next action**; move it back to Review to get the buttons.
@@ -238,11 +270,16 @@ your skills and asks you on the card which changes to make.
 
 ### Header
 
-- **View**: theme (System, Light or Dark), text size, and whether subtasks show on the board.
+- **OneMoreTask** and the app's version (e.g. `v247`). The number goes up with each new version on GitHub.
+- **View**: layout (Board or List), theme (System, Light or Dark), text size, whether subtasks show,
+  **Notifications** and **Notification sound**, and **Language** (English or Français: the whole page changes).
 - The gear button: project settings and the **Changelog**, a plain-words list of what changed in the board.
-- The branch menu (e.g. `main`) shows which copy of the board app you are running. It turns orange on a
-  task's worktree; pick another copy to jump to it.
-- **Update** (see [Update](#update)) and a count of cards waiting on you.
+- The branch menu (e.g. `main`) shows which copy of the board app you are running and the branch it is really
+  on. It turns orange on a task's worktree; pick another copy to jump to it.
+- **↑ N unpushed** (orange) shows when the project has commits not pushed to its remote yet. Click it for the
+  list, and **Push to remote…** there to push them to the remote branch you pick.
+- **Update** (see [Update](#update)), a button that shows when a newer Claude Code is out (click it and
+  confirm, and the board runs `claude update`), and a count of cards waiting on you.
 
 ### Claude Code tools
 
@@ -285,11 +322,19 @@ tells them how:
 
 ```bash
 python3 report.py --board <project>/.task_board <task_id> progress "what I'm doing now"
-python3 report.py --board <project>/.task_board <task_id> question "what I need you to decide"
+python3 report.py --board <project>/.task_board <task_id> question "what I need you to decide" \
+    --option "A. Settings screen" --option "B. Header toggle"
 python3 report.py --board <project>/.task_board <task_id> done "what I did, what is left"
+python3 report.py --board <project>/.task_board <task_id> decision - < decision.json
 ```
 
-Add `--image <file>` to attach a screenshot.
+- `--option` (2 to 6) gives the card one button per answer. For several questions at once, give each as
+  `--part "<question>"` followed by its `--option`s; the answer comes back as one line per part.
+- `decision` posts a choice Claude made, drawn as a tree: `{"query", "options": [{"label", "why"}],
+  "chosen", "by", "why"}`.
+- `--image <file>` attaches a screenshot.
+- A message plainly in another language than your latest one on the card is refused; `--lang <language>`
+  posts it anyway when you asked for that language.
 
 ## Where your tasks are saved
 
@@ -348,7 +393,8 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 - `done: true` marks the column whose tasks count as finished.
 - `agent` is only there once the task was sent to Claude. It holds the Claude session id.
 - Optional fields: `images` (file names in `images/`), `delegate` and `subagentModel`
-  (the **Divide in subtasks** options), `answerOnly` (the **Answer only** box).
+  (the **Divide in subtasks** options), `answerOnly` (the **Answer only** box), `worktree` (the
+  **Use a worktree** box; missing counts as on).
 
 ### Card messages: `agent_reports/<task_id>.json`
 
@@ -361,8 +407,9 @@ A list of messages, oldest first:
 ]
 ```
 
-`status` is `launch`, `reply`, `review`, `progress`, `question`, `done` or `answer`. `images` (file
-names) and `session` are added when they apply.
+`status` is `launch`, `reply`, `note`, `review`, `progress`, `question`, `decision`, `done`, `answer` or
+`recap`. `images` (file names), `session`, `options` and `parts` (a question's answer buttons) and `decision`
+(the tree) are added when they apply.
 
 ### Outside the project
 
@@ -375,7 +422,7 @@ names) and `session` are added when they apply.
 | `<project>/skill-observations/`, `~/.claude/skill-observations/` | Observations the skill logs. The board only reads them |
 | `<project>/.git/info/exclude` | Gets `skill-observations/`, `skill-updates/` and `.claude/skills/` added, so skill work stays out of your commits |
 | `~/.claude.json` | Only when you click **Trust folder and send**: marks that folder as trusted, like accepting Claude Code's own trust prompt |
-| Your browser's local storage | View settings only: theme, text size, show subtasks, collapsed groups, last project, last model picked, which cards you have read |
+| Your browser's local storage | View settings only: layout, list width, theme, text size, language, show subtasks, notification sound, collapsed groups, last project, last model picked, which cards you have read, unsent reply drafts |
 
 If you open `index.html` straight from disk (a `file://` page) instead of running the
 server, the board is saved in the browser's local storage only.
@@ -395,12 +442,16 @@ What does leave your computer, and why:
 - **Send to Claude and replies.** They run Claude Code (`claude`), which sends the task's
   title, notes, subtasks and your replies to Anthropic, plus any image Claude opens, the same
   as when you use Claude Code in a terminal. No task data goes out until you click Send.
+- **Quick Haiku calls when you send.** A task with no title or tags sends its notes to Haiku to name and
+  tag it. The project check sends the task's title and notes, plus the start of each of your projects'
+  README and their 15 newest card titles. The recap at Done and **New task from this** send the card's
+  messages. All go through your own `claude` command.
 - **The default model name.** To show the name of your default model, the board runs
   `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
   skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
 - **Install and update.** The install command downloads the app from GitHub. The board's
   **Update** button runs `git fetch` on the app folder when the page opens and every 30 minutes,
-  to compare your copy with GitHub. It sends no task data.
+  to compare your copy with GitHub, and asks npm for the newest Claude Code version. It sends no task data.
 
 ## Update
 
