@@ -3,6 +3,7 @@
 ## 2026-10-17
 
 - Claude can no longer move your main project folder to another version of the work. Before, a task you said "go ahead" on could do that, and then joining other tasks' work into it got stuck. If it is already on another version, Claude can still move it back to the main one.
+- In the list, a card now has the "New task from this" button and the check that says if a new task is a good idea.
 
 ## 2026-10-15
 
