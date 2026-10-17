@@ -469,7 +469,10 @@ def answer_only_lines(report):
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
-            "what to do next. If they then reply asking you to go ahead, that reply lifts this rule."]
+            "what to do next. If they then reply asking you to go ahead, that reply lifts the no-changes rule, not the "
+            "branch rule: make the changes in the project folder on the branch it is on now. Never create, switch or "
+            "check out a branch there (other tasks share that folder), even to keep the work apart; if the work needs "
+            "its own branch, ask on the card first."]
 
 
 def worktree_lines(wt, main):
@@ -1098,12 +1101,15 @@ def commit_ref(p, t):
 
 
 def inbox_settings(p, task_id):
-    """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session."""
+    """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
+    branch_guard.py, so no session switches the branch of the main checkout that other tasks share."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
+    guard = [{"matcher": "Bash", "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
     # bgIsolation none: Claude Code's own background-session isolation would otherwise put the session in a
     # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
     # folder). The board makes the worktree itself when the card asks for one.
-    return json.dumps({"hooks": {"PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}})
+    return json.dumps({"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook},
+                       "worktree": {"bgIsolation": "none"}})
 
 
 def is_codex(s):

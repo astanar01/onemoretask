@@ -1,0 +1,122 @@
+"""branch_guard.py refuses a branch switch in a project's main checkout and lets everything else through,
+and server.py installs it on every Claude session the board starts.
+
+Run: python3 tests/test_branch_guard.py  (stdlib only; a temp git repo with one worktree)."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+TMP = os.path.realpath(tempfile.mkdtemp(prefix="branch-guard-"))
+os.environ["HOME"] = os.path.join(TMP, "home")  # before importing server: it reads ~ at import
+os.makedirs(os.environ["HOME"])
+sys.path.insert(0, ROOT)
+import server  # noqa: E402
+
+main = os.path.join(TMP, "proj")
+wt = os.path.join(main, ".claude", "worktrees", "w")
+os.makedirs(os.path.join(main, "src"))
+
+
+def git(*args, where=main):
+    return subprocess.run(["git", "-C", where, *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+git("init", "-q", "-b", "main")
+git("config", "user.email", "t@example.com")
+git("config", "user.name", "Test")
+git("config", "commit.gpgsign", "false")
+for name in ("a.txt", "src/b.txt"):
+    with open(os.path.join(main, name), "w") as f:
+        f.write("one\n")
+git("add", ".")
+git("commit", "-q", "-m", "Initial commit")
+git("branch", "feature")
+git("worktree", "add", "-q", "-b", "w-branch", wt)
+
+fails = []
+
+
+def check(name, ok):
+    print(("ok  " if ok else "FAIL") + " " + name)
+    if not ok:
+        fails.append(name)
+
+
+def guard(command, cwd=main, tool="Bash", raw=None):
+    stdin = raw if raw is not None else json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {"command": command}, "cwd": cwd})
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "branch_guard.py"), "--board", TMP, "t1"],
+                       input=stdin, capture_output=True, text=True)
+    if r.returncode or "Traceback" in r.stderr:
+        return "error: " + r.stderr
+    if not r.stdout:
+        return "allow"
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"]
+
+
+denied = [
+    "git checkout -b map-only-guardrail",
+    "git checkout feature",
+    "git checkout -",
+    "git checkout -q -b x",
+    "git checkout --detach",
+    "git switch feature",
+    "git switch -c new",
+    "git status && git checkout feature",
+    "git add . ; git switch feature",
+    f"git -C {main} checkout feature",
+    f"cd {main} && git checkout -b x",
+    "cd src && git checkout feature",
+    "FOO=1 git checkout feature",
+    "git -c core.pager=cat switch feature",
+    "git checkout feature\n",
+    "echo hi\ngit switch feature",
+]
+for cmd in denied:
+    check(f"denies in the main checkout: {cmd!r}", guard(cmd) == "deny")
+check("denies a main-checkout switch run from a worktree via -C", guard(f"git -C {main} switch feature", cwd=wt) == "deny")
+check("denies cd from a worktree into the main checkout", guard(f"cd {main} && git switch feature", cwd=wt) == "deny")
+
+allowed = [
+    "git status",
+    "git checkout -- a.txt",
+    "git checkout a.txt",
+    "git checkout HEAD -- a.txt",
+    "git checkout feature -- a.txt",
+    "git checkout HEAD a.txt src/b.txt",
+    "git checkout -p",
+    "git checkout",
+    "git commit -m 'never git checkout -b x; or git switch y'",
+    "echo \"git switch feature\"",
+    "git worktree add -b z ../z",
+    "git log feature",
+    "git switch --help",
+    "git checkout 'unclosed",
+    "ls; grep -r checkout .",
+]
+for cmd in allowed:
+    check(f"allows in the main checkout: {cmd!r}", guard(cmd) == "allow")
+check("allows a switch inside a worktree", guard("git switch -c x", cwd=wt) == "allow")
+check("allows checkout -b inside a worktree", guard("git checkout -b y", cwd=wt) == "allow")
+check("allows a switch outside any repo", guard("git switch feature", cwd=TMP) == "allow")
+check("ignores other tools", guard("git switch feature", tool="Read") == "allow")
+for raw in ("", "null", "[]", "not json"):
+    check(f"exits quietly on stdin {raw!r}", guard("", raw=raw) == "allow")
+check("the main checkout is still on main", git("branch", "--show-current") == "main")
+
+p = server.Project(main)
+s = json.loads(server.inbox_settings(p, "t1"))
+pre = s["hooks"]["PreToolUse"]
+check("inbox_settings installs branch_guard.py on Bash",
+      pre[0]["matcher"] == "Bash" and "branch_guard.py" in pre[0]["hooks"][0]["command"])
+check("inbox_settings keeps inbox.py and bgIsolation none",
+      "inbox.py" in s["hooks"]["Stop"][0]["hooks"][0]["command"] and s["worktree"]["bgIsolation"] == "none")
+lines = " ".join(server.answer_only_lines("report"))
+check("answer-only go-ahead keeps the branch rule", "not the branch rule" in lines and "Never create, switch" in lines)
+
+print(f"\n{len(fails)} failed" if fails else "\nall passed")
+sys.exit(1 if fails else 0)

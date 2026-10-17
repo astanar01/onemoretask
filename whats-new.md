@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-17
+
+- Claude can no longer move your main project folder to another version of the work. Before, a task you said "go ahead" on could do that, and then joining other tasks' work into it got stuck.
+
 ## 2026-10-15
 
 - The top of the board now says "OneMoreTask" and its version number, which goes up each time a new version comes out. The Update button shows which version you will get.
