@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-17
+
+- In the list, a card now has the same buttons as on the board: "Review code", "New task from this", and the check that says if a new task is a good idea.
+
 ## 2026-10-15
 
 - The top of the board now says "OneMoreTask" and its version number, which goes up each time a new version comes out. The Update button shows which version you will get.

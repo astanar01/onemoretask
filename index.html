@@ -304,6 +304,9 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 #repo-sizes .size { color: var(--muted); white-space: nowrap; }
 #wtdel-list { margin: -8px 0 16px; padding-left: 20px; max-height: 160px; overflow: auto; font-family: ui-monospace, monospace; font-size: calc(12px * var(--ts)); }
 .card .review { margin: 7px 10px 0 0; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
+.lcard .review { align-self: flex-start; padding: 2px 8px; font-size: calc(12px * var(--ts)); }
+.lcard .fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
+.lcard .fresh .btn { padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: calc(12px * var(--ts)); }
 .card .fresh .btn { padding: 2px 8px; font-size: calc(12px * var(--ts)); }
 .btn.go { background: var(--ok); border-color: var(--ok); color: #fff; }
@@ -1509,7 +1512,13 @@ function listRowEl(x, depth) {
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
   el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${esc(x.priority)}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
-    ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}`;
+    ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}
+    ${cardReview(x) ? `<button class="btn review" title="${t("A fresh {who} session code-reviews this task's commits", { who: reviewer(x) })}">${t("Review code")}</button>` : ""}
+    ${freshRow(x, ag)}`;
+  const rv = el.querySelector(".review");
+  if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(x); });
+  const fr = el.querySelector(".fresh .btn");
+  if (fr) fr.addEventListener("click", (e) => { e.stopPropagation(); openFresh(x); });
   el.onclick = () => openDetail(x.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(x.id); } };
   return el;
