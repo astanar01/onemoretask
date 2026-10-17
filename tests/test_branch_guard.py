@@ -36,6 +36,7 @@ git("add", ".")
 git("commit", "-q", "-m", "Initial commit")
 git("branch", "feature")
 git("worktree", "add", "-q", "-b", "w-branch", wt)
+git("update-ref", "refs/remotes/origin/remote-only", "HEAD")  # a branch only the remote has
 
 fails = []
 
@@ -75,6 +76,15 @@ denied = [
     "git -c core.pager=cat switch feature",
     "git checkout feature\n",
     "echo hi\ngit switch feature",
+    "git checkout remote-only",
+    "git switch remote-only",
+    "git switch -c main2",
+    "git switch -",
+    "bash -c \"git checkout -b x\"",
+    "sh -lc 'cd src && git switch feature'",
+    "cd \"$PWD\" && git checkout -b y",
+    "cd \"${PWD}/src\" && git checkout feature",
+    "git -C \"$PWD\" checkout feature",
 ]
 for cmd in denied:
     check(f"denies in the main checkout: {cmd!r}", guard(cmd) == "deny")
@@ -97,6 +107,8 @@ allowed = [
     "git switch --help",
     "git checkout 'unclosed",
     "ls; grep -r checkout .",
+    "bash -c 'git status'",
+    "bash script.sh",
 ]
 for cmd in allowed:
     check(f"allows in the main checkout: {cmd!r}", guard(cmd) == "allow")
@@ -107,6 +119,13 @@ check("ignores other tools", guard("git switch feature", tool="Read") == "allow"
 for raw in ("", "null", "[]", "not json"):
     check(f"exits quietly on stdin {raw!r}", guard("", raw=raw) == "allow")
 check("the main checkout is still on main", git("branch", "--show-current") == "main")
+
+git("checkout", "-q", "feature")  # stuck off the default branch, like FableDraft was
+for cmd in ("git checkout main", "git switch main", "git -C src checkout main", "bash -c 'git switch -q main'"):
+    check(f"allows going back to the default branch: {cmd!r}", guard(cmd) == "allow")
+for cmd in ("git checkout -b main2", "git switch -c main", "git checkout -", "git checkout --detach main"):
+    check(f"still denies off the default branch: {cmd!r}", guard(cmd) == "deny")
+git("checkout", "-q", "main")
 
 p = server.Project(main)
 s = json.loads(server.inbox_settings(p, "t1"))

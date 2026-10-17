@@ -5,8 +5,9 @@
 
 server.py installs it with --settings on every session it starts, as a PreToolUse hook on Bash. Every task without
 a worktree shares the main checkout, and "Merge worktree to main" needs it on its base branch, so `git switch` or a
-`git checkout` of a branch there breaks the other tasks. Worktrees are left alone. A command it cannot read (an
-unclosed quote) is let through: this is a guard against a habit, not a sandbox.
+`git checkout` of a branch there breaks the other tasks. Switching back to the repo's default branch is allowed: it
+is the repair. Worktrees are left alone. A command it cannot read (an unclosed quote) is let through: this is a
+guard against a habit, not a sandbox.
 """
 import json
 import os
@@ -17,6 +18,9 @@ import sys
 SEPARATORS = {";", "&&", "||", "|", "&", "\n", "(", ")"}
 # Options of `git checkout` that start or move a branch whatever follows them.
 BRANCH_FLAGS = {"-b", "-B", "--orphan", "-d", "--detach"}
+# Options of `git switch` that make a branch or leave the named one.
+SWITCH_FLAGS = {"-c", "-C", "--create", "--force-create", "--orphan", "-d", "--detach"}
+SHELLS = {"bash", "sh", "zsh", "dash"}
 
 
 def segments(command):
@@ -52,10 +56,29 @@ def main_checkout(where):
     return os.path.realpath(own) == os.path.realpath(common)
 
 
+def default_branch(where):
+    """Same rule as server.default_branch: origin/HEAD's branch, else main, else master; local branches only."""
+    for b in ((git(where, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD") or "").removeprefix("origin/"),
+              "main", "master"):
+        if b and git(where, "rev-parse", "--verify", "--quiet", f"refs/heads/{b}") is not None:
+            return b
+    return None
+
+
+def remote_branch(where, name):
+    """True when `name` is a branch on a remote, which `git checkout <name>` turns into a new local branch."""
+    out = git(where, "for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes")
+    return bool(out) and name in out.splitlines()
+
+
 def switches(where, sub, args):
-    """True when `git <sub> <args>` run in `where` would move HEAD to another branch or commit."""
+    """True when `git <sub> <args>` run in `where` would move HEAD to another branch or commit, other than back
+    to the default branch."""
     if sub == "switch":
-        return not ({"-h", "--help"} & set(args))
+        if {"-h", "--help"} & set(args):
+            return False
+        names = [a for a in args if not a.startswith("-")]
+        return bool(SWITCH_FLAGS & set(args)) or names != [default_branch(where)]
     if sub != "checkout":
         return False
     head = args[:args.index("--")] if "--" in args else args
@@ -72,8 +95,17 @@ def switches(where, sub, args):
     name = names[0]
     if name == "-":
         return True
-    return git(where, "rev-parse", "--verify", "--quiet", name + "^{commit}") is not None and \
-        not os.path.exists(os.path.join(where, name))
+    if os.path.exists(os.path.join(where, name)):
+        return False
+    if git(where, "rev-parse", "--verify", "--quiet", name + "^{commit}") is None:
+        return remote_branch(where, name)
+    return name != default_branch(where)
+
+
+def expand(path, where):
+    """`path` with ~ and $VARS filled in; $PWD is the folder the command runs in, not this hook's."""
+    path = path.replace("${PWD}", where).replace("$PWD", where)
+    return os.path.join(where, os.path.expanduser(os.path.expandvars(path)))
 
 
 def blocked(command, cwd):
@@ -89,7 +121,14 @@ def blocked(command, cwd):
         if not seg:
             continue
         if seg[0] == "cd":
-            where = os.path.join(where, os.path.expanduser(seg[1])) if len(seg) > 1 else os.path.expanduser("~")
+            where = expand(seg[1], where) if len(seg) > 1 else os.path.expanduser("~")
+            continue
+        if os.path.basename(seg[0]) in SHELLS:  # bash -c "git checkout x"
+            flags = [i for i, a in enumerate(seg) if a.startswith("-") and not a.startswith("--") and "c" in a]
+            if flags and flags[0] + 1 < len(seg):
+                folder = blocked(seg[flags[0] + 1], where)
+                if folder:
+                    return folder
             continue
         if os.path.basename(seg[0]) != "git":
             continue
@@ -97,7 +136,7 @@ def blocked(command, cwd):
         while rest and rest[0].startswith("-"):
             opt = rest.pop(0)
             if opt == "-C" and rest:
-                here = os.path.join(here, os.path.expanduser(rest.pop(0)))
+                here = expand(rest.pop(0), here)
             elif opt == "-c" and rest:
                 rest.pop(0)
             elif opt.startswith(("--git-dir", "--work-tree")):
