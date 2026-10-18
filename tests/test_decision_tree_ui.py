@@ -200,7 +200,7 @@ for (let i = 0; i < 100; i++) {
 out.p2 = await ev(MEASURE);
 out.sameLoad = await ev(`window.__dtMark`) === loadMark;
 // Text size change on a quiet board: the handler alone must redo the layout. Laid out at Small first (Normal to
-// Extra large grows a box less than the 12px gap), then measured in the same task as the change event, so no poll
+// Extra large grows a box less than the 8px gap), then measured in the same task as the change event, so no poll
 // can redraw in between.
 out.ts = await ev(`(() => {
 applyTextSize('0.9'); showTab('conversation');
