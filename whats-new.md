@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-18
+
+- Claude's choices on a task now show as one tree that goes from left to right at the top of the Conversation tab. Each new choice grows from the one picked before it, and the tree grows on its own as Claude decides.
+
 ## 2026-10-17
 
 - Claude can no longer move your main project folder to another version of the work. Before, a task you said "go ahead" on could do that, and then joining other tasks' work into it got stuck. If it is already on another version, Claude can still move it back to the main one.

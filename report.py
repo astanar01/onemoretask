@@ -8,9 +8,11 @@
 
 A message of `-` is read from stdin, for every status.
 
-A decision is a choice between options; the card draws it as a tree. Its JSON:
+A decision is a choice between options; the card draws all of a task's decisions as one horizontal
+tree, each hanging off the option chosen before it, and redraws it as new ones arrive. Its JSON:
 {"query": "what was asked", "options": [{"label": "...", "why": "..."}, ...], "chosen": 0, "by": "agent", "why": "..."}
 "chosen" is the option's index (null while still open); "by" is "agent" or "you"; 2 to 6 options.
+Posting a decision again with the same "query" replaces the earlier one (an open one becomes decided).
 
 A question can list its choices with `--option "<short label>"` (repeatable, 2 to 6, all different);
 the card shows one button per choice that sends it as the answer. Only for `question`.
