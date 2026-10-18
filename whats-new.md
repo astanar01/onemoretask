@@ -3,6 +3,7 @@
 ## 2026-10-18
 
 - Claude's choices on a task now show as one tree that goes from left to right at the top of the Conversation tab. Each new choice grows from the one picked before it, and the tree grows on its own as Claude decides.
+- The tree of Claude's choices now stays at the top of the Conversation tab while you scroll down through the messages.
 
 ## 2026-10-17
 

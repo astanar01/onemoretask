@@ -378,7 +378,8 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 #d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
 #d-log .mark.sent { color: var(--ok); font-weight: 700; }
 #d-log .note-state { font-style: italic; }
-#d-dtree { overflow-x: auto; overflow-y: hidden; max-width: 100%; margin: 0 0 22px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+/* sticks under the tabs while the messages scroll; the -16px pair covers .body's top padding so text never shows above it */
+#d-dtree { position: sticky; top: -16px; z-index: 1; background: var(--bg); overflow-x: auto; overflow-y: auto; max-height: 45vh; max-width: 100%; margin: -16px 0 22px; padding: 16px 0 8px; border-bottom: 1px solid var(--line); }
 #d-dtree[hidden] { display: none; }
 #d-dtree .dt-head { position: sticky; left: 0; font-size: calc(11px * var(--ts)); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
 #d-dtree .dt-wrap { position: relative; }
@@ -690,6 +691,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   .dates { padding-top: 10px; }
   .main { flex: none; min-height: 70vh; }
   .body { overflow: visible; padding: 14px 16px; }
+  #d-dtree { position: static; margin-top: 0; padding-top: 0; max-height: none; }
   .mainbar { padding-left: 16px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
   .composer { padding: 10px 16px; }
   .menu { right: 44px; }
