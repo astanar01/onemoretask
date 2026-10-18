@@ -3652,6 +3652,7 @@ try { const v = localStorage.getItem(LS_KEY + ":ts"); if (v) applyTextSize(v); }
 $("#text-size").addEventListener("change", (e) => {
   applyTextSize(e.target.value);
   try { localStorage.setItem(LS_KEY + ":ts", e.target.value); } catch (_) {}
+  renderDecisionTree(dtLog);   // nodes are placed by measured size
 });
 // Language: saved per browser, read by i18n.js before this script; the page reloads so every string is rebuilt.
 $("#lang").value = LANG;

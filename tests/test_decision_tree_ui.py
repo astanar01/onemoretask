@@ -44,7 +44,9 @@ A = {"query": "Tree or list?", "options": [{"label": "List", "why": "simple"}, {
 B_OPEN = {"query": "Which side?", "options": [{"label": "Left", "why": ""}, {"label": "Right", "why": ""}], "chosen": None}
 B_DONE = dict(B_OPEN, query="  Which side?  ", chosen=0, by="you", why="reads first")  # trimmed match replaces the open one
 C = {"query": "Animate it?", "options": [{"label": "No", "why": ""}, {"label": "Yes", "why": "smooth"}], "chosen": 1}
-D = {"query": "Colour edges?", "options": [{"label": "Grey", "why": ""}, {"label": "Accent", "why": ""}], "chosen": None}
+# Grey's long why wraps, so growing the text pushes it into Accent below unless the tree is laid out again.
+D = {"query": "Colour edges?", "options": [{"label": "Grey", "why": "quiet, keeps the eye on the boxes and not on the lines between them"},
+                                           {"label": "Accent", "why": ""}], "chosen": None}
 
 
 def add_decision(tid, raw):
@@ -197,6 +199,22 @@ for (let i = 0; i < 100; i++) {
 }
 out.p2 = await ev(MEASURE);
 out.sameLoad = await ev(`window.__dtMark`) === loadMark;
+// Text size change on a quiet board: the handler alone must redo the layout. Laid out at Small first (Normal to
+// Extra large grows a box less than the 12px gap), then measured in the same task as the change event, so no poll
+// can redraw in between.
+out.ts = await ev(`(() => {
+applyTextSize('0.9'); showTab('conversation');
+const tsEls = () => [...document.querySelectorAll('#d-dtree .dt-node, #d-dtree .dt-opt')];
+const tsPos = () => tsEls().map((e) => e.style.top + '/' + e.style.left).join(' ') + ' svg ' + document.querySelector('#d-dtree svg').getAttribute('height');
+const before = tsPos(), sel = document.querySelector('#text-size');
+sel.value = '1.3'; sel.dispatchEvent(new Event('change'));
+const rs = tsEls().map((e) => e.getBoundingClientRect()), overlaps = [];
+for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+  const a = rs[i], b = rs[j];
+  if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) overlaps.push([i, j]);
+}
+return { ts: getComputedStyle(document.documentElement).getPropertyValue('--ts').trim(), n: rs.length, relaid: tsPos() !== before, overlaps };
+})()`);
 out.open2 = await ev(`openDetail('t2'); showTab('conversation'); true`);
 await sleep(300);
 out.p3 = await ev(`(() => { const e = document.querySelector('#d-dtree'); return { exists: !!e, hidden: e ? e.hidden : null }; })()`);
@@ -269,7 +287,7 @@ def main():
     if not res["ready"]:
         return 1
     check("panel opened on Conversation", res["open"])
-    for k in ("p1", "p2", "p3"):
+    for k in ("p1", "p2", "ts", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
             return 1
@@ -299,6 +317,11 @@ def main():
     check("open node's options are neither on nor off", [o["on"] or o["off"] for o in m["nodes"][-1]["opts"]] if m["nodes"] else None, [False, False])
     check(".dt-edge.on count unchanged by an open decision", sum(e["on"] for e in m["edges"]), 3)
     layout_checks("phase 2", m, [3, 2, 2, 2])
+
+    t = res["ts"]
+    check("text size picker set --ts to 1.3 (setup)", t["ts"], "1.3")
+    check("text size change redid the tree layout without a poll", t["relaid"])
+    check(f"no two tree boxes overlap after a text size change ({t['n']} boxes)", t["overlaps"], [])
 
     check("#d-dtree hidden for a log without decisions", res["p3"]["hidden"], True)
     shutil.rmtree(TMP, ignore_errors=True)
