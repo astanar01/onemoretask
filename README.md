@@ -330,8 +330,10 @@ python3 report.py --board <project>/.task_board <task_id> decision - < decision.
 
 - `--option` (2 to 6) gives the card one button per answer. For several questions at once, give each as
   `--part "<question>"` followed by its `--option`s; the answer comes back as one line per part.
-- `decision` posts a choice Claude made, drawn as a tree: `{"query", "options": [{"label", "why"}],
-  "chosen", "by", "why"}`.
+- `decision` posts a choice Claude made: `{"query", "options": [{"label", "why"}], "chosen", "by", "why"}`.
+  The card draws a task's decisions as one horizontal tree at the top of the Conversation tab, each
+  hanging off the option chosen before it; it redraws as decisions arrive, and a decision posted again
+  with the same query replaces the earlier one.
 - `--image <file>` attaches a screenshot.
 - A message plainly in another language than your latest one on the card is refused; `--lang <language>`
   posts it anyway when you asked for that language.

@@ -513,7 +513,9 @@ def card_lines(report, answer_only=False):
               "stays inside the session and never reaches the card.",
               f'- `{report} decision -` when YOU choose between options (a fork in the work): pipe in JSON (a heredoc) '
               "with the query, the options with a short why each, the index of the one chosen (null while open), by "
-              "\"agent\" and why. The card draws it as a tree. Never post a decision for a choice the user just made "
+              "\"agent\" and why. The card draws the task's decisions as one tree, each hanging off the option chosen "
+              "before it; post the same query again to turn an open decision into a decided one. Never post a "
+              "decision for a choice the user just made "
               "by answering your question: the card already shows their pick.",
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "

@@ -189,6 +189,7 @@ const I18N = {
     "Start a background {who} session on this task": "Lancer une session {who} en arrière-plan sur cette tâche",
     "Needs server.py": "Nécessite server.py",
     "You": "Vous",
+    "Decisions": "Décisions",
     "Still open": "Encore ouvert",
     "Chosen by you": "Choisi par vous",
     "Chosen by Claude": "Choisi par Claude",
