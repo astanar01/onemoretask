@@ -378,22 +378,28 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 #d-log .mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; }
 #d-log .mark.sent { color: var(--ok); font-weight: 700; }
 #d-log .note-state { font-style: italic; }
-#d-dtree { overflow-x: auto; overflow-y: hidden; max-width: 100%; margin: 0 0 22px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+/* sticks under the tabs while the messages scroll; the -16px pair covers .body's top padding so text never shows above it */
+#d-dtree { position: sticky; top: -16px; z-index: 1; background: var(--bg); overflow-x: auto; overflow-y: auto; max-height: 30vh; max-width: 100%; margin: -16px 0 22px; padding: 16px 0 12px; border-bottom: 1px solid var(--line); }
 #d-dtree[hidden] { display: none; }
 #d-dtree .dt-head { position: sticky; left: 0; font-size: calc(11px * var(--ts)); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
 #d-dtree .dt-wrap { position: relative; }
 #d-dtree svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.dt-node, .dt-opt { position: absolute; width: max-content; max-width: 200px; box-sizing: border-box; font-size: calc(13px * var(--ts)); line-height: 1.35; overflow-wrap: anywhere; }
-.dt-node { padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.dt-node, .dt-opt { position: absolute; width: max-content; max-width: 150px; box-sizing: border-box; font-size: calc(11px * var(--ts)); line-height: 1.3; overflow-wrap: anywhere;
+  transform-origin: left center; transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease; }
+/* hover zooms a box over its neighbours; origin left so the first column never scales out of the scroller */
+.dt-node:hover, .dt-opt:hover { transform: scale(1.45); z-index: 2; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.dt-opt:hover { background: var(--card); border-radius: 6px; opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .dt-node, .dt-opt { transition: none; } }
+.dt-node { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .dt-node.open { border: 1px dashed var(--wait); }
 .dt-q { font-weight: 600; }
 .dt-mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; background: var(--text); }
 .dt-node.open .dt-mark { background: var(--wait); }
-.dt-who { font-size: calc(11px * var(--ts)); color: var(--muted); margin-top: 3px; }
+.dt-who { font-size: calc(10px * var(--ts)); color: var(--muted); margin-top: 3px; }
 .dt-node.open .dt-who { color: var(--wait); font-weight: 600; }
 .dt-opt { padding: 2px 0 2px 6px; }
 .dt-label { font-weight: 500; }
-.dt-why { font-size: calc(12px * var(--ts)); color: var(--muted); }
+.dt-why { font-size: calc(10px * var(--ts)); color: var(--muted); }
 .dt-opt.on { color: var(--ok); }
 .dt-opt.on .dt-label { font-weight: 700; }
 .dt-opt.off { opacity: .5; }
@@ -690,6 +696,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   .dates { padding-top: 10px; }
   .main { flex: none; min-height: 70vh; }
   .body { overflow: visible; padding: 14px 16px; }
+  #d-dtree { position: static; margin-top: 0; padding-top: 0; max-height: none; }
   .mainbar { padding-left: 16px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
   .composer { padding: 10px 16px; }
   .menu { right: 44px; }
@@ -3620,7 +3627,7 @@ function renderDecisionTree(log) {
   // Hidden tab: nothing to measure yet, so leave the key unset and lay out when the tab opens.
   if (!box.offsetParent) { dtKey = null; return; }
   dtKey = key; dtSeen = first + "\n" + ds.length;
-  const COL = 244, GAP = 12;
+  const COL = 184, GAP = 8;
   nodes.forEach((n, i) => { n.el = els[i]; n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; n.x = n.depth * COL; });
   const lay = (n, top) => {
     if (!n.kids.length) { n.y = top; return top + n.h + GAP; }
