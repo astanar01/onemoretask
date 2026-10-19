@@ -97,85 +97,130 @@ the git repo you run it from.
 
 ## Use
 
-1. **Pick a project.** The project menu at the top switches boards. **Open folder…** adds any
-   folder. Each project keeps its board in `<project>/.task_board/`. The board
-   stays out of git: tasks are not committed. A project with work
-   waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions, plus
-   finished cards you have not opened yet. A turning arrow marks projects where Claude is working.
-2. **Add a task.** Give it a title, notes, subtasks. You can paste images into the notes. The tags
-   you use most show under **Tags**; click one to add it.
-3. **Send to Claude.** Pick a model (or leave the default) and send. A background Claude
-   session starts in the project folder with the task as its prompt. Pick an OpenAI model and
-   the task runs in Codex instead; the card works the same. A task with no title or no tags gets
-   them from Haiku, which reads your notes and reuses the tags you already have. If the task looks
-   like it belongs to another of your projects, the board asks first: move it there and send, or
-   keep it here. Tick
-   **Divide in subtasks / use subagents** to let it split the work; Claude picks the skills each
-   part needs and tells that subagent to load them first. The card then lists each
-   subagent (running, finished or stopped), what a running one is doing now and the skills it used.
-   Tick **Answer only** when you just want an answer: Claude looks into it and reports back
-   on the card, but changes no files and makes no commits. It picks a quick, cheap model for you
-   (Haiku, or Luna when only Codex is set up). If you then ask that card for real work, a
-   **Create new task** button moves the work to a new card that starts from its summary.
-4. **Follow the card.** Its tag says what Claude is doing, each in its own color: working, code
-   review, writing the recap, merging, needs you, finished or gone. A card waiting on you (a question,
-   a permission request, or finished work not merged or done yet) gets an orange edge and a
-   **Waiting for you** tag, and the count at the top counts it. With **Notifications** on in the
-   **View** menu your browser tells you when Claude needs you or finishes (with a chime you can turn
-   off under **Notification sound**). Cards move on their own:
-   to the top of **In Progress** when Claude starts, to **Review** when it finishes, and to **Done** when you
-   click **Mark as done** in the open card (hidden while Claude still has work on it). Drag a card up or down to
-   reorder it inside its column (a subtask stays among its siblings); it can't be dragged to
-   another column. To move one by hand, use the Status menu in its panel. Columns drag to reorder.
-   A **cache** chip counts down the session's prompt cache. Reply before it runs out
-   ("cache cold") and the reply reads the context from cache, at a lower price. A **ctx** chip
-   (e.g. `38% ctx`) shows how full the session's context is; it turns orange, then red, near the limit.
-   If Claude stops because auto mode's safety check keeps failing, the board starts it again after a minute.
-   Once the cache is cold, a **New task from this** button says whether a fresh start is a good fit
-   (✓ good fit, or ✕ with the reasons) and what it saves. Click it and Haiku writes a short summary of the
-   work, and a new card starts from it instead of re-reading the whole old session.
-5. **Open the card.** The left side holds the status, the priority and a **Next action** box that
-   says what to do now (wait, answer, merge, review, mark done) with the button for it. Fold-out rows
-   under it show the subtasks, the subagents, the skills used, the context size, the tokens used
-   (subagents included) and the exact prompt. The right side has four tabs: **Summary** (Claude's
-   result, its commits and whether they are merged), **Changes** (files and commits; click one to see
-   its diff), **Conversation** (every message, with the reply box) and **Images**.
-   Claude's messages show headings, lists, tables, code boxes and quotes; each code review finding sits in
-   its own box with how serious it is. When Claude picks between options on its own, the card adds the
-   choice to one tree that runs left to right at the top of the **Summary** and **Conversation** tabs:
-   what was asked, each option with why, a check mark on the one picked, and each new choice hanging off
-   the one picked before it. The tree stays in view while the conversation scrolls, and a box grows to
-   show all its words when you point at it. The purple **Decisions** button above it (with the number of
-   choices) folds the tree away or opens it again, and the board remembers which.
-6. **Answer questions.** When Claude asks you to pick, each choice is a button: click one to answer, or
-   type your own. When it asks several things at once, click one answer per row, then **Send answers**.
-7. **Answer permission requests.** When Claude stops to ask before running something, the card says
-   "Claude asks permission" with the command. Click **Allow**, **Allow always** or **Deny** on the card;
-   the board answers the prompt in the session for you (macOS and Linux).
-8. **Reply on the card.** Answer questions or ask for changes. The reply resumes the same
-   session. You can also write while Claude is still working, to add information or change
-   course. That message is a **note**. The board types it straight into the running
-   session (`claude attach`, like typing in Claude Code yourself), so Claude reads it as
-   soon as it can, even while it waits on a long command. The card shows "Claude has it"
-   once it is in. If a permission prompt is on screen, or on Windows, a hook the board
-   installs on each session (`inbox.py`) hands it over after the current step instead. Claude answers in the
-   language you wrote in, even if the project is in another one: a card message plainly in another language
-   is refused, and Claude has to write it again.
-9. **Review the code.** A finished card in the Review column has a **Review code** button
-   once the task made a commit (a Claude message on the card names its sha). An **Answer only**
-   card gets it only after a reply had Claude go ahead and commit.
-   It starts a fresh Claude session that finds the task's commits, runs the `commit-review`
-   skill on them (one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it
-   from there if it is not installed in `~/.claude/skills/`), and
-   posts the findings on the card. Pick the reviewer next to the button (in Next action or
-   Changes): the task's own model, another Claude model, or an OpenAI model, which runs the review
-   in Codex. It always uses the skill's medium budget, and runs a small test on each finding. The card shows **Code review** while it runs. Reply to have the reviewer fix the
-   findings. When the other agent reviewed (Codex on Claude's work, or the reverse),
-   **Send findings to Claude** (or Codex) hands them back to the session that did the work, with
-   your reply box text as the word on which to fix.
-10. **Finish.** **Mark as done** (or the Status menu) puts the card in Done. Once its session is idle,
-   Claude writes a short recap on the card (what was decided, why, how, what came out) and the board
-   removes the session. A later reply on the card starts a fresh session from that recap.
+### 1. Pick a project
+
+The project menu at the top switches boards. **Open folder…** adds any folder.
+
+Each project keeps its board in `<project>/.task_board/`. The board stays out of git: tasks are not
+committed.
+
+A project with work waiting on you shows `*` and a count in the menu, e.g. `weather-app * (2)`: questions,
+plus finished cards you have not opened yet. A turning arrow marks projects where Claude is working.
+
+### 2. Add a task
+
+Give it a title, notes, subtasks. You can paste images into the notes. The tags you use most show under
+**Tags**; click one to add it.
+
+### 3. Send to Claude
+
+Pick a model (or leave the default) and send. A background Claude session starts in the project folder
+with the task as its prompt. Pick an OpenAI model and the task runs in Codex instead; the card works the
+same.
+
+A task with no title or no tags gets them from Haiku, which reads your notes and reuses the tags you
+already have. If the task looks like it belongs to another of your projects, the board asks first: move
+it there and send, or keep it here.
+
+Tick **Divide in subtasks / use subagents** to let Claude split the work. It picks the skills each part
+needs and tells that subagent to load them first. The card then lists each subagent (running, finished
+or stopped), what a running one is doing now and the skills it used.
+
+Tick **Answer only** when you just want an answer: Claude looks into it and reports back on the card, but
+changes no files and makes no commits. It picks a quick, cheap model for you (Haiku, or Luna when only
+Codex is set up). If you then ask that card for real work, a **Create new task** button moves the work to
+a new card that starts from its summary.
+
+### 4. Follow the card
+
+Its tag says what Claude is doing, each in its own color: working, code review, writing the recap,
+merging, needs you, finished or gone. A card waiting on you (a question, a permission request, or
+finished work not merged or done yet) gets an orange edge and a **Waiting for you** tag, and the count at
+the top counts it.
+
+With **Notifications** on in the **View** menu, your browser tells you when Claude needs you or finishes,
+with a chime you can turn off under **Notification sound**.
+
+Cards move on their own: to the top of **In Progress** when Claude starts, to **Review** when it
+finishes, and to **Done** when you click **Mark as done** in the open card (hidden while Claude still has
+work on it). Drag a card up or down to reorder it inside its column (a subtask stays among its
+siblings); it can't be dragged to another column. To move one by hand, use the Status menu in its panel.
+Columns drag to reorder.
+
+A **cache** chip counts down the session's prompt cache. Reply before it runs out ("cache cold") and the
+reply reads the context from cache, at a lower price. A **ctx** chip (e.g. `38% ctx`) shows how full the
+session's context is; it turns orange, then red, near the limit. If Claude stops because auto mode's
+safety check keeps failing, the board starts it again after a minute.
+
+Once the cache is cold, a **New task from this** button says whether a fresh start is a good fit (✓ good
+fit, or ✕ with the reasons) and what it saves. Click it and Haiku writes a short summary of the work, and
+a new card starts from it instead of re-reading the whole old session.
+
+### 5. Open the card
+
+The left side holds the status, the priority and a **Next action** box that says what to do now (wait,
+answer, merge, review, mark done) with the button for it. Fold-out rows under it show the subtasks, the
+subagents, the skills used, the context size, the tokens used (subagents included) and the exact prompt.
+
+The right side has four tabs: **Summary** (Claude's result, its commits and whether they are merged),
+**Changes** (files and commits; click one to see its diff), **Conversation** (every message, with the
+reply box) and **Images**. Claude's messages show headings, lists, tables, code boxes and quotes; each
+code review finding sits in its own box with how serious it is.
+
+When Claude picks between options on its own, the choice joins one tree that runs left to right at the
+top of the **Summary** and **Conversation** tabs: what was asked, each option with why, a check mark on
+the one picked, and each new choice hanging off the one picked before it. The tree stays in view while
+the conversation scrolls, and a box grows to show all its words when you point at it. The purple
+**Decisions** button above it (with the number of choices) folds the tree away or opens it again, and
+the board remembers which.
+
+### 6. Answer questions
+
+When Claude asks you to pick, each choice is a button: click one to answer, or type your own. When it
+asks several things at once, click one answer per row, then **Send answers**.
+
+### 7. Answer permission requests
+
+When Claude stops to ask before running something, the card says "Claude asks permission" with the
+command. Click **Allow**, **Allow always** or **Deny** on the card; the board answers the prompt in the
+session for you (macOS and Linux).
+
+### 8. Reply on the card
+
+Answer questions or ask for changes. The reply resumes the same session.
+
+You can also write while Claude is still working, to add information or change course. That message is a
+**note**. The board types it straight into the running session (`claude attach`, like typing in Claude
+Code yourself), so Claude reads it as soon as it can, even while it waits on a long command. The card
+shows "Claude has it" once it is in. If a permission prompt is on screen, or on Windows, a hook the board
+installs on each session (`inbox.py`) hands it over after the current step instead.
+
+Claude answers in the language you wrote in, even if the project is in another one: a card message
+plainly in another language is refused, and Claude has to write it again.
+
+### 9. Review the code
+
+A finished card in the Review column has a **Review code** button once the task made a commit (a Claude
+message on the card names its sha). An **Answer only** card gets it only after a reply had Claude go
+ahead and commit.
+
+It starts a fresh Claude session that finds the task's commits, runs the `commit-review` skill on them
+(one cheap pass; it ships in `skills/commit-review/`, and the reviewer reads it from there if it is not
+installed in `~/.claude/skills/`), and posts the findings on the card. It always uses the skill's medium
+budget, and runs a small test on each finding. The card shows **Code review** while it runs.
+
+Pick the reviewer next to the button (in Next action or Changes): the task's own model, another Claude
+model, or an OpenAI model, which runs the review in Codex.
+
+Reply to have the reviewer fix the findings. When the other agent reviewed (Codex on Claude's work, or
+the reverse), **Send findings to Claude** (or Codex) hands them back to the session that did the work,
+with your reply box text as the word on which to fix.
+
+### 10. Finish
+
+**Mark as done** (or the Status menu) puts the card in Done. Once its session is idle, Claude writes a
+short recap on the card (what was decided, why, how, what came out) and the board removes the session. A
+later reply on the card starts a fresh session from that recap.
 
 ### List view
 

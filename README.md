@@ -16,23 +16,44 @@ choices and results back onto the card.
 
 ## What it does
 
-- **Send a card to Claude.** A background session starts in the project folder, in its own git worktree
-  by default, so tasks running side by side never touch each other's files. Pick any Claude model, or an
-  OpenAI model to run it in Codex.
-- **Follow it on the card.** The card moves from In Progress to Review on its own. A colored tag says what
-  Claude is doing, and an orange edge marks a card waiting for you.
-- **Answer from the card.** Questions come with one button per answer. Permission requests get
-  **Allow**, **Allow always** and **Deny**. A reply resumes the same session, even while Claude works.
-- **See Claude's choices.** Each choice Claude makes on its own joins one tree at the top of the card:
-  what was asked, the options, and the one picked. Fold it away with the **Decisions** button.
-- **Split big tasks.** Tick **Divide in subtasks** and Claude hands parts to subagents; the card lists each one.
-- **Finish.** **Merge worktree**, **Run app from worktree**, and **Review code** (a second model checks the
-  commits) sit in the card's **Next action** box. **Mark as done** and Claude writes a short recap.
-- **Start fresh.** **New task from this** makes a new card from a short summary of an old one.
-- **Better skills over time.** The bundled task-observer skill notes what could improve your Claude skills.
-  The **Observations** button lists them; tick some and click **Apply**.
+### Send a card to Claude
 
-Board or list layout, light or dark, English or French, browser notifications: all in the **View** menu.
+Write a task and click **Send to Claude**. A background session starts in the project folder.
+
+By default each task gets its own git worktree, so tasks running side by side never touch each other's
+files. Pick any Claude model, or an OpenAI model to run the task in Codex.
+
+### Follow and answer on the card
+
+The card moves from In Progress to Review on its own. A colored tag says what Claude is doing, and an
+orange edge marks a card waiting for you.
+
+Questions come with one button per answer. Permission requests get **Allow**, **Allow always** and
+**Deny**. A reply resumes the same session, even while Claude is still working.
+
+### See Claude's choices
+
+Each choice Claude makes on its own joins one tree at the top of the card: what was asked, the options,
+and the one picked. The **Decisions** button folds it away.
+
+### Split, review, finish
+
+Tick **Divide in subtasks** and Claude hands parts of the work to subagents. The card lists each one.
+
+When Claude is done, the card's **Next action** box has **Merge worktree**, **Run app** and **Review code**
+(a second model checks the commits). **Mark as done**, and Claude writes a short recap.
+
+**New task from this** starts a new card from a short summary of an old one.
+
+### Better skills over time
+
+The bundled task-observer skill notes what could make your Claude skills better. The **Observations**
+button lists these notes. Tick some and click **Apply**.
+
+### Your way
+
+Board or list layout, light or dark, English or French, and browser notifications are all in the
+**View** menu.
 
 ## Install
 
@@ -67,9 +88,11 @@ To update, click the green **Update** button in the top bar when it shows.
 
 ## Privacy
 
-Everything stays on your computer: plain files in each project's `.task_board/` folder, kept out of git.
-No account, no cloud service, no tracking. The server only listens on `127.0.0.1`. Task text leaves your
-computer only through your own `claude` (or `codex`) command, when you send a task or reply.
+Everything stays on your computer, as plain files in each project's `.task_board/` folder, kept out of
+git. There is no account, no cloud service and no tracking. The server only listens on `127.0.0.1`.
+
+Task text leaves your computer only through your own `claude` (or `codex`) command, when you send a task
+or reply.
 [Exactly what is sent, and when](docs/guide.md#privacy-everything-stays-on-your-computer).
 
 ## More
