@@ -193,6 +193,9 @@ for (const o of dtOpts) {
 return {
   exists: !!dtT,
   inConv: !!(dtT && dtT.closest('#d-tab-conversation')),
+  inSum: !!(dtT && dtT.closest('#d-tab-summary')),
+  firstInPane: !!(dtT && dtT.parentElement.firstElementChild === dtT),
+  shown: !!(dtT && dtT.offsetParent),
   beforeLog: !!(dtT && dtLog && (dtT.compareDocumentPosition(dtLog) & Node.DOCUMENT_POSITION_FOLLOWING)),
   hidden: dtT ? dtT.hidden : null,
   hasBox: !!dtBox,
@@ -226,6 +229,12 @@ return {
 out.open = await ev(`openDetail('t1'); showTab('conversation'); true`);
 await sleep(500);
 out.p1 = await ev(MEASURE);
+// Summary shows the same tree at the top of its tab; Conversation gets it back.
+out.sum = await ev(`showTab('summary'); ${MEASURE}`);
+out.sumBack = await ev(`showTab('conversation'); ${MEASURE}`);
+// A card opened straight on Summary lays the tree out there (it was never measured in Conversation first).
+out.sumFresh = await ev(`closeDetail(); dtKey = null; openDetail('t1'); showTab('summary'); ${MEASURE}`);
+await ev(`showTab('conversation'); true`);
 await ev(`fetch('/__test/phase2', { method: 'PUT' }).then(r => r.ok)`);
 // pollAgents runs every 4 s and redraws the open card when /api/agents changed: wait for it, no reload.
 const loadMark = await ev(`window.__dtMark = Math.random(); window.__dtMark`);
@@ -325,6 +334,11 @@ if (shots) {
   await ev(`openDetail('t1'); showTab('conversation'); true`);
   await sleep(600);
   await shot('dtree-open');
+  await ev(`showTab('summary'); true`);
+  await sleep(400);
+  await shot('dtree-summary');
+  await ev(`showTab('conversation'); true`);
+  await sleep(300);
   await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
   await sleep(110);
   await shot('dtree-mid');
@@ -341,7 +355,7 @@ if (shots) {
   await shot('dtree-dark-shut');
   await ev(`document.querySelector('#d-dtree .dt-head').click(); delete document.documentElement.dataset.theme; true`);
   await sleep(400);
-  out.shotsTaken = ['dtree-open', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
+  out.shotsTaken = ['dtree-open', 'dtree-summary', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
 }
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -436,7 +450,7 @@ def main():
     if not res["ready"]:
         return 1
     check("panel opened on Conversation", res["open"])
-    for k in ("p1", "p2", "fold0", "foldMid", "foldEnd", "hoverShut", "foldRedraw", "foldReload", "unfoldMid", "unfoldEnd",
+    for k in ("p1", "sum", "sumBack", "sumFresh", "p2", "fold0", "foldMid", "foldEnd", "hoverShut", "foldRedraw", "foldReload", "unfoldMid", "unfoldEnd",
               "ts", "zoom", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
@@ -458,6 +472,16 @@ def main():
     check("no .dtree element anywhere", m["dtreeAnywhere"], 0)
     check("inline entry shows the plain decision line", any(flat("Decision: Tree or list? -> Tree") in flat(t) for t in m["logTexts"]))
     check("inline open entry shows its plain line", any(flat("Decision open: Which side?") in flat(t) for t in m["logTexts"]))
+
+    for tag in ("sum", "sumFresh"):
+        m = res[tag]
+        check(f"{tag}: tree sits in the Summary tab", (m["inSum"], m["inConv"]), (True, False))
+        check(f"{tag}: tree is the first thing in the Summary tab", m["firstInPane"])
+        check(f"{tag}: tree shown in Summary", (m["hidden"], m["shown"]), (False, True))
+        check(f"{tag}: same 3 query nodes in Summary", [n["q"] for n in m["nodes"]], ["Tree or list?", "Which side?", "Animate it?"])
+        layout_checks(f"summary {tag}", m, [3, 2, 2])
+    m = res["sumBack"]
+    check("back on Conversation: tree is in Conversation, before the log", (m["inConv"], m["inSum"], m["beforeLog"], m["shown"]), (True, False, True, True))
 
     m = res["p2"]
     check("poll brought decision D into the log (setup)", any(flat("Decision open: Colour edges?") in flat(t) for t in m["logTexts"]))

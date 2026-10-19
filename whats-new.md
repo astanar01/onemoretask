@@ -2,6 +2,7 @@
 
 ## 2026-10-19
 
+- The tree of Claude's choices now also shows at the top of the Summary tab, so you can see what Claude picked without opening the Conversation tab.
 - The tree of Claude's choices now has a line around it, so you can see where it starts and ends. Click the purple "Decisions" button above it, which shows how many choices there are, to fold the tree away or open it again with a smooth slide. It stays the way you left it.
 - When a choice in the tree has too many words to fit in the tree's strip, the big copy you see when you point at it now spreads over the whole screen, so you can read every word.
 
