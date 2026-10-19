@@ -124,11 +124,11 @@ def free_port():
 
 DRIVER = r"""
 import { spawn } from 'node:child_process';
-const [url, chrome, dport, profile] = process.argv.slice(2);
+const [url, chrome, dport, profile, shots] = process.argv.slice(2);
 const proc = spawn(chrome, ['--headless=new', `--remote-debugging-port=${dport}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
 const quit = (code) => { try { proc.kill(); } catch {} setTimeout(() => process.exit(code), 300); };
-setTimeout(() => { console.log(JSON.stringify({ error: 'HUNG driver' })); quit(2); }, 60000);
+setTimeout(() => { console.log(JSON.stringify({ error: 'HUNG driver' })); quit(2); }, 100000);
 let targets;
 for (let i = 0; i < 75 && !targets; i++) {
   try { targets = await (await fetch(`http://127.0.0.1:${dport}/json`)).json(); } catch { await new Promise(r => setTimeout(r, 200)); }
@@ -149,8 +149,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 await send('Page.enable'); await send('Runtime.enable'); await send('Log.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url });
-let ready = false;
-for (let i = 0; i < 100 && !ready; i++) { await sleep(100); ready = await ev(`typeof polledOnce !== 'undefined' && polledOnce && !!task('t1')`) === true; }
+const waitReady = async () => {
+  for (let i = 0; i < 100; i++) { await sleep(100); if (await ev(`typeof polledOnce !== 'undefined' && polledOnce && !!task('t1')`) === true) return true; }
+  return false;
+};
+const ready = await waitReady();
 const out = { ready };
 if (!ready) { out.errors = errors; console.log(JSON.stringify(out)); quit(0); }
 
@@ -162,6 +165,19 @@ const dtT = document.querySelector('#d-dtree'), dtLog = document.querySelector('
 const dtNodes = [...document.querySelectorAll('#d-dtree .dt-node')];
 const dtOpts = [...document.querySelectorAll('#d-dtree .dt-opt')];
 const dtR = (e) => e.getBoundingClientRect();
+// The tree scrolls inside its bordered box, not #d-dtree itself.
+const dtBox = document.querySelector('#d-dtree .dt-box'), dtHead = document.querySelector('#d-dtree .dt-head');
+const dtBs = dtBox ? getComputedStyle(dtBox) : null, dtBr = dtBox ? dtR(dtBox) : null;
+// Every box must lie inside the laid-out .dt-wrap, and the box's scroll area must be just that wrap plus its padding
+// (scrollWidth alone would grow to fit any stray box, so it cannot catch one).
+const dtWrap = document.querySelector('#d-dtree .dt-wrap');
+const dtOut = dtWrap ? [...dtNodes, ...dtOpts].filter((e) => {
+  const r = dtR(e), w = dtR(dtWrap);
+  return r.left < w.left - 0.5 || r.top < w.top - 0.5 || r.right > w.right + 0.5 || r.bottom > w.bottom + 0.5;
+}).length : -1;
+const dtPad = dtBs ? [parseFloat(dtBs.paddingLeft) + parseFloat(dtBs.paddingRight), parseFloat(dtBs.paddingTop) + parseFloat(dtBs.paddingBottom)] : [0, 0];
+const dtArea = dtBox && dtWrap ? { scrollW: dtBox.scrollWidth, scrollH: dtBox.scrollHeight,
+  wrapW: Math.ceil(dtWrap.offsetWidth + dtPad[0]), wrapH: Math.ceil(dtWrap.offsetHeight + dtPad[1]) } : null;
 const dtOwner = new Map();
 for (const o of dtOpts) {
   const up = o.closest('[data-q]');
@@ -174,8 +190,18 @@ return {
   inConv: !!(dtT && dtT.closest('#d-tab-conversation')),
   beforeLog: !!(dtT && dtLog && (dtT.compareDocumentPosition(dtLog) & Node.DOCUMENT_POSITION_FOLLOWING)),
   hidden: dtT ? dtT.hidden : null,
-  overflowX: dtT ? getComputedStyle(dtT).overflowX : null,
-  scrollW: dtT ? dtT.scrollWidth : 0, clientW: dtT ? dtT.clientWidth : 0,
+  hasBox: !!dtBox,
+  head: dtHead ? { text: dtHead.textContent.trim(), svg: !!dtHead.querySelector('svg'), above: dtR(dtHead).bottom <= dtBr.top + 0.5,
+    // chevron on the title's row: inside the button's rect, not flung out by the tree's own svg rule
+    svgInRow: (() => { const s = dtHead.querySelector('svg'), h = dtR(dtHead); if (!s) return false; const r = dtR(s);
+      return r.top >= h.top - 0.5 && r.bottom <= h.bottom + 0.5 && r.left >= h.left - 0.5 && r.right <= h.right + 0.5; })(),
+    aria: dtHead.getAttribute('aria-expanded') } : null,
+  overflowX: dtBs ? dtBs.overflowX : null,
+  scrollW: dtBox ? dtBox.scrollWidth : 0, clientW: dtBox ? dtBox.clientWidth : 0,
+  scrollL: dtBox ? dtBox.scrollLeft : 0,
+  border: dtBs ? ['Top', 'Right', 'Bottom', 'Left'].map((s) => [parseFloat(dtBs['border' + s + 'Width']), dtBs['border' + s + 'Style']]) : null,
+  borderColor: dtBs ? dtBs.borderTopColor : null, bg: dtT ? getComputedStyle(dtT).backgroundColor : null,
+  outside: dtOut, area: dtArea,
   pageScrollW: document.documentElement.scrollWidth, innerW: innerWidth,
   nodes: dtNodes.map((n) => ({ q: n.dataset.q, open: n.classList.contains('open'), left: dtR(n).left, w: dtR(n).width,
     opts: dtOpts.filter((o) => dtOwner.get(o) === n.dataset.q).map((o) => ({ left: dtR(o).left, on: o.classList.contains('on'), off: o.classList.contains('off'), text: o.textContent.trim() })) })),
@@ -199,6 +225,36 @@ for (let i = 0; i < 100; i++) {
 }
 out.p2 = await ev(MEASURE);
 out.sameLoad = await ev(`window.__dtMark`) === loadMark;
+// Fold: the head hides the box with an animated height, the choice survives a redraw and a reload, and a hover
+// zoom never outlives the fold. Timed inside the page so CDP round trips do not blur the mid-animation sample.
+const FOLD = `(() => {
+const fd = document.querySelector('#d-dtree');
+const fdFold = () => fd.querySelector('.dt-fold'), fdHead = () => fd.querySelector('.dt-head');
+return { shut: fd.classList.contains('shut'), aria: fdHead().getAttribute('aria-expanded'), title: fdHead().title,
+  h: fdFold().getBoundingClientRect().height, vis: getComputedStyle(fdFold()).visibility,
+  saved: localStorage.getItem(LS_KEY + ':dtshut'), zooms: document.querySelectorAll('.dt-zoom').length };
+})()`;
+const waitIn = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
+out.fold0 = await ev(FOLD);
+// A zoom is up when the head is clicked: the click must drop it.
+await ev(`dtZoom(document.querySelector('#d-dtree .dt-node')); document.querySelectorAll('.dt-zoom').length`).then((n) => (out.zoomBeforeShut = n));
+out.foldMid = await ev(`document.querySelector('#d-dtree .dt-head').click(); ${waitIn(100)} ${FOLD}`);
+out.foldEnd = await ev(`${waitIn(350)} ${FOLD}`);
+// Real hit testing while shut: whatever the pointer lands on where the first box was must not raise a zoom.
+out.hoverShut = await ev(`(() => {
+const hr = document.querySelector('#d-dtree .dt-node').getBoundingClientRect();
+const hit = document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2);
+if (hit) hit.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+return { hitBox: !!(hit && hit.closest('.dt-node, .dt-opt')), zooms: document.querySelectorAll('.dt-zoom').length };
+})()`);
+out.foldRedraw = await ev(`dtKey = null; renderDecisionTree(dtLog); ${FOLD}`);
+await send('Page.reload', {});
+out.reloadReady = await waitReady();
+await ev(`openDetail('t1'); showTab('conversation'); true`);
+await sleep(500);
+out.foldReload = await ev(FOLD);
+out.unfoldMid = await ev(`document.querySelector('#d-dtree .dt-head').click(); ${waitIn(100)} ${FOLD}`);
+out.unfoldEnd = await ev(`${waitIn(350)} ${FOLD}`);
 // Text size change on a quiet board: the handler alone must redo the layout. Laid out at Small first (Normal to
 // Extra large grows a box less than the 8px gap), then measured in the same task as the change event, so no poll
 // can redraw in between.
@@ -229,7 +285,11 @@ for (const box of [el, document.querySelector('#d-dtree .dt-opt')]) {
   const inside = (q) => r.top >= q.top - 0.5 && r.left >= q.left - 0.5 && r.bottom <= q.bottom + 0.5 && r.right <= q.right + 0.5;
   let shown = inside({ top: 0, left: 0, bottom: innerHeight, right: innerWidth });
   for (let p = z.parentElement; p; p = p.parentElement) if (getComputedStyle(p).overflow !== 'visible') shown = shown && inside(p.getBoundingClientRect());
-  res.push({ inWindow: shown,
+  // The tree's visible area: the scroll box's inside, cut by the window and every clipping ancestor.
+  const sb = document.querySelector('#d-dtree .dt-box'), sr = sb.getBoundingClientRect();
+  const va = { top: Math.max(0, sr.top + sb.clientTop), left: sr.left + sb.clientLeft, bottom: Math.min(innerHeight, sr.top + sb.clientTop + sb.clientHeight), right: sr.left + sb.clientLeft + sb.clientWidth };
+  for (let p = sb.parentElement; p; p = p.parentElement) if (getComputedStyle(p).overflowY !== 'visible') { const q = p.getBoundingClientRect(); va.top = Math.max(va.top, q.top); va.bottom = Math.min(va.bottom, q.bottom); }
+  res.push({ inWindow: shown, inBox: inside(va),
     allText: z.scrollHeight <= z.clientHeight + 1, onBody: z.parentElement === document.body, count: document.querySelectorAll('.dt-zoom').length });
 }
 document.querySelector('#d-log').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -245,6 +305,24 @@ out.open2 = await ev(`openDetail('t2'); showTab('conversation'); true`);
 await sleep(300);
 out.p3 = await ev(`(() => { const e = document.querySelector('#d-dtree'); return { exists: !!e, hidden: e ? e.hidden : null }; })()`);
 await sleep(200);
+// DT_SHOTS=dir: tree open, mid-fold and folded at 1280x800, Conversation tab, then back to open.
+if (shots) {
+  const fs = await import('node:fs');
+  const shot = async (name) => { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`${shots}/${name}.png`, Buffer.from(r.result.data, 'base64')); };
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+  await ev(`openDetail('t1'); showTab('conversation'); true`);
+  await sleep(600);
+  await shot('dtree-open');
+  await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
+  await sleep(110);
+  await shot('dtree-mid');
+  await sleep(500);
+  await shot('dtree-shut');
+  await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
+  await sleep(500);
+  out.shotsTaken = ['dtree-open', 'dtree-mid', 'dtree-shut'].map((n) => `${shots}/${n}.png`);
+}
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -276,8 +354,19 @@ def layout_checks(tag, m, n_opts):
             check(f"{tag} {n['q']!r}: options share one left x", max(lefts) - min(lefts) <= 1)
     check(f"{tag} each decision sits right of the one before", all(b["left"] > a["left"] for a, b in zip(nodes, nodes[1:])))
     check(f"{tag} no page-wide sideways scroll ({m['pageScrollW']} <= {m['innerW']})", m["pageScrollW"] <= m["innerW"])
-    check(f"{tag} tree scrolls sideways inside itself (overflow-x {m['overflowX']!r})", m["overflowX"] in ("auto", "scroll"))
+    check(f"{tag} tree scrolls sideways inside its box (.dt-box overflow-x {m['overflowX']!r})", m["overflowX"] in ("auto", "scroll"))
     check(f"{tag} every edge is an SVG path", all(e["tag"] == "path" for e in m["edges"]) and len(m["edges"]) > 0)
+    check(f"{tag} .dt-box has a solid border of 1px+ on all 4 sides ({m['border']})",
+          m["border"] is not None and all(w >= 1 and s == "solid" for w, s in m["border"]))
+    check(f"{tag} border colour is visible on the background ({m['borderColor']} on {m['bg']})",
+          m["borderColor"] not in (None, "rgba(0, 0, 0, 0)", "transparent", m["bg"]))
+    check(f"{tag} every box lies inside the tree's laid-out area (.dt-wrap)", m["outside"], 0)
+    a = m["area"] or {}
+    check(f"{tag} .dt-box scrolls over exactly that area plus padding ({a})",
+          a and abs(a["scrollW"] - a["wrapW"]) <= 1 and abs(a["scrollH"] - a["wrapH"]) <= 1)
+    h = m["head"] or {}
+    check(f"{tag} head shows a chevron and 'Decisions' above the box", (h.get("svg"), h.get("text"), h.get("above")), (True, "Decisions", True))
+    check(f"{tag} chevron sits on the title's row inside the head button", h.get("svgInRow"))
 
 
 def main():
@@ -293,8 +382,11 @@ def main():
     driver = os.path.join(TMP, "driver.mjs")
     open(driver, "w").write(DRIVER)
     try:
-        p = subprocess.run([NODE, driver, f"http://127.0.0.1:{port}/", CHROME, str(dport), os.path.join(TMP, "chrome")],
-                           capture_output=True, text=True, timeout=90)
+        shots = os.environ.get("DT_SHOTS", "")
+        if shots:
+            os.makedirs(shots, exist_ok=True)
+        p = subprocess.run([NODE, driver, f"http://127.0.0.1:{port}/", CHROME, str(dport), os.path.join(TMP, "chrome"),
+                            os.path.abspath(shots) if shots else ""], capture_output=True, text=True, timeout=120)
     finally:
         srv.shutdown()
     lines = p.stdout.strip().splitlines()
@@ -313,7 +405,8 @@ def main():
     if not res["ready"]:
         return 1
     check("panel opened on Conversation", res["open"])
-    for k in ("p1", "p2", "ts", "zoom", "p3"):
+    for k in ("p1", "p2", "fold0", "foldMid", "foldEnd", "hoverShut", "foldRedraw", "foldReload", "unfoldMid", "unfoldEnd",
+              "ts", "zoom", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
             return 1
@@ -343,6 +436,30 @@ def main():
     check("open node's options are neither on nor off", [o["on"] or o["off"] for o in m["nodes"][-1]["opts"]] if m["nodes"] else None, [False, False])
     check(".dt-edge.on count unchanged by an open decision", sum(e["on"] for e in m["edges"]), 3)
     layout_checks("phase 2", m, [3, 2, 2, 2])
+    check(f"tree is wider than its box at 900px (setup: {m['scrollW']} > {m['clientW']})", m["scrollW"] > m["clientW"])
+    check(f"grown tree scrolled its box to show the newest decision (scrollLeft {m['scrollL']})",
+          m["scrollL"] >= m["scrollW"] - m["clientW"] - 1)
+
+    f0, fm, fe = res["fold0"], res["foldMid"], res["foldEnd"]
+    full = f0["h"]
+    check(f"tree starts open (shut, aria-expanded, height {full:.1f})", (f0["shut"], f0["aria"], full > 20), (False, "true", True))
+    check("a hover zoom is up before the fold (setup)", res["zoomBeforeShut"], 1)
+    check("clicking the head folds: shut class + aria-expanded false + title Expand", (fm["shut"], fm["aria"], fm["title"]), (True, "false", "Expand"))
+    check("clicking the head drops the hover zoom", fm["zooms"], 0)
+    check(f"fold animates: height at ~100ms is between 0 and full ({fm['h']:.1f} of {full:.1f})", 0.5 < fm["h"] < full - 0.5)
+    check(f"after ~450ms the fold is closed (height {fe['h']:.1f}, visibility {fe['vis']})", (fe["h"] <= 0.5, fe["vis"]), (True, "hidden"))
+    check("fold choice saved", fe["saved"], "1")
+    check(f"hovering where a box was while shut raises no zoom {res['hoverShut']}", res["hoverShut"], {"hitBox": False, "zooms": 0})
+    r = res["foldRedraw"]
+    check(f"a redraw keeps the tree folded (height {r['h']:.1f})", (r["shut"], r["aria"], r["h"] <= 0.5, r["vis"]), (True, "false", True, "hidden"))
+    check("page reloaded and polled (setup)", res["reloadReady"])
+    r = res["foldReload"]
+    check(f"a reload keeps the tree folded (height {r['h']:.1f})", (r["shut"], r["aria"], r["h"] <= 0.5, r["vis"]), (True, "false", True, "hidden"))
+    um, ue = res["unfoldMid"], res["unfoldEnd"]
+    check(f"clicking again unfolds with an animation ({um['h']:.1f} of {full:.1f} at ~100ms)", (um["shut"], 0.5 < um["h"] < full - 0.5), (False, True))
+    check(f"unfolded tree is back to full height ({ue['h']:.1f} vs {full:.1f})", abs(ue["h"] - full) <= 1)
+    check("unfolded: aria-expanded true, title Collapse, visible, saved 0", (ue["aria"], ue["title"], ue["vis"], ue["saved"]),
+          ("true", "Collapse", "visible", "0"))
 
     t = res["ts"]
     check("text size picker set --ts to 1.3 (setup)", t["ts"], "1.3")
@@ -354,10 +471,13 @@ def main():
         check(f"hover zoom of {tag} is not cut by the window or the tree strip", r["inWindow"])
         check(f"hover zoom of {tag} shows all its text", r["allText"])
         check(f"hover zoom of {tag} is one copy on the page body", (r["onBody"], r["count"]), (True, 1))
+    check("hover zoom of a short option stays over the tree's box", z[1]["inBox"])
     check("hover zoom goes away when the pointer leaves the tree", z[2]["goneAfterLeaving"])
     check("hover zoom goes away when another tab opens", z[3]["goneAfterTab"])
     check("hover zoom goes away when the panel closes", z[4]["goneAfterClose"])
     check("#d-dtree hidden for a log without decisions", res["p3"]["hidden"], True)
+    for s in res.get("shotsTaken", []):
+        check(f"screenshot saved {s}", os.path.getsize(s) > 1000 if os.path.exists(s) else False)
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0
