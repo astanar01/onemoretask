@@ -2250,12 +2250,14 @@ const place = (el, box, before = null) => { if (el.parentNode !== box) box.inser
 let ovFor = null, mainTab = "summary";
 function showTab(tab) {
   if (tab) mainTab = tab;
-  if (tab && tab !== "conversation") dtZoom(null);
+  if (tab) dtZoom(null);
   document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
   $("#d-reply-wrap").classList.toggle("on", !!(t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation")));   // undefined would flip it
-  if (tab === "conversation") { renderDecisionTree(dtLog); logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
+  // One decision tree, moved to the top of whichever of Summary and Conversation is open.
+  if (mainTab === "summary" || mainTab === "conversation") { const pane = $("#d-tab-" + mainTab); place($("#d-dtree"), pane, pane.firstChild); renderDecisionTree(dtLog); }
+  if (tab === "conversation") { logFollow = true; const sc = $("#d-body"); sc.scrollTop = sc.scrollHeight; }
 }
 document.querySelectorAll("#d-tabs .tab").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 $("#d-tabs").addEventListener("keydown", (e) => {
