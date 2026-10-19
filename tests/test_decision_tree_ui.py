@@ -178,6 +178,11 @@ const dtOut = dtWrap ? [...dtNodes, ...dtOpts].filter((e) => {
 const dtPad = dtBs ? [parseFloat(dtBs.paddingLeft) + parseFloat(dtBs.paddingRight), parseFloat(dtBs.paddingTop) + parseFloat(dtBs.paddingBottom)] : [0, 0];
 const dtArea = dtBox && dtWrap ? { scrollW: dtBox.scrollWidth, scrollH: dtBox.scrollHeight,
   wrapW: Math.ceil(dtWrap.offsetWidth + dtPad[0]), wrapH: Math.ceil(dtWrap.offsetHeight + dtPad[1]) } : null;
+// Colours as 0-255 rgba arrays: color-mix() computes to color(srgb …), plain colours to rgb()/rgba().
+const dtRgb = (c) => { const n = (c.match(/[\\d.]+/g) || []).map(Number);
+  return c.startsWith('color(') ? [n[0] * 255, n[1] * 255, n[2] * 255, n.length > 3 ? n[3] : 1].map((v, i) => i < 3 ? Math.round(v) : v) : [n[0], n[1], n[2], n.length > 3 ? n[3] : 1]; };
+const dtVar = (v) => { const p = document.createElement('span'); p.style.color = 'var(' + v + ')'; document.body.appendChild(p); const c = getComputedStyle(p).color; p.remove(); return dtRgb(c); };
+const dtHs = dtHead ? getComputedStyle(dtHead) : null;
 const dtOwner = new Map();
 for (const o of dtOpts) {
   const up = o.closest('[data-q]');
@@ -195,7 +200,12 @@ return {
     // chevron on the title's row: inside the button's rect, not flung out by the tree's own svg rule
     svgInRow: (() => { const s = dtHead.querySelector('svg'), h = dtR(dtHead); if (!s) return false; const r = dtR(s);
       return r.top >= h.top - 0.5 && r.bottom <= h.bottom + 0.5 && r.left >= h.left - 0.5 && r.right <= h.right + 0.5; })(),
-    aria: dtHead.getAttribute('aria-expanded') } : null,
+    aria: dtHead.getAttribute('aria-expanded'),
+    label: [...dtHead.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join('').trim(),
+    count: dtHead.querySelector('.dt-count')?.textContent.trim() ?? null,
+    bg: dtRgb(dtHs.backgroundColor), color: dtRgb(dtHs.color), borderColor: dtRgb(dtHs.borderTopColor),
+    borderW: parseFloat(dtHs.borderTopWidth), fontPx: parseFloat(dtHs.fontSize), weight: +dtHs.fontWeight,
+    accent: dtVar('--accent'), muted: dtVar('--muted'), panelBg: dtRgb(getComputedStyle(dtT).backgroundColor) } : null,
   overflowX: dtBs ? dtBs.overflowX : null,
   scrollW: dtBox ? dtBox.scrollWidth : 0, clientW: dtBox ? dtBox.clientWidth : 0,
   scrollL: dtBox ? dtBox.scrollLeft : 0,
@@ -232,7 +242,8 @@ const fd = document.querySelector('#d-dtree');
 const fdFold = () => fd.querySelector('.dt-fold'), fdHead = () => fd.querySelector('.dt-head');
 return { shut: fd.classList.contains('shut'), aria: fdHead().getAttribute('aria-expanded'), title: fdHead().title,
   h: fdFold().getBoundingClientRect().height, vis: getComputedStyle(fdFold()).visibility,
-  saved: localStorage.getItem(LS_KEY + ':dtshut'), zooms: document.querySelectorAll('.dt-zoom').length };
+  saved: localStorage.getItem(LS_KEY + ':dtshut'), zooms: document.querySelectorAll('.dt-zoom').length,
+  countBg: getComputedStyle(fd.querySelector('.dt-count')).backgroundColor };
 })()`;
 const waitIn = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 out.fold0 = await ev(FOLD);
@@ -321,7 +332,16 @@ if (shots) {
   await shot('dtree-shut');
   await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
   await sleep(500);
-  out.shotsTaken = ['dtree-open', 'dtree-mid', 'dtree-shut'].map((n) => `${shots}/${n}.png`);
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+  await ev(`document.documentElement.dataset.theme = 'dark'; true`);
+  await sleep(400);
+  await shot('dtree-dark-open');
+  await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
+  await sleep(500);
+  await shot('dtree-dark-shut');
+  await ev(`document.querySelector('#d-dtree .dt-head').click(); delete document.documentElement.dataset.theme; true`);
+  await sleep(400);
+  out.shotsTaken = ['dtree-open', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
 }
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -344,6 +364,7 @@ def flat(s):
 
 
 def layout_checks(tag, m, n_opts):
+    n_count = len(n_opts)
     nodes = m["nodes"]
     check(f"{tag} options per node", [len(n["opts"]) for n in nodes], n_opts)
     for n in nodes:
@@ -365,7 +386,17 @@ def layout_checks(tag, m, n_opts):
     check(f"{tag} .dt-box scrolls over exactly that area plus padding ({a})",
           a and abs(a["scrollW"] - a["wrapW"]) <= 1 and abs(a["scrollH"] - a["wrapH"]) <= 1)
     h = m["head"] or {}
-    check(f"{tag} head shows a chevron and 'Decisions' above the box", (h.get("svg"), h.get("text"), h.get("above")), (True, "Decisions", True))
+    check(f"{tag} head shows a chevron and 'Decisions' above the box", (h.get("svg"), h.get("label"), h.get("above")), (True, "Decisions", True))
+    check(f"{tag} head shows the decision count {n_count}", h.get("count"), str(n_count))
+    same = lambda a, b: a is not None and b is not None and all(abs(x - y) <= 2 for x, y in zip(a[:3], b[:3]))
+    check(f"{tag} head has a filled background ({h.get('bg')} on panel {h.get('panelBg')})",
+          bool(h.get("bg")) and h["bg"][3] > 0.5 and not same(h["bg"], h.get("panelBg")))
+    check(f"{tag} head text is the accent colour, not muted ({h.get('color')} accent {h.get('accent')} muted {h.get('muted')})",
+          same(h.get("color"), h.get("accent")) and not same(h.get("color"), h.get("muted")))
+    check(f"{tag} head has a visible accent border ({h.get('borderW')}px {h.get('borderColor')})",
+          (h.get("borderW") or 0) >= 1 and same(h.get("borderColor"), h.get("accent")) and h["borderColor"][3] >= 0.3)
+    check(f"{tag} head text is bigger and bolder than before ({h.get('fontPx')}px, weight {h.get('weight')})",
+          (h.get("fontPx") or 0) >= 12 and (h.get("weight") or 0) >= 600)
     check(f"{tag} chevron sits on the title's row inside the head button", h.get("svgInRow"))
 
 
@@ -449,6 +480,8 @@ def main():
     check(f"fold animates: height at ~100ms is between 0 and full ({fm['h']:.1f} of {full:.1f})", 0.5 < fm["h"] < full - 0.5)
     check(f"after ~450ms the fold is closed (height {fe['h']:.1f}, visibility {fe['vis']})", (fe["h"] <= 0.5, fe["vis"]), (True, "hidden"))
     check("fold choice saved", fe["saved"], "1")
+    check(f"folded: the count badge turns solid ({f0['countBg']} -> {fe['countBg']})",
+          fe["countBg"] != f0["countBg"] and not fe["countBg"].startswith("color(") and fe["countBg"].startswith("rgb("))
     check(f"hovering where a box was while shut raises no zoom {res['hoverShut']}", res["hoverShut"], {"hitBox": False, "zooms": 0})
     r = res["foldRedraw"]
     check(f"a redraw keeps the tree folded (height {r['h']:.1f})", (r["shut"], r["aria"], r["h"] <= 0.5, r["vis"]), (True, "false", True, "hidden"))

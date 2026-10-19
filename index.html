@@ -381,16 +381,22 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 /* sticks under the tabs while the messages scroll; the -16px pair covers .body's top padding so text never shows above it */
 #d-dtree { position: sticky; top: -16px; z-index: 1; background: var(--bg); max-width: 100%; margin: -16px 0 22px; padding: 16px 0 12px; }
 #d-dtree[hidden] { display: none; }
-#d-dtree .dt-head { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 2px 4px 2px 0; margin-bottom: 8px; font: inherit; font-size: calc(11px * var(--ts)); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
-#d-dtree .dt-head:hover { color: var(--text); }
+#d-dtree .dt-head { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 4px 6px 4px 9px; margin-bottom: 8px; font: inherit; font-size: calc(12px * var(--ts)); font-weight: 600; color: var(--accent); cursor: pointer; transition: background-color .15s ease, border-color .15s ease, transform .1s ease; }
+#d-dtree .dt-head:hover { background: color-mix(in srgb, var(--accent) 22%, var(--accent-soft)); border-color: var(--accent); }
+#d-dtree .dt-head:active { transform: scale(.97); }
+#d-dtree .dt-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #d-dtree .dt-head svg { transition: transform .3s ease; }
 #d-dtree.shut .dt-head svg { transform: rotate(-90deg); }
+#d-dtree .dt-count { min-width: 1.6em; padding: 1px 6px; border-radius: 999px; box-sizing: border-box; text-align: center; font-size: calc(11px * var(--ts)); font-variant-numeric: tabular-nums; line-height: 1.4; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); transition: background-color .3s ease, color .3s ease; }
+/* folded: the solid badge still says something is inside */
+#d-dtree.shut .dt-head { border-color: var(--accent); }
+#d-dtree.shut .dt-count { background: var(--accent); color: var(--card); }
 /* fold: the 0fr/1fr row animates the box's height both ways; visibility keeps a folded tree out of tab order.
    minmax(0, …): a bare 0fr row stops at the box's padding + border (22px), leaving a gap under the title */
 #d-dtree .dt-fold { display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden; transition: grid-template-rows .3s ease, opacity .3s ease, visibility .3s; }
 #d-dtree.shut .dt-fold { grid-template-rows: minmax(0, 0fr); opacity: 0; visibility: hidden; }
 #d-dtree .dt-box { min-height: 0; overflow: auto; max-height: 30vh; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-@media (prefers-reduced-motion: reduce) { #d-dtree .dt-fold, #d-dtree .dt-head svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #d-dtree .dt-fold, #d-dtree .dt-head, #d-dtree .dt-head svg, #d-dtree .dt-count { transition: none; } #d-dtree .dt-head:active { transform: none; } }
 #d-dtree .dt-wrap { position: relative; }
 #d-dtree .dt-wrap > svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .dt-node, .dt-opt { position: absolute; width: max-content; max-width: 150px; box-sizing: border-box; font-size: calc(11px * var(--ts)); line-height: 1.3; overflow-wrap: anywhere; }
@@ -3636,7 +3642,7 @@ function renderDecisionTree(log) {
   const keepLeft = same ? box.querySelector(".dt-box")?.scrollLeft || 0 : 0;
   dtZoom(null);
   box.classList.toggle("shut", dtShut);
-  box.innerHTML = `<button type="button" class="dt-head" aria-expanded="${!dtShut}" title="${window.t(dtShut ? "Expand" : "Collapse")}">${icon("chev", 14)}${window.t("Decisions")}</button><div class="dt-fold"><div class="dt-box"><div class="dt-wrap">${html}</div></div></div>`;
+  box.innerHTML = `<button type="button" class="dt-head" aria-expanded="${!dtShut}" title="${window.t(dtShut ? "Expand" : "Collapse")}">${icon("chev", 14)}${window.t("Decisions")}<span class="dt-count">${ds.length}</span></button><div class="dt-fold"><div class="dt-box"><div class="dt-wrap">${html}</div></div></div>`;
   const scroller = box.querySelector(".dt-box"), wrap = box.querySelector(".dt-wrap"), els = [...wrap.children];
   // Hidden tab: nothing to measure yet, so leave the key unset and lay out when the tab opens.
   if (!box.offsetParent) { dtKey = null; return; }
