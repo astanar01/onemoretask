@@ -234,6 +234,10 @@ for (const box of [el, document.querySelector('#d-dtree .dt-opt')]) {
 }
 document.querySelector('#d-log').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
 res.push({ goneAfterLeaving: !document.querySelector('.dt-zoom') });
+dtZoom(el); showTab('summary');
+res.push({ goneAfterTab: !document.querySelector('.dt-zoom') });
+showTab('conversation'); dtZoom(document.querySelector('#d-dtree .dt-node')); closeDetail();
+res.push({ goneAfterClose: !document.querySelector('.dt-zoom') });
 return res;
 })()`);
 await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -351,6 +355,8 @@ def main():
         check(f"hover zoom of {tag} shows all its text", r["allText"])
         check(f"hover zoom of {tag} is one copy on the page body", (r["onBody"], r["count"]), (True, 1))
     check("hover zoom goes away when the pointer leaves the tree", z[2]["goneAfterLeaving"])
+    check("hover zoom goes away when another tab opens", z[3]["goneAfterTab"])
+    check("hover zoom goes away when the panel closes", z[4]["goneAfterClose"])
     check("#d-dtree hidden for a log without decisions", res["p3"]["hidden"], True)
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")

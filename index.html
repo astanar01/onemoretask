@@ -1613,7 +1613,7 @@ function openDetail(id) {
   const t = task(id);
   if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { dtZoom(null); showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // One Claude call names an untitled task and tags an untagged one from its notes, reusing the board's tags (the
 // server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
@@ -2234,6 +2234,7 @@ const place = (el, box, before = null) => { if (el.parentNode !== box) box.inser
 let ovFor = null, mainTab = "summary";
 function showTab(tab) {
   if (tab) mainTab = tab;
+  if (tab && tab !== "conversation") dtZoom(null);
   document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
