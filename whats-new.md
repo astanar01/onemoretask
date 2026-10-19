@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-19
+
+- When a choice in the tree has too many words to fit in the tree's strip, the big copy you see when you point at it now spreads over the whole screen, so you can read every word.
+
 ## 2026-10-18
 
 - Claude's choices on a task now show as one tree that goes from left to right at the top of the Conversation tab. Each new choice grows from the one picked before it, and the tree grows on its own as Claude decides.

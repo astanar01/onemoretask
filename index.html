@@ -385,11 +385,11 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 #d-dtree .dt-wrap { position: relative; }
 #d-dtree svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .dt-node, .dt-opt { position: absolute; width: max-content; max-width: 150px; box-sizing: border-box; font-size: calc(11px * var(--ts)); line-height: 1.3; overflow-wrap: anywhere; }
-/* hover: a zoomed copy of the box laid over the tree's visible area (dtZoom); pointer-events none keeps the hover on the box below */
-#d-dtree .dt-zoom { z-index: 3; max-width: none; pointer-events: none; transform-origin: 0 0; opacity: 1; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; box-shadow: 0 4px 14px rgba(0,0,0,.18); animation: dt-zoom .15s ease; }
-#d-dtree .dt-zoom.open { border: 1px dashed var(--wait); }
+/* hover: a zoomed copy of the box laid over the tree's visible area, or the window when it can't fit there (dtZoom); pointer-events none keeps the hover on the box below */
+.dt-node.dt-zoom, .dt-opt.dt-zoom { position: fixed; z-index: 50; max-width: none; pointer-events: none; transform-origin: 0 0; opacity: 1; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; box-shadow: 0 4px 14px rgba(0,0,0,.18); animation: dt-zoom .15s ease; }
+.dt-zoom.open { border: 1px dashed var(--wait); }
 @keyframes dt-zoom { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { #d-dtree .dt-zoom { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dt-zoom { animation: none; } }
 .dt-node { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .dt-node.open { border: 1px dashed var(--wait); }
 .dt-q { font-weight: 600; }
@@ -1613,7 +1613,7 @@ function openDetail(id) {
   const t = task(id);
   if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { dtZoom(null); showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // One Claude call names an untitled task and tags an untagged one from its notes, reusing the board's tags (the
 // server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
@@ -2234,6 +2234,7 @@ const place = (el, box, before = null) => { if (el.parentNode !== box) box.inser
 let ovFor = null, mainTab = "summary";
 function showTab(tab) {
   if (tab) mainTab = tab;
+  if (tab && tab !== "conversation") dtZoom(null);
   document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
@@ -3622,7 +3623,7 @@ function renderDecisionTree(log) {
   // Same tree grown by a new decision: show the newest; another tree: start at the left; else keep the user's scroll.
   const first = String(ds[0].query).trim(), same = dtSeen.split("\n")[0] === first, grew = same && ds.length > +dtSeen.split("\n")[1];
   const keepLeft = same ? box.scrollLeft : 0;
-  dtZoomFor = null;
+  dtZoom(null);
   box.innerHTML =`<div class="dt-head">${window.t("Decisions")}</div><div class="dt-wrap">${html}</div>`;
   const wrap = box.querySelector(".dt-wrap"), els = [...wrap.children];
   // Hidden tab: nothing to measure yet, so leave the key unset and lay out when the tab opens.
@@ -3653,31 +3654,32 @@ function renderDecisionTree(log) {
   box.scrollLeft = grew ? box.scrollWidth : keepLeft;
 }
 // Hovering a box shows a zoomed copy over the tree's visible area, widened until all its text fits that height.
+// Text too long for that area even unzoomed at its full width gets the whole window instead.
 let dtZoomFor = null;
 function dtZoom(el) {
-  const box = $("#d-dtree");
-  box.querySelector(".dt-zoom")?.remove();
+  document.querySelector(".dt-zoom")?.remove();
   dtZoomFor = el;
   if (!el) return;
   // The visible part of the tree: its own scroll box, cut by every clipping ancestor (the panel scroller) and the window.
-  const r = box.getBoundingClientRect(), M = 4;
+  const box = $("#d-dtree"), r = box.getBoundingClientRect(), M = 4;
   let top = Math.max(r.top + box.clientTop, 0), bottom = Math.min(r.top + box.clientTop + box.clientHeight, innerHeight);
-  const left = r.left + box.clientLeft, right = left + box.clientWidth;
+  let left = r.left + box.clientLeft, right = left + box.clientWidth;
   for (let p = box.parentElement; p; p = p.parentElement) {
     if (getComputedStyle(p).overflowY === "visible") continue;
     const q = p.getBoundingClientRect();
     top = Math.max(top, q.top); bottom = Math.min(bottom, q.bottom);
   }
-  const availW = right - left - 2 * M, availH = bottom - top - 2 * M;
   const z = document.createElement("div");
   z.className = el.className + " dt-zoom";
   z.innerHTML = el.innerHTML;
-  z.style.left = box.scrollLeft + "px"; z.style.top = box.scrollTop + "px";
-  box.appendChild(z);
-  // Biggest zoom (down to none) at which some width fits the height, then the narrowest such width.
+  z.style.left = "0"; z.style.top = "0";
+  document.body.appendChild(z);
+  let availW = right - left - 2 * M, availH = bottom - top - 2 * M;
   const fits = (w, s) => { z.style.width = w + "px"; return z.offsetHeight * s <= availH; };
+  if (!fits(availW, 1)) { left = 0; right = innerWidth; top = 0; bottom = innerHeight; availW = right - 2 * M; availH = bottom - 2 * M; }
+  // Biggest zoom at which some width fits the height (under 1 only when even the whole window is too small), then the narrowest such width.
   let s = 1.45;
-  while (s > 1 && !fits(availW / s, s)) s = Math.max(1, s - 0.05);
+  while (s > 0.5 && !fits(availW / s, s)) s = Math.max(0.5, s - 0.05);
   // Start at the box's own text width (the copy has its own padding), so short text never wraps tighter than in the tree.
   const edge = (n) => { const c = getComputedStyle(n); return parseFloat(c.paddingLeft) + parseFloat(c.paddingRight) + parseFloat(c.borderLeftWidth) + parseFloat(c.borderRightWidth); };
   let lo = Math.min(el.offsetWidth - edge(el) + edge(z) + 1, availW / s), hi = availW / s;
@@ -3688,14 +3690,15 @@ function dtZoom(el) {
   const vx = Math.max(left + M, Math.min(e.left, right - M - w));
   const vy = Math.max(top + M, Math.min(e.top + e.height / 2 - h / 2, bottom - M - h));
   z.style.transform = `scale(${s})`;
-  z.style.left = vx - left + box.scrollLeft + "px";
-  z.style.top = vy - r.top - box.clientTop + box.scrollTop + "px";
+  z.style.left = vx + "px"; z.style.top = vy + "px";
 }
 $("#d-dtree").addEventListener("mouseover", (e) => {
   const el = e.target.closest(".dt-node, .dt-opt");
   if (el !== dtZoomFor) dtZoom(el);
 });
 $("#d-dtree").addEventListener("mouseleave", () => dtZoom(null));
+// The copy lives on <body>, so it outlives a tree that closed or hid under the pointer: drop it on the next move elsewhere.
+document.addEventListener("mouseover", (e) => { if (dtZoomFor && !e.target.closest("#d-dtree")) dtZoom(null); });
 document.addEventListener("scroll", (e) => { if (dtZoomFor && !e.target.closest?.("#d-log")) dtZoom(dtZoomFor.isConnected ? dtZoomFor : null); }, true);
 function fmt(iso) { return iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 

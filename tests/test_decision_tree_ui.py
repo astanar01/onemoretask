@@ -215,6 +215,32 @@ for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
 }
 return { ts: getComputedStyle(document.documentElement).getPropertyValue('--ts').trim(), n: rs.length, relaid: tsPos() !== before, overlaps };
 })()`);
+// Hover zoom on a box whose text is too long for the tree's short strip: the copy must leave the strip and show
+// every line inside the window. The long text is set on the box in the page only, then the tree is drawn again.
+await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 600, deviceScaleFactor: 1, mobile: false });
+await sleep(200);
+out.zoom = await ev(`(() => {
+const el = [...document.querySelectorAll('#d-dtree .dt-node')].pop();
+el.querySelector('.dt-who').textContent = 'quiet, keeps the eye on the boxes and not on the lines between them. '.repeat(14);
+const res = [];
+for (const box of [el, document.querySelector('#d-dtree .dt-opt')]) {
+  dtZoom(box);
+  const z = document.querySelector('.dt-zoom'), r = z.getBoundingClientRect();
+  const inside = (q) => r.top >= q.top - 0.5 && r.left >= q.left - 0.5 && r.bottom <= q.bottom + 0.5 && r.right <= q.right + 0.5;
+  let shown = inside({ top: 0, left: 0, bottom: innerHeight, right: innerWidth });
+  for (let p = z.parentElement; p; p = p.parentElement) if (getComputedStyle(p).overflow !== 'visible') shown = shown && inside(p.getBoundingClientRect());
+  res.push({ inWindow: shown,
+    allText: z.scrollHeight <= z.clientHeight + 1, onBody: z.parentElement === document.body, count: document.querySelectorAll('.dt-zoom').length });
+}
+document.querySelector('#d-log').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+res.push({ goneAfterLeaving: !document.querySelector('.dt-zoom') });
+dtZoom(el); showTab('summary');
+res.push({ goneAfterTab: !document.querySelector('.dt-zoom') });
+showTab('conversation'); dtZoom(document.querySelector('#d-dtree .dt-node')); closeDetail();
+res.push({ goneAfterClose: !document.querySelector('.dt-zoom') });
+return res;
+})()`);
+await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
 out.open2 = await ev(`openDetail('t2'); showTab('conversation'); true`);
 await sleep(300);
 out.p3 = await ev(`(() => { const e = document.querySelector('#d-dtree'); return { exists: !!e, hidden: e ? e.hidden : null }; })()`);
@@ -287,7 +313,7 @@ def main():
     if not res["ready"]:
         return 1
     check("panel opened on Conversation", res["open"])
-    for k in ("p1", "p2", "ts", "p3"):
+    for k in ("p1", "p2", "ts", "zoom", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
             return 1
@@ -323,6 +349,14 @@ def main():
     check("text size change redid the tree layout without a poll", t["relaid"])
     check(f"no two tree boxes overlap after a text size change ({t['n']} boxes)", t["overlaps"], [])
 
+    z = res["zoom"]
+    for tag, r in zip(("long node", "option"), z[:2]):
+        check(f"hover zoom of {tag} is not cut by the window or the tree strip", r["inWindow"])
+        check(f"hover zoom of {tag} shows all its text", r["allText"])
+        check(f"hover zoom of {tag} is one copy on the page body", (r["onBody"], r["count"]), (True, 1))
+    check("hover zoom goes away when the pointer leaves the tree", z[2]["goneAfterLeaving"])
+    check("hover zoom goes away when another tab opens", z[3]["goneAfterTab"])
+    check("hover zoom goes away when the panel closes", z[4]["goneAfterClose"])
     check("#d-dtree hidden for a log without decisions", res["p3"]["hidden"], True)
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
