@@ -765,6 +765,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div>
 <div class="pop" id="proj-menu" role="dialog" aria-labelledby="proj-menu-h" hidden>
   <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
+  <label class="pop-row two" id="simple-row" hidden><input type="checkbox" id="simple-words"><span>Simple words<small>Claude writes its messages on this project's cards in easy words, with no tech terms. New messages only.</small></span></label>
   <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
 </div>
 <div id="banner" data-i18n>Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
@@ -922,7 +923,7 @@ translateDom(document.body);   // i18n.js: static markup in the chosen language;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => new Date().toISOString();
 
-let state = null;          // { version, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,worktree?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
+let state = null;          // { version, simpleWords?, columns:[{id,name,done}], tasks:[{id,title,notes,priority,tags,column,parent,order,created,updated,delegate?,subagentModel?,answerOnly?,worktree?,agent?:{id,started,model?,worktree?:{path,dir,branch,base}}}] }
 let rev = null;            // X-Board-Rev of the tasks.json we last loaded or saved; null without a server (or an old one)
 let boardGen = 0;          // bumped when reloadBoard swaps `state`: a task object held across an await may be detached now
 let useServer = true;
@@ -2538,7 +2539,9 @@ function renderSummary(t) {
   const lastReview = reviews.length ? reviews[reviews.length - 1][1] : -1;
   // The task's own latest report: skip a reviewer's findings (they come after a "review" entry).
   const ownLog = lastReview < 0 ? log : log.slice(0, lastReview);
-  const rep = [...ownLog].reverse().find((e) => e.from !== "you" && REPORT.includes(e.status));
+  // Simple words on: the recap stays detailed for the next session, so Claude's own last report comes first.
+  const rep = (state && state.simpleWords && [...ownLog].reverse().find((e) => e.from !== "you" && e.status !== "recap" && REPORT.includes(e.status)))
+    || [...ownLog].reverse().find((e) => e.from !== "you" && REPORT.includes(e.status));
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
@@ -4124,6 +4127,9 @@ function openPop(b, kbd) {
   if (b.id === "proj-btn") {
     const p = typeof project === "function" ? project() : null;
     $("#proj-menu-name").textContent = p ? p.name || p.path || "" : "";
+    // Board-wide (tasks.json "simpleWords"): the server reads it into every prompt and card reply.
+    $("#simple-row").hidden = !useServer || !state;
+    $("#simple-words").checked = !!(state && state.simpleWords);
   }
   if (b.id === "project") buildProjectMenu();
   if (b.id === "unpushed") buildUnpushedPop();
@@ -4150,6 +4156,11 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("resize", () => closePop());
 $("header").addEventListener("scroll", () => closePop());
 $("#cl-btn").addEventListener("click", () => closePop());
+$("#simple-words").addEventListener("change", (e) => {
+  if (!state) return;
+  state.simpleWords = e.target.checked;   // false, not deleted: the server then tells old sessions it is off
+  save();
+});
 // Tabbing out of an open menu closes it.
 document.querySelectorAll(".pop").forEach((m) => m.addEventListener("focusout", (e) => {
   if (popBtn && e.relatedTarget && !m.contains(e.relatedTarget) && e.relatedTarget !== popBtn) closePop();

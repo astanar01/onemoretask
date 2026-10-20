@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-20
+
+- New "Simple words" switch under the gear button. Turn it on and Claude writes its messages on the cards in easy words, with no hard grown-up terms. The Summary of a finished card uses easy words too.
+
 ## 2026-10-19
 
 - The tree of Claude's choices now also shows at the top of the Summary tab, so you can see what Claude picked without opening the Conversation tab.

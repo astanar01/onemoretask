@@ -19,6 +19,8 @@ const I18N = {
     "View options": "Options d’affichage",
     "View": "Affichage",
     "Project settings": "Paramètres du projet",
+    "Simple words": "Mots simples",
+    "Claude writes its messages on this project's cards in easy words, with no tech terms. New messages only.": "Claude écrit ses messages sur les cartes de ce projet avec des mots faciles, sans termes techniques. Seulement les nouveaux messages.",
     "Text size": "Taille du texte",
     "Small": "Petite",
     "Normal": "Normale",
