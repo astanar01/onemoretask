@@ -455,7 +455,8 @@ def build_prompt(p, state, t, wt=None, model=""):
             "check out another branch in the project folder: other tasks share it; for another branch, use a worktree. "
             "Commit your work; never push unless the task or the user tells you to.")
     lines += [f"Follow CLAUDE.md if the project has one. {work} Do not edit "
-              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "", *card_lines(report, answer_only)]
+              f"{os.path.join(board_rel, 'tasks.json')} (the board owns it).", "",
+              *card_lines(report, answer_only, simple_words(state))]
     return "\n".join(lines)
 
 
@@ -493,7 +494,19 @@ def worktree_lines(wt, main):
             f"- In the done report, name the branch `{wt['branch']}` along with the commit shas."]
 
 
-def card_lines(report, answer_only=False):
+SIMPLE_RULE = ("Simple words (the user turned this on for this project's board): write every card message so a "
+               "5-year-old could follow it. Short sentences and everyday words. No technical terms: no file, function "
+               "or command names, no git words, no code or error text, unless the user asks for them. Say what the "
+               "user can now see or do, or what went wrong, not how it works inside. Keep it short. The commit shas "
+               "and branch name a done report needs go together on one last line.")
+
+
+def simple_words(state):
+    """The board's "Simple words" project setting (tasks.json "simpleWords")."""
+    return isinstance(state, dict) and state.get("simpleWords") is True
+
+
+def card_lines(report, answer_only=False, simple=False):
     done = "the full answer" if answer_only else "what you did, commit shas, what is left"
     return ["Keep the card current with the report script (it shows on the board and alerts the user):",
               "- Format every message for reading on the card: short paragraphs and `- ` bullet lists separated by "
@@ -522,6 +535,7 @@ def card_lines(report, answer_only=False):
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
               "that full answer.",
               "- " + reports.LANGUAGE_RULE,
+              *(["- " + SIMPLE_RULE] if simple else []),
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
               f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.',
@@ -1234,7 +1248,7 @@ def review(p, task_id, model=None):
         "End by asking which findings to fix.",
         "If a later reply asks for fixes: make them, verify them, commit (never push unless the user tells you to), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
-        "(the board owns it).", "", *card_lines(rep)])
+        "(the board owns it).", "", *card_lines(rep, simple=simple_words(state))])
     aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use)
     reports.append(p.board, task_id, "review", f"Code review started ({model or 'task model'}, session {aid})",
                    "you", session=aid)
@@ -2535,12 +2549,19 @@ def reply(p, task_id, text, images=(), extra=""):
 
 def board_tail(p, task_id):
     """What follows a card message that resumes a session: a renewed worktree, the delegate brief, the card duty."""
-    t = next((x for x in load_tasks(p)["tasks"] if x["id"] == task_id), None)
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     extra = ""
     wt = t and renew_worktree(p, t)
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     extra += delegate_reminder(t)
+    # Every reply restates the setting: it may have been switched since the session's first brief.
+    # False (not missing) means the user switched it off, so a session briefed with it on stops.
+    if simple_words(state):
+        extra += "\n\n" + SIMPLE_RULE
+    elif state.get("simpleWords") is False:
+        extra += "\n\nSimple words is off for this board now: write card messages with the usual detail again."
     # The user reads only the card, so the answer has to go through report.py, not the agent's chat.
     extra += f"\n\n(Reply from the task board. Post your answer on the card: `{report_cmd(p, task_id)} done|progress|question \"...\"`. "
     return extra + reports.LANGUAGE_RULE + ")"

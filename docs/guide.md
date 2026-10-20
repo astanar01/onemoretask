@@ -312,6 +312,7 @@ your skills and asks you on the card which changes to make.
 - **View**: layout (Board or List), theme (System, Light or Dark), text size, whether subtasks show,
   **Notifications** and **Notification sound**, and **Language** (English or Français: the whole page changes).
 - The gear button: project settings and the **Changelog**, a plain-words list of what changed in the board.
+- **Simple words** (under the gear button): Claude writes its card messages for this project in easy words, with no tech terms. It is saved in the project's `tasks.json`, and only messages written after you switch it change.
 - The branch menu (e.g. `main`) shows which copy of the board app you are running and the branch it is really
   on. It turns orange on a task's worktree; pick another copy to jump to it.
 - **↑ N unpushed** (orange) shows when the project has commits not pushed to its remote yet. Click it for the
