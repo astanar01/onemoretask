@@ -60,6 +60,17 @@ check("card lines skip it by default", not any(RULE in x for x in server.card_li
 with open(os.path.join(ROOT, "server.py"), encoding="utf-8") as f:
     src = f.read()
 check("review prompt reads the setting", "*card_lines(rep, simple=simple_words(state))" in src)
+# A review's finding format (Where / Proof with file and line) wins over "no file names".
+check("rule keeps the review's Where and Proof lines", "Where and Proof lines stay" in RULE)
+
+# The recap stays detailed for a new session, but opens with a plain-words section when the switch is on.
+asked = []
+server.ask_claude = lambda model, system, text, *a, **k: asked.append(system) or ""
+for simple in (True, False, None):
+    board(simple)
+    server.write_recap(p, TASK, [], "", [])
+    check(f"recap {'opens with' if simple else 'skips'} the plain-words section (simpleWords={simple})",
+          (server.SIMPLE_RECAP in asked[-1]) == bool(simple) and asked[-1].startswith(server.RECAP_ASK))
 
 # The page: the switch sits in Project settings and saves false (not a delete) when turned off.
 with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
@@ -68,6 +79,8 @@ menu = page[page.index('<div class="pop" id="proj-menu"'):]
 menu = menu[:menu.index("</div>\n<div")]
 check("switch is in the Project settings menu", 'id="simple-words"' in menu)
 check("turning it off saves false", "state.simpleWords = e.target.checked;" in page)
+check("Summary tab skips the recap when the switch is on",
+      'state.simpleWords && [...ownLog].reverse().find((e) => e.from !== "you" && e.status !== "recap"' in page)
 
 print(f"{fails} failures")
 sys.exit(1 if fails else 0)

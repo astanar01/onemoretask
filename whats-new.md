@@ -2,7 +2,7 @@
 
 ## 2026-10-20
 
-- New "Simple words" switch under the gear button. Turn it on and Claude writes its messages on the cards in easy words, with no hard grown-up terms.
+- New "Simple words" switch under the gear button. Turn it on and Claude writes its messages on the cards in easy words, with no hard grown-up terms. The Summary of a finished card uses easy words too.
 
 ## 2026-10-19
 

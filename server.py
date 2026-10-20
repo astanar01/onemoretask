@@ -498,7 +498,12 @@ SIMPLE_RULE = ("Simple words (the user turned this on for this project's board):
                "5-year-old could follow it. Short sentences and everyday words. No technical terms: no file, function "
                "or command names, no git words, no code or error text, unless the user asks for them. Say what the "
                "user can now see or do, or what went wrong, not how it works inside. Keep it short. The commit shas "
-               "and branch name a done report needs go together on one last line.")
+               "and branch name a done report needs go together on one last line. A code review keeps its finding "
+               "format: each finding's heading, Where and Proof lines stay as the review asks (file and line, quoted "
+               "test output); the other lines go in easy words.")
+SIMPLE_RECAP = ("\n\nSimple words is on for this board: before the sections above, start with a section ## In simple "
+                "words: two to four short sentences a 5-year-old could follow, no technical terms. Keep the other "
+                "sections as detailed as above: a new session needs them.")
 
 
 def simple_words(state):
@@ -2866,7 +2871,8 @@ def write_recap(p, t, log, prior, sessions):
     for i, s in enumerate(sessions, 1):
         digest = codex.digest(s["log"]) if is_codex(s) else session_digest(s.get("sessionId"))
         parts += [f"# Session {i} ({s.get('name') or s['id']})", digest or "(no transcript)"]
-    return ask_claude(RECAP_MODEL, RECAP_ASK, "\n\n".join(parts), 600)
+    ask = RECAP_ASK + (SIMPLE_RECAP if simple_words(load_tasks(p)) else "")
+    return ask_claude(RECAP_MODEL, ask, "\n\n".join(parts), 600)
 
 
 AUTOFILL_MODEL = "haiku"

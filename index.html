@@ -2539,7 +2539,9 @@ function renderSummary(t) {
   const lastReview = reviews.length ? reviews[reviews.length - 1][1] : -1;
   // The task's own latest report: skip a reviewer's findings (they come after a "review" entry).
   const ownLog = lastReview < 0 ? log : log.slice(0, lastReview);
-  const rep = [...ownLog].reverse().find((e) => e.from !== "you" && REPORT.includes(e.status));
+  // Simple words on: the recap stays detailed for the next session, so Claude's own last report comes first.
+  const rep = (state && state.simpleWords && [...ownLog].reverse().find((e) => e.from !== "you" && e.status !== "recap" && REPORT.includes(e.status)))
+    || [...ownLog].reverse().find((e) => e.from !== "you" && REPORT.includes(e.status));
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
