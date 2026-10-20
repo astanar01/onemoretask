@@ -3,6 +3,7 @@
 ## 2026-10-20
 
 - New "Simple words" switch under the gear button. Turn it on and Claude writes its messages on the cards in easy words, with no hard grown-up terms. The Summary of a finished card uses easy words too.
+- The board does less work when nothing is running, so your computer stays cooler. It also opens faster after a restart.
 
 ## 2026-10-19
 

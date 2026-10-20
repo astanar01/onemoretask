@@ -267,6 +267,7 @@ STALL_RETRY = 60  # seconds after auto mode's safety check stopped a session bef
 STALL_TRIES = 3   # such resumes in a row (no report from Claude in between) before it waits for the user
 ALERT_WAIT = 75  # seconds an alert waits for the board to show the change (a hidden tab polls once a minute)
 PAGE_GONE = 75  # seconds without a board page reading a project's cards: nothing will move them, alert at once
+POLL_BUSY, POLL_IDLE = 4, 20  # seconds between watcher passes while any card works, and while none does
 
 
 # ---------------------------------------------------------------- projects
@@ -2123,6 +2124,20 @@ def tokens(paths):
     {"main": [input, cache write, cache read, output], "subagents": [...], "count": subagent count}.
     A reply copied into a second transcript (a forked resume carries the history over) counts once, by message id."""
     out, seen = {"main": [0] * 4, "subagents": [0] * 4, "count": 0}, set()
+    # Totals of transcripts that did not change since they were counted come from the saved file: after a restart,
+    # re-reading every old transcript took 5 s. Codex logs are left out (their workers' rollouts are elsewhere).
+    sig, key = None, "\n".join(paths)
+    if paths and not any(codex.is_log(x) for x in paths):
+        sig = []
+        for path in paths:
+            folder = os.path.join(path[:-len(".jsonl")], "subagents")
+            subs = sorted(n for n in os.listdir(folder) if n.endswith(".jsonl")) if os.path.isdir(folder) else []
+            for f in [path] + [os.path.join(folder, n) for n in subs]:
+                st = os.stat(f)
+                sig.append([f, st.st_size, st.st_mtime_ns])
+        saved = _saved_tokens().get(key)
+        if saved and saved["sig"] == sig:
+            return saved["out"]
     for path in paths:
         if codex.is_log(path):  # a Codex event log; its workers' tokens are in their own rollouts
             out["main"] = [a + b for a, b in zip(out["main"], codex.usage(path))]
@@ -2138,7 +2153,45 @@ def tokens(paths):
                 if mid not in seen:
                     seen.add(mid)
                     out[side] = [a + b for a, b in zip(out[side], u)]
+    if sig is not None:
+        with _TOKENS_LOCK:
+            _saved_tokens()[key] = {"sig": sig, "out": out}
+            _tokens_dirty[0] = True
     return out
+
+
+TOKENS_FILE = os.path.join(os.path.dirname(REGISTRY), "tokens.json")
+_TOKENS_LOCK = threading.Lock()
+_tokens_saved = []      # [{transcript paths joined by newlines: {"sig": [[file, size, mtime_ns]...], "out": totals}}]
+_tokens_dirty = [False]
+
+
+def _saved_tokens():
+    if not _tokens_saved:
+        try:
+            with open(TOKENS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        _tokens_saved.append(data if isinstance(data, dict) else {})
+    return _tokens_saved[0]
+
+
+def save_tokens():
+    """Write the token totals counted since the last save (the watcher calls it after each pass)."""
+    with _TOKENS_LOCK:
+        if not _tokens_dirty[0]:
+            return
+        _tokens_dirty[0] = False
+        data = json.dumps(_saved_tokens())
+    try:
+        os.makedirs(os.path.dirname(TOKENS_FILE), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(TOKENS_FILE), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        replace_file(tmp, TOKENS_FILE)
+    except OSError as e:
+        print("save token totals:", e)
 
 
 class Watcher:
@@ -2160,6 +2213,22 @@ class Watcher:
         self.alerts = {}  # (project id, task id) -> alert waiting for the board to show the change
         self.seen = {}    # project id -> last time a board page read its cards
         self.expected = {}  # (project id, task id) -> count of expect() calls, so a poll keeps a newer start
+        # Each card's entry carries the change count it last changed at, so a page asks only for what changed.
+        self.boot = format(int(time.time() * 1000), "x")
+        self.rev = 0
+        self.revs = {}    # (project id, task id) -> self.rev when its entry last changed
+        self.idle = False  # no card works: passes slow down to POLL_IDLE until a request wakes the watcher
+        self.wake = threading.Event()
+
+    def _put(self, key, entry):
+        """Store a card's entry (lock held); an equal entry keeps the old one, so its change count stays."""
+        old = self.cache.get(key)
+        if old == entry:
+            return old
+        self.rev += 1
+        self.revs[key] = self.rev
+        self.cache[key] = entry
+        return entry
 
     def close_when_idle(self, p, task_id):
         path = reports.close_path(p.board, task_id)
@@ -2236,8 +2305,9 @@ class Watcher:
         with self.lock:
             self.launched[agent_id] = time.time()
             self.expected[(p.id, task_id)] = self.expected.get((p.id, task_id), 0) + 1
-            self.cache[(p.id, task_id)] = {"id": agent_id, "sessionId": None, "state": "starting", "phase": "working",
-                                           "reason": "", "log": reports.read(p.board, task_id)}
+            self._put((p.id, task_id), {"id": agent_id, "sessionId": None, "state": "starting", "phase": "working",
+                                        "reason": "", "log": reports.read(p.board, task_id)})
+        self.wake.set()
 
     def poll(self):
         with self.lock:
@@ -2404,11 +2474,18 @@ class Watcher:
             with self.lock:
                 if self.expected.get(key) != expected.get(key) and key in self.cache:
                     fresh[key] = {**fresh[key], **self.cache[key]}  # a resume started during this pass: newer
-                self.cache[key] = fresh[key]
+                fresh[key] = self._put(key, fresh[key])
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
-            self.cache = fresh
+            # A copy: a resume thread's expect() writes the cache while the alert loop below still reads `fresh`.
+            self.cache = dict(fresh)
+            self.revs ={k: r for k, r in self.revs.items() if k in fresh}
+            now = time.time()
+            # Nothing changes on its own while no session works: a launch, reply or board save wakes the watcher.
+            self.idle = not (any(v["phase"] == "working" for v in fresh.values()) or self.delivering or self.closing
+                             or self.alerts or any(now - at < 60 for at in self.launched.values()))
             primed, self.primed = self.primed, True
+        save_tokens()
         if not primed:
             return
         for p, t in work:
@@ -2473,7 +2550,9 @@ class Watcher:
         last = 0
         while True:
             try:
-                if time.time() - last >= 4:
+                since = time.time() - last
+                if since >= (POLL_IDLE if self.idle else POLL_BUSY) or self.wake.is_set() and since >= 1:
+                    self.wake.clear()
                     last = time.time()
                     self.poll()
                 elif self.alerts:
@@ -2488,6 +2567,17 @@ class Watcher:
         with self.lock:
             self.seen[pid] = time.time()
             return {tid: v for (p, tid), v in self.cache.items() if p == pid}
+
+    def changes(self, pid, since):
+        """The cards that changed after the change token `since` (from an earlier answer; anything else sends every
+        card), every card id, and the token to send next time."""
+        boot, _, n = str(since or "").partition(".")
+        n = int(n) if boot == self.boot and n.isdigit() else -1
+        with self.lock:
+            self.seen[pid] = time.time()
+            ids = [tid for (p, tid) in self.cache if p == pid]
+            cards = {tid: v for (p, tid), v in self.cache.items() if p == pid and self.revs.get((p, tid), 0) > n}
+            return cards, ids, f"{self.boot}.{self.rev}"
 
     def attention(self, pid):
         """Tasks in a project that wait on the user: a question/stop, or finished work (with the time of
@@ -3727,7 +3817,13 @@ class Handler(SimpleHTTPRequestHandler):
                 headers = {"X-Board-Rev": board_rev(p)}
                 if not WATCH.loaded:
                     headers["X-Board-Loading"] = "1"
-                self._json(200, WATCH.snapshot(p.id), headers=headers)
+                q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if "since" not in q:
+                    self._json(200, WATCH.snapshot(p.id), headers=headers)
+                    return
+                # Most cards are finished and never change: send only what changed since the page's last read.
+                cards, ids, headers["X-Agents-Rev"] = WATCH.changes(p.id, q["since"][0])
+                self._json(200, {"cards": cards, "ids": ids}, headers=headers)
             self._errors(agents)
         elif path == "/api/git":
             self._errors(lambda: self._json(200, git_info(project(pid))))
@@ -3858,6 +3954,7 @@ class Handler(SimpleHTTPRequestHandler):
                                body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
                 self._json(200, {"ok": True, "queued": queued})
         self._errors(handle)
+        WATCH.wake.set()  # a reply, answer or move may restart a session: look now, not at the next idle pass
 
     def do_PUT(self):
         if not self._host_ok():
@@ -3916,6 +4013,7 @@ class Handler(SimpleHTTPRequestHandler):
                         WATCH.close_when_idle(p, t["id"])
             self._send(204, headers={"X-Board-Rev": board_rev(p, out)})
         self._errors(write)
+        WATCH.wake.set()  # a card moved to done is closed by the next pass
 
     def log_message(self, fmt, *args):
         if "/api/" not in self.path and "/files/" not in self.path:

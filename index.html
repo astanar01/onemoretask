@@ -1050,7 +1050,7 @@ function renderProjects() {
 async function switchProject(id) {
   await settled();
   openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
-  P = id; agents = {}; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
+  P = id; agents = {}; agentsRev = null; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
   try { await loadTasks(); } catch (e) { setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true); }
   render(); pollAgents(); checkUnpushed();
 }
@@ -3120,6 +3120,7 @@ $("#d-reply").addEventListener("input", (e) => { if (e.target.dataset.task) setR
 $("#d-reply").addEventListener("keydown",(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); } });
 
 let pollTimer = null, polledOnce = false, pollSeq = 0;
+let agentsRev = null;   // the server's change token from the last /api/agents answer: the next asks only for changes
 // A redraw swaps every column for a new element, which drops a scrollbar drag or a wheel scroll half way:
 // a poll's redraw waits until the mouse button is up and the wheel has been still for a moment.
 let scrollGrab = false, scrollWheelAt = 0, pollRenderTimer = null;
@@ -3141,10 +3142,24 @@ async function pollAgents() {
   try {
     // A request that never answers would end the polling for good: give up on it and poll again.
     const opt = { cache: "no-store", signal: AbortSignal.timeout(20000) };
-    const [r, rp] = await Promise.all([fetch(api("/api/agents"), opt), fetch("/api/projects", opt)]);
-    const next = await r.json();
+    const url = api("/api/agents") + "&since=" + encodeURIComponent(agentsRev || "");
+    const [r, rp] = await Promise.all([fetch(url, opt), fetch("/api/projects", opt)]);
+    let next = await r.json();
     if (!r.ok) throw new Error(next.error || r.status);
     if (pid !== P) return;   // switched projects while this was in flight
+    // A change token means only the cards that changed came back: the others are kept from the last poll.
+    const newRev = r.headers.get("X-Agents-Rev");
+    let changedCards = null;
+    if (newRev) {
+      changedCards = Object.keys(next.cards).length + (next.ids.length !== Object.keys(agents).length);
+      const merged = {};
+      for (const id of next.ids) {
+        if (id in next.cards) merged[id] = next.cards[id];
+        else if (id in agents) merged[id] = agents[id];
+        else changedCards = null;   // a card we never got: take every card next time
+      }
+      next = merged;
+    }
     if (r.headers.get("X-Board-Loading")) wait = 1000;   // the server just started: show cards as they come in
     if (rp.ok) projects = await rp.json();
     // Another window saved: take its board before the moves below, unless an edit of ours is on its way
@@ -3170,10 +3185,11 @@ async function pollAgents() {
       if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
       if (a.phase === "working" && prog && (review && t.column === review.id || isDone(t))) moveTask(t.id, prog.id, null);
     }
-    const changed = moved || JSON.stringify(next) !== JSON.stringify(agents);
+    const changed = moved || (changedCards !== null ? changedCards > 0 : JSON.stringify(next) !== JSON.stringify(agents));
     // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
     const op = openId && agents[openId] && agents[openId].phase;
     agents = next;
+    agentsRev = changedCards === null ? null : newRev;
     for (const id in permissionNote) if (!next[id] || next[id].permission !== permissionNote[id].ask) delete permissionNote[id];
     if (openId && next[openId] && next[openId].phase !== op) { const o = task(openId); if (o) loadTaskGit(o, true); }
     if (!polledOnce && !seenPrimed) markSeen(Object.keys(next));
@@ -3188,7 +3204,8 @@ async function pollAgents() {
   } catch (e) {
     setStatus(t("Claude status check failed: {error}", { error: t(e.message) }), true);
   }
-  if (seq === pollSeq) pollTimer = setTimeout(pollAgents, wait);
+  // A hidden tab needs no fresh cards every 4 s: catchUp polls the moment it is shown again.
+  if (seq === pollSeq) pollTimer = setTimeout(pollAgents, document.hidden ? Math.max(wait, 30000) : wait);
 }
 
 function updateWaiting() {
@@ -4001,8 +4018,8 @@ function pushForm(d) {
   setTimeout(() => { inp.focus(); inp.select(); });
   return f;
 }
-setInterval(() => checkUnpushed(), 15000);
-setInterval(() => checkAppCopy(), 60000);
+setInterval(() => document.hidden || checkUnpushed(), 15000);
+setInterval(() => document.hidden || checkAppCopy(), 60000);
 // A window left in the back has its timers slowed or frozen by the browser: catch up the moment it is looked at.
 let lastCatchUp = 0;
 function catchUp() {
