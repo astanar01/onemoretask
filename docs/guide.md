@@ -486,7 +486,7 @@ What does leave your computer, and why:
 - **Quick Haiku calls when you send.** A task with no title or tags sends its notes to Haiku to name and
   tag it. The project check sends the task's title and notes, plus the start of each of your projects'
   README and their 15 newest card titles. The recap at Done and **New task from this** send the card's
-  messages. All go through your own `claude` command.
+  messages and the sessions' conversations (tool output left out). All go through your own `claude` command.
 - **The default model name.** To show the name of your default model, the board runs
   `claude -p "Reply: ok"` at most once a day (about $0.09). It sends no task data. It is
   skipped if your Claude settings or `ANTHROPIC_MODEL` already name a model.
