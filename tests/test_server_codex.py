@@ -36,8 +36,9 @@ def installed():
 def log_dir(board):
     return os.path.join(board, "agent_reports", "codex")
 
-def start(board, task_id, name, prompt, model, cwd):
-    STARTS.append({"board": board, "task": task_id, "name": name, "prompt": prompt, "model": model, "cwd": cwd})
+def start(board, task_id, name, prompt, model, cwd, effort=""):
+    STARTS.append({"board": board, "task": task_id, "name": name, "prompt": prompt, "model": model, "cwd": cwd,
+                   "effort": effort})
     return "cdx-%d" % len(STARTS)
 
 def resume(board, thread_id, message):

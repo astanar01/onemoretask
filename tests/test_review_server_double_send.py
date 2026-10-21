@@ -30,7 +30,7 @@ try:
                    "tasks": [{"id": "t1", "title": "Fix it", "column": "c", "worktree": False}]}, f)
     started = []
 
-    def fake_start(p_, task_id, name, prompt, model):
+    def fake_start(p_, task_id, name, prompt, model, effort=""):
         time.sleep(0.3)  # `claude --bg` takes seconds to answer
         started.append(task_id)
         return f"a{len(started)}"
