@@ -136,4 +136,15 @@ print("ok  codex: -c model_reasoning_effort=\"xhigh\" on exec and on resume; met
 server.launch(p, "t5", "gpt-5.5")
 assert "-c" not in codex_argv(), codex_argv()
 print("ok  codex without effort: no -c")
+
+# ---- (f) codex has no "max": it gets xhigh, and the card says so; claude keeps max
+state = server.load_tasks(p)
+state["tasks"] += [{"id": f"t{i}", "title": f"Task {i}", "column": "prog", "order": i, "worktree": False} for i in (6, 7)]
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(state, f)
+server.launch(p, "t6", "gpt-5.5", "max")
+assert 'model_reasoning_effort="xhigh"' in codex_argv() and on_disk("t6")["agent"]["effort"] == "xhigh", codex_argv()
+server.launch(p, "t7", "opus", "max")
+assert calls[-1][calls[-1].index("--effort") + 1] == "max" and on_disk("t7")["agent"]["effort"] == "max", calls[-1]
+print("ok  max: codex gets xhigh, claude keeps max")
 print("all effort tests passed")

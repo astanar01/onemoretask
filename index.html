@@ -2011,6 +2011,7 @@ async function createFresh() {
     nt.notes = text ? text + "\n\n" + (res.notes || "") : res.notes || "";
     // The old session's model, preselected on this card only (like an answer-only pick) when the picker offers it.
     if (res.model && [...$("#d-model").options].some((o) => o.value === res.model)) answerPick[nt.id] = res.model;
+    if (res.effort && [...$("#d-effort").options].some((o) => o.value === res.effort)) effortPick[nt.id] = res.effort;
     touch(nt);
     closeFresh(); render();
     openDetail(nt.id);
@@ -2075,6 +2076,8 @@ let clis = { claude: true, codex: false };   // which CLIs the server found (old
 // A pick made on an answer-only card stays on that card only, so it does not change the saved default.
 // A card made by New task from this starts here too, with the old session's model.
 const answerPick = {};
+// Same for the effort level: New task from this keeps the old session's level on that card only.
+const effortPick = {};
 const answerModel = () => clis.claude ? "haiku" : (codexList.find((m) => /luna/i.test(m.id)) || {}).id || "";
 function sendModel(t) {
   let saved = "";
@@ -2138,8 +2141,12 @@ function renderAgent(t) {
   };
   const effort = $("#d-effort");
   effort.disabled = !useServer;
-  try { effort.value = localStorage.getItem("taskboard.effort") || ""; } catch (e) { effort.value = ""; }
-  effort.onchange = () => { try { localStorage.setItem("taskboard.effort", effort.value); } catch (e) {} };
+  if (t.id in effortPick) effort.value = effortPick[t.id];
+  else try { effort.value = localStorage.getItem("taskboard.effort") || ""; } catch (e) { effort.value = ""; }
+  effort.onchange = () => {
+    if (t.id in effortPick) effortPick[t.id] = effort.value;
+    else try { localStorage.setItem("taskboard.effort", effort.value); } catch (e) {}
+  };
   sendLabel();
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];

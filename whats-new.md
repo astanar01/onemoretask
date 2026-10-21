@@ -2,7 +2,7 @@
 
 ## 2026-10-21
 
-- When you send a task, you can now pick how hard Claude should think, from Low to Max, next to the model.
+- When you send a task, you can now pick how hard Claude should think, from Low to Max, next to the model. A new task made from an old one keeps the old one's choice.
 
 ## 2026-10-20
 

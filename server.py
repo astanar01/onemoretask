@@ -689,6 +689,11 @@ def effort_args(effort):
     return ["--effort", effort]
 
 
+def session_effort(model, effort):
+    """Codex has no "max" level: its top one is "xhigh"."""
+    return "xhigh" if effort == "max" and codex.is_model(model) else effort
+
+
 DEFAULT_CACHE = os.path.expanduser("~/.config/task_board/default_model.json")
 DEFAULT_TTL = 24 * 3600
 _default_lock = threading.Lock()
@@ -806,6 +811,7 @@ def launch(p, task_id, model="", effort=""):
 
 
 def _launch(p, task_id, model, effort=""):
+    effort = session_effort(model, effort)  # the card shows the level the session really got
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -1175,7 +1181,8 @@ def start_session(p, task_id, name, prompt, model, effort=""):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
         effort_args(effort)  # and a bad effort level
-        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path, effort)
+        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path,
+                           session_effort(model, effort))
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
     # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
     # A resume keeps it (the job's respawnFlags).
