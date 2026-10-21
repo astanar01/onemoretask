@@ -294,20 +294,22 @@ def _kill(proc):
         proc.wait()
 
 
-def start(board, task_id, name, prompt, model, cwd):
+def start(board, task_id, name, prompt, model, cwd, effort=""):
     """Launch a new Codex session for a card; returns its thread id once codex has named it."""
     base = os.path.join(folder(board), f"{task_id}-{int(time.time() * 1000)}")
     log, err = base + ".jsonl", base + ".err"
     argv = CODEX_CMD + ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write"]
     if model:
         argv += ["-m", model]
+    if effort:
+        argv += ["-c", f'model_reasoning_effort="{effort}"']
     argv += ["-C", cwd, "-"]
     proc = _spawn(argv, cwd, prompt, log, err)
     thread_id = _wait_event(proc, log, 0, True)
     if not thread_id:
         raise _fail(proc, err)
     PROCS[thread_id] = proc
-    _write_meta(board, {"id": thread_id, "task": task_id, "name": name, "model": model, "cwd": cwd, "log": log,
+    _write_meta(board, {"id": thread_id, "task": task_id, "name": name, "model": model, "effort": effort, "cwd": cwd, "log": log,
                         "err": err, "started": time.time(), "pid": proc.pid, "pid_start": _pid_start(proc.pid), "turns": 1,
                         "exit": None, "removed": False})
     return thread_id
@@ -326,6 +328,8 @@ def resume(board, thread_id, message):
     argv = CODEX_CMD + ["exec", "resume", "--json", "--skip-git-repo-check"]
     if meta.get("model"):
         argv += ["-m", meta["model"]]
+    if meta.get("effort"):
+        argv += ["-c", f'model_reasoning_effort="{meta["effort"]}"']
     argv += [thread_id, "-"]  # resume takes no -C: the cwd goes to Popen
     proc = _spawn(argv, meta.get("cwd") or None, message, log, err)
     PROCS[thread_id] = proc

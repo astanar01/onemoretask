@@ -678,6 +678,22 @@ def model_args(model):
     return ["--model", model]
 
 
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def effort_args(effort):
+    if not effort:
+        return []
+    if effort not in EFFORTS:
+        raise ValueError(f"bad effort level: {effort!r}")
+    return ["--effort", effort]
+
+
+def session_effort(model, effort):
+    """Codex has no "max" level: its top one is "xhigh"."""
+    return "xhigh" if effort == "max" and codex.is_model(model) else effort
+
+
 DEFAULT_CACHE = os.path.expanduser("~/.config/task_board/default_model.json")
 DEFAULT_TTL = 24 * 3600
 _default_lock = threading.Lock()
@@ -777,7 +793,7 @@ LAUNCHING = set()  # (project id, task id) whose session is starting: a second s
 LAUNCHING_LOCK = threading.Lock()
 
 
-def launch(p, task_id, model=""):
+def launch(p, task_id, model="", effort=""):
     """Start the task's session; {"id", "worktree", "cli"} (the worktree record, or None; "claude" or "codex").
 
     The task's own `worktree` field decides the worktree (missing = on); "Answer only" and observations cards
@@ -788,13 +804,14 @@ def launch(p, task_id, model=""):
             raise PermissionError("already being sent to Claude — wait for it to start")
         LAUNCHING.add(key)
     try:
-        return _launch(p, task_id, model)
+        return _launch(p, task_id, model, effort)
     finally:
         with LAUNCHING_LOCK:
             LAUNCHING.discard(key)
 
 
-def _launch(p, task_id, model):
+def _launch(p, task_id, model, effort=""):
+    effort = session_effort(model, effort)  # the card shows the level the session really got
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     if not t:
@@ -812,7 +829,7 @@ def _launch(p, task_id, model):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(prompt)
-        aid = start_session(p, task_id, name, prompt, model)
+        aid = start_session(p, task_id, name, prompt, model, effort)
     except Exception:
         # No session: take back what this send made. No --force and -d, so anything holding work stays.
         if "worktree" in made:
@@ -823,9 +840,11 @@ def _launch(p, task_id, model):
     where = f", worktree {wt['branch']}" if wt else ""
     cli = "codex" if codex.is_model(model) else "claude"
     agent = {"id": aid, "started": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-             **({"model": model} if model else {}), **({"worktree": wt} if wt else {}), **({"cli": cli} if cli == "codex" else {})}
+             **({"model": model} if model else {}), **({"effort": effort} if effort else {}),
+             **({"worktree": wt} if wt else {}), **({"cli": cli} if cli == "codex" else {})}
+    level = f", effort {effort}" if effort else ""
     try:
-        reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{where})",
+        reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{level}{where})",
                        "you", session=aid)
         revs = set_agent(p, task_id, agent)
     except Exception:
@@ -1157,16 +1176,18 @@ def codex_note(p):
             "brief says.")
 
 
-def start_session(p, task_id, name, prompt, model):
+def start_session(p, task_id, name, prompt, model, effort=""):
     if codex.is_model(model):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
-        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path)
+        effort_args(effort)  # and a bad effort level
+        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path,
+                           session_effort(model, effort))
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
     # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
     # A resume keeps it (the job's respawnFlags).
     r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, "--disallowedTools", "AskUserQuestion",
-                    *model_args(model), "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
+                    *model_args(model), *effort_args(effort), "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
@@ -1255,7 +1276,8 @@ def review(p, task_id, model=None):
         "If a later reply asks for fixes: make them, verify them, commit (never push unless the user tells you to), and report done.", "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep, simple=simple_words(state))])
-    aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use)
+    aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use,
+                        "" if model else t["agent"].get("effort") or "")
     reports.append(p.board, task_id, "review", f"Code review started ({model or 'task model'}, session {aid})",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
@@ -3264,7 +3286,7 @@ def spawn(p, task_id, close):
     if paths:
         notes += "\n\nFull conversations: " + ", ".join(shell_path(x) for x in paths)
     return {"ok": True, "title": "Follow-up: " + t["title"], "tags": list(t.get("tags") or []), "notes": notes,
-            "model": t["agent"].get("model") or ""}
+            "model": t["agent"].get("model") or "", **({"effort": t["agent"]["effort"]} if t["agent"].get("effort") else {})}
 
 
 def reopen(p, task_id, text, images=(), handed=0):
@@ -3285,7 +3307,7 @@ def reopen(p, task_id, text, images=(), handed=0):
     if images:
         prompt += "\n\nImages attached to this message (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
-    aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, model)
+    aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, model, t["agent"].get("effort") or "")
     if handed:  # notes sent while the recap was written: already on the card
         reports.append(p.board, task_id, "resume", f"Handed {who(model)} {handed} message{'s' if handed > 1 else ''} it "
                        "had not read yet", "you", session=aid)
@@ -3897,7 +3919,8 @@ class Handler(SimpleHTTPRequestHandler):
                 trust_folder(project(body["p"]))
                 self._json(200, {"ok": True})
             elif path == "/api/agent":
-                self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or ""))
+                self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or "",
+                                       body.get("effort") or ""))
             elif path == "/api/agent/permission":
                 r = answer_permission(project(body["p"]), body["taskId"], body.get("choice"), body.get("ask") or "")
                 self._json(200, {"ok": True, **r})

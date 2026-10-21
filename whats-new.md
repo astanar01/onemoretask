@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-21
+
+- When you send a task, you can now pick how hard Claude should think, from Low to Max, next to the model. A new task made from an old one keeps the old one's choice.
+
 ## 2026-10-20
 
 - New "Simple words" switch under the gear button. Turn it on and Claude writes its messages on the cards in easy words, with no hard grown-up terms. The Summary of a finished card uses easy words too.

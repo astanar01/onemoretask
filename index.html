@@ -530,7 +530,9 @@ body.list-resizing { user-select: none; cursor: col-resize; }
 .nx-send { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
 #panel:not(.sent) .nx-send { display: flex; }
 #panel:not(.sent) .next { border-left-color: var(--line); }
-#d-model { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); width: 100%; min-width: 0; text-overflow: ellipsis; }
+.nx-models { display: flex; gap: 6px; }
+#d-model, #d-effort { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); width: 100%; min-width: 0; text-overflow: ellipsis; }
+#d-effort { width: auto; flex: none; max-width: 45%; }
 #d-send { width: 100%; padding: 8px 12px; font-weight: 600; }
 /* collapsible sections */
 .fold { border-top: 1px solid var(--line); }
@@ -796,7 +798,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
         <b id="d-next-title"></b>
         <div class="nx-text" id="d-next-text"></div>
         <div class="nx-actions" id="d-next-actions"></div>
-        <div class="nx-send" id="d-send-row"><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><button class="btn primary" id="d-send">Send to Claude</button></div>
+        <div class="nx-send" id="d-send-row"><div class="nx-models"><select id="d-model" title="Model for the Claude session"><option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku" title="No auto mode: permission prompts need claude attach">Haiku (manual)</option><optgroup label="OpenAI (Codex)" class="codex-models"></optgroup></select><select id="d-effort" title="Effort level for the session"><option value="">Default effort</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max</option></select></div><button class="btn primary" id="d-send">Send to Claude</button></div>
       </div>
       <details class="fold" id="d-crit"><summary><span data-ico="check" data-s="16"></span>Subtasks<span class="badge" id="d-crit-n"></span></summary>
         <div class="crit-bar"><i></i></div><div id="d-crit-slot"></div></details>
@@ -2009,6 +2011,7 @@ async function createFresh() {
     nt.notes = text ? text + "\n\n" + (res.notes || "") : res.notes || "";
     // The old session's model, preselected on this card only (like an answer-only pick) when the picker offers it.
     if (res.model && [...$("#d-model").options].some((o) => o.value === res.model)) answerPick[nt.id] = res.model;
+    if (res.effort && [...$("#d-effort").options].some((o) => o.value === res.effort)) effortPick[nt.id] = res.effort;
     touch(nt);
     closeFresh(); render();
     openDetail(nt.id);
@@ -2073,6 +2076,8 @@ let clis = { claude: true, codex: false };   // which CLIs the server found (old
 // A pick made on an answer-only card stays on that card only, so it does not change the saved default.
 // A card made by New task from this starts here too, with the old session's model.
 const answerPick = {};
+// Same for the effort level: New task from this keeps the old session's level on that card only.
+const effortPick = {};
 const answerModel = () => clis.claude ? "haiku" : (codexList.find((m) => /luna/i.test(m.id)) || {}).id || "";
 function sendModel(t) {
   let saved = "";
@@ -2081,6 +2086,7 @@ function sendModel(t) {
   if (!t || !t.answerOnly) return saved;
   return answerModel() || saved;
 }
+const effortName = (e) => ({ low: window.t("Low"), medium: window.t("Medium"), high: window.t("High"), xhigh: window.t("Extra high"), max: window.t("Max") })[e] || e;
 const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
 // The session's family: the card's agent once sent, else the session model picker.
 const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
@@ -2133,6 +2139,14 @@ function renderAgent(t) {
     else try { localStorage.setItem("taskboard.model", model.value); } catch (e) {}
     sendLabel();
   };
+  const effort = $("#d-effort");
+  effort.disabled = !useServer;
+  if (t.id in effortPick) effort.value = effortPick[t.id];
+  else try { effort.value = localStorage.getItem("taskboard.effort") || ""; } catch (e) { effort.value = ""; }
+  effort.onchange = () => {
+    if (t.id in effortPick) effortPick[t.id] = effort.value;
+    else try { localStorage.setItem("taskboard.effort", effort.value); } catch (e) {}
+  };
   sendLabel();
   if (!t.agent) loadDefaultModel();
   const pend = pending[t.id] || [];
@@ -2140,7 +2154,8 @@ function renderAgent(t) {
   // Agent line (Summary head): who did the work and what the AGENT is doing, apart from the task's column.
   const launch = !t.agent && launchOf(t);
   const mdl = (t.agent && t.agent.model) || (launch && launch.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
-  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}</span>
+  const eff = (t.agent && t.agent.effort) || (launch && launch.effort) || "";
+  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}${eff ? ` · ${esc(effortName(eff))}` : ""}</span>
       <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
@@ -2469,6 +2484,7 @@ function renderTech(t) {
   if (t.agent) {
     rows.push([window.t("Session"), code("claude attach " + ((ag && ag.id) || t.agent.id))]);
     rows.push([window.t("Model"), esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
+    if (t.agent.effort) rows.push([window.t("Effort"), esc(effortName(t.agent.effort))]);
     rows.push([window.t("Started"), esc(fmt(t.agent.started))]);
     if (t.delegate) rows.push([window.t("Subagents"), window.t("allowed") + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);
     if (t.answerOnly) rows.push([window.t("Mode"), window.t("answer only")]);
@@ -2857,10 +2873,11 @@ $("#proj-modal").addEventListener("mousedown", (e) => { if (e.target.id === "pro
 
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
-  const model = $("#d-model").value;   // read before the waits below: another card may be open by then
+  const model = $("#d-model").value, effort = $("#d-effort").value;   // read before the waits below: another card may be open by then
   const nm = isCodexModel(model) ? "Codex" : "Claude";
-  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (model ? ` (${model})` : ""), []);
-  pm.model = model;
+  const pick = [model, effort].filter(Boolean).join(", ");
+  const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (pick ? ` (${pick})` : ""), []);
+  pm.model = model; pm.effort = effort;
   // The panel swaps to Summary on the click; the project check, the title, the launch and the worktree come in the background.
   if (openId === t.id) renderDetail();
   if (needsProjectCheck(t)) {
@@ -2900,8 +2917,8 @@ async function sendToClaude(t) {
   }
   try {
     const pid = P;
-    const res = await post("/api/agent", { p: pid, taskId: t.id, model });
-    const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
+    const res = await post("/api/agent", { p: pid, taskId: t.id, model, effort });
+    const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(effort && { effort }),...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
     // The server already put the session on the card in tasks.json. When disk held our board before that write,
     // take its rev so our next save is not refused as coming from another window.
     if (pid === P && res.revBefore && rev === res.revBefore && !saving) rev = res.rev;
