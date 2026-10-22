@@ -1,5 +1,7 @@
 # Migrating a pre-3.0 single-file log
 
+Load triggers: the Session Start Protocol finds a pre-3.0 `log.md` and no `observation-log/`
+
 Upgrade-only. Versions before 3.0.0 kept every observation in one file,
 `skill-observations/log.md`, with `### Observation N:` headers. Version
 3.0.0 stores one file per observation under
@@ -38,7 +40,9 @@ Two rules protect the fields the format exists to make reliable:
   for hundreds of archived entries in testing.
 - **Ambiguity is flagged, never guessed.** Anything the parser is not
   confident about — a missing status, a skill name it cannot parse, a
-  qualifier that could apply to one name or a whole group — is written
+  qualifier that could apply to one name or a whole group, a qualifier
+  that names another known skill (`skill-in-qualifier`, with
+  `--known-skills`) — is written
   into the file as `migration_note: "needs review: …"` and listed in the
   report. You resolve those by hand or, better, through an overrides file
   so the run stays reproducible.
@@ -104,15 +108,31 @@ it can be the Microsoft Store alias), use `py -3`.
 
    Keys starting with `_` are bookkeeping; every other key overwrites that
    frontmatter field. `_reason` is recorded in the file as
-   `migration_override` so the decision survives.
+   `migration_override` so the decision survives. The fields an override
+   can set are the ones the script writes: `skill`, `proposes_skill` and
+   `target_file` (lists of strings); `title`, `status`, `type`, `area`,
+   `date`, `session_context`, `resolved`, `resolution`, `status_note`,
+   `reference`, `siblings_checked`, `parked_until` and
+   `commands_verified` (strings); and `skill_qualifiers` (an object). Any
+   other key, or a value of the wrong shape, stops the run with exit 2
+   before a file is written, naming the entry and the key: an override
+   that is accepted and never reaches the file is the one outcome the
+   check exists to rule out.
 5. **Convert the live log:**
 
    ```bash
    python3 "<skill directory>/scripts/migrate-log.py" --convert skill-observations/log.md \
      --out skill-observations/observation-log \
      --id-floor-from skill-observations/archive \
+     --known-skills "<skills directory>" \
      --overrides overrides.json
    ```
+
+   `<skills directory>` is the directory holding the installed skills,
+   one folder each. Without it the script cannot tell a skill name from
+   other words, so it can neither flag an unknown `skill:` entry nor a
+   second skill named inside a qualifier; pass it to the step 3 check of
+   the live log too.
 
 6. **Verify twice: source fidelity, then target conformance.** The
    report's file count must equal the number of `### Observation` headers
@@ -124,13 +144,17 @@ it can be the Microsoft Store alias), use `py -3`.
    ```
 
    Spot-check three files against their originals, including one that was
-   resolved and one that carried a qualifier. Then read the report's
+   resolved and one that carried a qualifier, and compare every converted
+   `skill:` line with its legacy `**Skill:**` header: a skill named only
+   inside a qualifier is a target the scans, review buckets and family
+   checks cannot see. Then read the report's
    `target conformance` block, and confirm it from the files: a converted
    set is faithful to a source that never had `siblings_checked`, so every
-   file lacks it, and nothing but the next review's sibling backfill will
-   add it. Enumerate the fields from the target's own definition (SKILL.md,
-   File format), never from the mapping table above — a field absent from
-   the table is indistinguishable from one absent from the schema:
+   file lacks it unless an override set it, and nothing but the next
+   review's sibling backfill will add it. Enumerate the fields from the
+   target's own definition (SKILL.md, File format), never from the mapping
+   table above — a field absent from the table is indistinguishable from
+   one absent from the schema:
 
    ```bash
    o="skill-observations/observation-log"
@@ -186,9 +210,9 @@ it can be the Microsoft Store alias), use `py -3`.
    agents"). Converting each in place preserves that fork, with two id
    spaces that already collide. Consolidate those onto one anchor first
    — per "Before creating a log, search for one" in
-   `references/environments.md`, leaving a pointer file at each
-   abandoned location — and run this procedure once, on the surviving
-   log. Only genuinely distinct observed scopes migrate separately.
+   `references/environments.md`, leaving a pointer file,
+   `skill-observations/MOVED.md`, at each abandoned root — and run this
+   procedure once, on the surviving log. Only genuinely distinct observed scopes migrate separately.
 
    **Every live `log.md` needs reconciling, including one that sits
    beside an `observation-log/`.** That pair is not a converted

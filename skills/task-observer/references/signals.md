@@ -1,5 +1,7 @@
 # Signals — what to watch for, in full
 
+Load triggers: unsure whether something is worth logging or generalises; sorting many candidate observations; deciding in a review what a skill should lose; a defect that is not the deliverable takes a second hypothesis; the same rule broken a second time, before proposing a fix; before writing any "later" into a recommendation
+
 The core skill carries the short trigger list. This file is the full
 catalogue with examples. Load it when you are unsure whether something is
 worth logging, when a session is producing many candidate observations and

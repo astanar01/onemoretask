@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-22
+
+- The helper that writes down ideas to make Claude's skills better is now the newest version. It checks itself better when it starts and keeps its notes safer.
+
 ## 2026-10-21
 
 - When you send a task, you can now pick how hard Claude should think, from Low to Max, next to the model. A new task made from an old one keeps the old one's choice.
