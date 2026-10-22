@@ -3,6 +3,7 @@
 ## 2026-10-22
 
 - The helper that writes down ideas to make Claude's skills better is now the newest version. It checks itself better when it starts and keeps its notes safer. The Update button now brings you its newest version too.
+- New skills made from the helper's ideas now stay in the project they came from, so other projects don't fill up with skills they never use.
 
 ## 2026-10-21
 
