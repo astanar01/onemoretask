@@ -1,4 +1,5 @@
-"""Set up the Claude Code tools (install_tools.py), then the hooks, rules and skills (install_hooks.py).
+"""Set up the Claude Code tools (install_tools.py), the hooks, rules and skills (install_hooks.py) and the
+task-observer skill (install_observer.py).
 
 Usage: python3 setup/run_setup.py [--if-needed]
 install.sh and install.ps1 run it. The board runs it with --if-needed each time its server starts, so an Update
@@ -18,6 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import install_hooks  # noqa: E402
+import install_observer  # noqa: E402
 import install_tools  # noqa: E402
 
 STAMP = ".onemoretask-setup"
@@ -31,8 +33,11 @@ def claude_dir():
 def fingerprint(claude):
     """Hash of the setup scripts and every file install_hooks copies: it changes when a pull changes any of them."""
     h = hashlib.sha256()
-    files = [HERE / "run_setup.py", HERE / "install_tools.py", HERE / "install_hooks.py"]
-    for f in files + [src for _, src, _ in install_hooks.shipped(claude)]:
+    files = [HERE / "run_setup.py", HERE / "install_tools.py", HERE / "install_hooks.py", HERE / "install_observer.py"]
+    observer = install_hooks.REPO / "skills" / install_observer.NAME
+    files += [src for _, src, _ in install_hooks.shipped(claude)]
+    files += [p for p in sorted(observer.rglob("*")) if p.is_file() and p.name not in install_observer.IGNORED]
+    for f in files:
         h.update(f.relative_to(install_hooks.REPO).as_posix().encode() + b"\0")
         try:
             h.update(hashlib.sha256(f.read_bytes()).digest())
@@ -96,7 +101,7 @@ def main(argv=None):
 def run(claude):
     want = fingerprint(claude)
     failed = []
-    for script in (install_tools, install_hooks):
+    for script in (install_tools, install_hooks, install_observer):
         try:
             script.main([])
             failed += script.FAILED
