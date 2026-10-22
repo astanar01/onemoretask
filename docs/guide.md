@@ -284,7 +284,9 @@ The install command also adds the task-observer skill. The app ships its own cop
 a fork of Eoghan Henn's [one-skill-to-rule-them-all](https://github.com/rebelytics/one-skill-to-rule-them-all)
 (CC BY 4.0), so nothing is downloaded from that repo. Each install replaces the copy it put there before
 (the one with a `FORKED_FROM` file), unless a file in it was changed since: then it keeps your edits and
-says so. Delete the folder and install again to get the new version.
+says so. Delete the folder and install again to get the new version. An **Update** that brings a newer copy
+replaces it the same way, when the board restarts (not with `ONEMORETASK_NO_TOOLS=1`: then only the install
+command does).
 
 The skill notes what could make your Claude skills better while Claude works: a correction you made,
 a step that kept failing, a workflow worth keeping. Every session the board starts is told to run it.
