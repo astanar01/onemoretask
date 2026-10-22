@@ -12,10 +12,17 @@
 #                     path may contain spaces.
 #
 # Prints, on stdout, in this order: any NOTE / LOST ENTRIES lines; the counts
-# line (files, parsed, suspect, archive-suspect); the logs found under the
-# root's parent; the active principles' headings; and LAST the frontmatter
-# of every numbered entry, each header followed by one `---` line. Appends
-# one line to skill-observations/checkpoints.log:
+# line (files, parsed, suspect, archive-suspect); a NOTE: pointer line when
+# skill-observations/MOVED.md exists; a GAP line when the previous scan in
+# checkpoints.log is 7 or more days old; the logs found under the root's
+# parent; the active principles' headings; then the frontmatter of every
+# numbered entry, each header followed by one `---` line; and LAST one
+# `end of scan` line repeating the counts and how many finding lines
+# (NOTE / LOST ENTRIES / GAP) stand above the entries. The findings open the
+# output and the summary closes it, so a view cut by `head` keeps the
+# findings and one cut by `tail` keeps the summary and its finding count;
+# neither replaces reading the output whole, which the summary line says.
+# Appends one line to skill-observations/checkpoints.log:
 #   YYYY-MM-DD HH:MM [<cwd's last segment>] session-start scan: files=N parsed=N principles=N
 #
 # Exit status:
@@ -24,8 +31,8 @@
 #      scan halts there, before the checkpoint line and the content print
 #   2  refused: no workspace root, or a root that is not an absolute path
 #   any other non-zero status is the content print's own (the counts and the
-#   checkpoint line above it already ran) — a refused or failed print is
-#   never an empty log
+#   checkpoint line above it already ran, and the end-of-scan line names the
+#   status) — a refused or failed print is never an empty log
 #
 # This is the inline scan SKILL.md carried in step 2, unchanged in what it
 # runs and prints, moved into a file for two reasons. A reader can review it
@@ -117,7 +124,10 @@ a_sus=0; [ -d "$d/archive" ] && a_sus=$(LC_ALL=C find "$d/archive" -maxdepth 1 -
 p="$root/skill-observations/cross-cutting-principles.md"
 pa='/^(\140\140\140|~~~)/ {f=!f} f {next} /^## Active Principles/ {a=1; h=1; next} a && /^## / {a=0}'
 pr=absent; [ -f "$p" ] && pr=$(awk "$pa"' a && /^### / {n++} END {print (h ? n+0 : "unparsed")}' "$p")
-[ "$pr" = unparsed ] && echo "NOTE: the principles file has no '## Active Principles' heading — 'could not parse', not 'no principles'; read it directly"
+# fx counts the finding lines (NOTE / LOST ENTRIES / GAP) printed above the
+# entries, for the end-of-scan line.
+fx=0
+[ "$pr" = unparsed ] && { echo "NOTE: the principles file has no '## Active Principles' heading — 'could not parse', not 'no principles'; read it directly"; fx=$((fx + 1)); }
 
 # --- the guard: files present and nothing parsed is a broken command ----------
 if [ "$n" -gt 0 ] && [ "$parsed" -eq 0 ]; then echo "SCAN COMMAND BROKEN — $n files present, 0 headers parsed"; exit 1; fi
@@ -125,11 +135,40 @@ if [ "$n" -gt 0 ] && [ "$parsed" -eq 0 ]; then echo "SCAN COMMAND BROKEN — $n 
 # --- findings ----------------------------------------------------------------
 # Lost entries: a zero-byte numbered file, or one with no opening `---`.
 lost=$( { find "$d" -maxdepth 1 -name '[0-9]*.md' -empty; LC_ALL=C find "$d" -maxdepth 1 -name '[0-9]*.md' ! -empty -exec awk 'FNR==1 {sub(/^\357\273\277/, ""); if (!/^---[[:space:]]*$/) print FILENAME; nextfile}' {} +; } | sed 's|.*/||' | LC_ALL=C sort | tr '\n' ' ')
-[ -n "$lost" ] && echo "LOST ENTRIES — no header, an interrupted write; report each, never reuse or delete: $lost"
+[ -n "$lost" ] && { echo "LOST ENTRIES — no header, an interrupted write; report each, never reuse or delete: $lost"; fx=$((fx + 1)); }
 # Headers that did not parse, by name: no opening, or no closing `---`.
-[ "$parsed" -lt "$n" ] && echo "NOTE: $((n - parsed)) of $n headers did not parse (no opening or no closing ---):" && LC_ALL=C find "$d" -maxdepth 1 -name '[0-9]*.md' -exec awk 'FNR==1 {if (NR>1 && fm) print f; f=FILENAME; sub(/^\357\273\277/, ""); fm=/^---[[:space:]]*$/; if (!fm) {print f; nextfile}; next} fm && /^---[[:space:]]*$/ {fm=0; nextfile} END {if (fm) print f}' {} +
-[ "$suspect" -gt 0 ] || [ "$a_sus" -gt 0 ] && echo "NOTE: $suspect of $n headers (and $a_sus in archive/) look like invalid YAML (an unquoted ': ', text after a closing quote, a value opening with a backtick, @ or %, an undefined escape, a colon in an unquoted list entry) — quote or fix them (File format)"
+[ "$parsed" -lt "$n" ] && { echo "NOTE: $((n - parsed)) of $n headers did not parse (no opening or no closing ---):"; fx=$((fx + 1)); } && LC_ALL=C find "$d" -maxdepth 1 -name '[0-9]*.md' -exec awk 'FNR==1 {if (NR>1 && fm) print f; f=FILENAME; sub(/^\357\273\277/, ""); fm=/^---[[:space:]]*$/; if (!fm) {print f; nextfile}; next} fm && /^---[[:space:]]*$/ {fm=0; nextfile} END {if (fm) print f}' {} +
+[ "$suspect" -gt 0 ] || [ "$a_sus" -gt 0 ] && { echo "NOTE: $suspect of $n headers (and $a_sus in archive/) look like invalid YAML (an unquoted ': ', text after a closing quote, a value opening with a backtick, @ or %, an undefined escape, a colon in an unquoted list entry) — quote or fix them (File format)"; fx=$((fx + 1)); }
 printf 'files: %s  parsed: %s  suspect (awk, a floor): %s  archive-suspect: %s\n' "$n" "$parsed" "$suspect" "$a_sus"
+
+# --- pointer: skill-observations/MOVED.md marks a root as abandoned ------------
+# Left by a consolidation or a re-anchor (references/environments.md, "Before
+# creating a log, search for one"). A session still anchored here is the one
+# that has to see it, and nothing else in the protocol lists the root. Data,
+# not an order: report it, with how many entries were written here after it.
+mv_ptr="$root/skill-observations/MOVED.md"
+if [ -f "$mv_ptr" ]; then
+  mv_line=$(head -n 1 "$mv_ptr" | tr -d '\r' | cut -c 1-200)
+  mv_after=$(find "$d" -maxdepth 1 -name '[0-9]*.md' -newer "$mv_ptr" 2>/dev/null | wc -l | tr -d ' ')
+  echo "NOTE: pointer at this root (skill-observations/MOVED.md): \"$mv_line\" — $mv_after entries written here since it; report both roots and ask, never consolidate or re-anchor on it"
+  fx=$((fx + 1))
+fi
+
+# --- gap: days since the previous session-start scan --------------------------
+# Read before this run's trace line is appended. The previous scan's date is
+# the last day a session ran the protocol; a gap of 7 days or more (the
+# review interval) while the user kept working is the one sign a skill that
+# stopped being activated can leave: the sessions in between never reached
+# the step that would say so. Day numbers come from awk, so no `date -d`
+# (GNU) or `date -j` (BSD) is needed. No earlier scan line: no note.
+ck="$root/skill-observations/checkpoints.log"
+gap=$( [ -f "$ck" ] && LC_ALL=C awk -v today="$(date +%F)" '
+  function dn(s,  y, m, d) { y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; d = substr(s, 9, 2) + 0
+    if (m < 3) { y--; m += 12 }
+    return 365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d }
+  / session-start scan:/ && /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/ { last = substr($ 0, 1, 10) }
+  END { if (last != "") { g = dn(today) - dn(last); if (g >= 7) print last " " g } }' "$ck")
+[ -n "$gap" ] && { echo "GAP: the previous session-start scan ran ${gap% *}, ${gap#* } days ago. If work happened in between, the skill was not activated in those sessions: check the activation instruction (references/environments.md, \"Verify activation in a NEW session\")"; fx=$((fx + 1)); }
 
 # --- the trace: one line per session, with date, time and source -------------
 printf '%s [%s] session-start scan: files=%s parsed=%s principles=%s\n' "$(date '+%F %H:%M')" "${PWD##*/}" "$n" "$parsed" "$pr" \
@@ -142,12 +181,22 @@ find "$(dirname "$root")" -maxdepth 3 -type d -path '*/skill-observations/observ
 # --- content: printed with the headers below ---------------------------------
 # The active principles' headings.
 [ -f "$p" ] && awk "$pa"' a && /^### / {sub(/\r$/, ""); print}' "$p"
-# LAST: the frontmatter of every numbered entry, one awk for the whole set
-# over the directory's own glob (no word splitting of a spaced path). This is
-# the only half a content classifier can refuse, so everything above has
-# already run when it is.
+# The frontmatter of every numbered entry, one awk for the whole set over the
+# directory's own glob (no word splitting of a spaced path). This is the only
+# half a content classifier can refuse, so everything above has already run
+# when it is.
 ( export LC_ALL=C; [ "$n" -eq 0 ] || { cd "$d" && awk 'FNR==1 && NR>1 && fm {print "---"}
     FNR==1 {sub(/^\357\273\277/, ""); fm=/^---[[:space:]]*$/; if (!fm) {print "---"; nextfile}; next}
     fm && /^---[[:space:]]*$/ {fm=0; print "---"; nextfile}
     fm
     END {if (fm) print "---"}' [0-9]*.md; } )
+rc=$?
+
+# --- LAST: the end-of-scan line ----------------------------------------------
+# Repeats the counts and says how many finding lines stand above the entries,
+# so output cut to its last lines still shows that there were findings to
+# read; it is a pointer to the whole output, never its replacement.
+st=; [ "$rc" -eq 0 ] || st="; content print exited $rc"
+printf 'end of scan — files: %s  parsed: %s  suspect: %s  archive-suspect: %s  principles: %s; finding lines above the entries (NOTE / LOST ENTRIES / GAP): %s%s. Read the output whole: never cut it with head, tail or grep\n' \
+  "$n" "$parsed" "$suspect" "$a_sus" "$pr" "$fx" "$st"
+exit "$rc"

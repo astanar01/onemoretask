@@ -1,5 +1,7 @@
 # Skill Authoring — structure, taxonomy, licensing, confidentiality, editing rules
 
+Load triggers: writing or substantially changing any skill file, setup work and new skills included; generalising an open-source observation's Principle (confidentiality layers); classifying a skill or observation as open-source or internal; propagating a cross-cutting principle; the feedback pre-flight before drafting a report upstream; the upstream check for a third-party project; a skill target that resolves but may not be able to run
+
 Load this before creating any skill or making substantial changes to one.
 
 ## Contents
@@ -24,6 +26,7 @@ Load this before creating any skill or making substantial changes to one.
 - Runtime prerequisites — declare what the skill needs to be able to run
 - Retiring skills — harvest before you retire
 - Principle Propagation
+- Reference-file ceilings — the growth barrier
 
 ## Taxonomy in full
 
@@ -101,13 +104,6 @@ like. It is not: it governs anything the skill instructs a future session to
 path or a tool invocation is exactly that. A skill whose core is "consult
 these sources" ships its sources the way another ships a command.
 
-Observed on one such skill: eight sources, all plausible, all written down
-without being tried. **Four were unusable** — two returned 403 even with a
-browser user agent, one returned "Making sure you're not a bot!", and one
-returned an empty single-page-app shell with no results. Every one of them
-read as correct on the page, and would have gone on reading as correct on
-every later re-read.
-
 Why this is worse than a broken shell command: a broken command fails
 loudly, and the session knows to stop. An unreachable source returns
 *something* — an empty result set, a login page, a shell — and the natural
@@ -121,10 +117,6 @@ Before shipping any check, ask what it would look like if the thing being
 checked had failed — and if the answer is "the same", the check is
 decoration. The trap has a characteristic shape: the artefact being
 inspected was produced or touched by the same session doing the inspection.
-Observed: a set of bundles was published to a remote destination and
-verified by reading a local extraction folder that the same session had
-written the corrected content into. It would have reported "all correct"
-had the publication failed completely.
 
 What distinguishes arrival from non-arrival is a **discriminator** — a
 value only the far side can produce: a server-assigned identifier, an
@@ -161,10 +153,7 @@ headroom, and the next ordinary additions spend it without anyone
 deciding to.
 
 A skill that declares neither has not opted in. The count and the distance to
-the 500-line target are still reported; nothing is gated. That is deliberate,
-and it is the correction to a real defect: the ceiling was briefly a constant
-inside the validator, so one skill's budget failed three unrelated skills that
-had not changed. **A tool one skill ships for the whole library must not carry
+the 500-line target are still reported; nothing is gated. That is deliberate. **A tool one skill ships for the whole library must not carry
 that skill's own constants.** Any threshold in a shared script is either read
 from the subject being checked or is advisory — the tell is a gate that fails
 on input its author never looked at.
@@ -208,10 +197,8 @@ being rewritten anyway.
 
 **For any skill intended for publication, progressive disclosure is
 mandatory, not the default for large ones.** A readiness check verifies
-what it was written to catch, and structure was agreed by everyone and
-encoded by no one — so a ~1,200-line single file passed every
-confidentiality, licence and attribution check and shipped, with its
-restructure noted as a "standing follow-up" for three runs. Define "flat"
+what it was written to catch, and nothing encodes structure unless a check
+is written for it. Define "flat"
 mechanically so the gate is a script line, not a judgement: **no
 `references/` directory, or a `references/` directory the `SKILL.md` never
 points at (no pointer list or section map naming a file in it), or a
@@ -233,28 +220,29 @@ Splitting is indicated when the count of distinct load triggers into one
 file grows, whatever its size — each trigger pays for every other
 episode's content — and a long single-episode file is correctly shaped
 and must not be split to satisfy a size rule. One measurement of this
-skill's own bundle (lines / distinct section-named load triggers),
-copied from the validator's `reference shape` line — refresh it from
-that line, never by hand. The validator counts pointers that name a
-section, so a file the core cites only by filename reads n/a:
+skill's own bundle (lines / load triggers declared in each file's
+header), copied from the validator's `reference shape` line — refresh it
+from that line, never by hand:
 
 | file | lines | triggers |
 |---|---:|---:|
-| `weekly-review.md` | 1,992 | 1 |
-| `observation-log.md` | 1,714 | **18** |
-| `environments.md` | 1,432 | 5 |
-| `skill-authoring.md` | 1,400 | n/a |
-| `starter-principles.md` | 444 | n/a |
-| `signals.md` | 232 | 4 |
-| `migration.md` | 226 | n/a |
+| `weekly-review.md` | 1,990 | 3 |
+| `environments.md` | 1,704 | 12 |
+| `observation-log.md` | 1,493 | **20** |
+| `skill-authoring.md` | 1,369 | 7 |
+| `starter-principles.md` | 482 | 1 |
+| `migration.md` | 250 | 1 |
+| `signals.md` | 234 | 6 |
 
 A line ceiling flags the largest file first — the one that needs no
 change, since a review loads it whole as a unit — and cannot tell it
-from the file that eighteen separate moments in a session each pull
-in. So `scripts/validate-skill-bundle.py` prints the
-per-file trigger count on every run, deliberately **not gated**: one
-snapshot cannot site a threshold, and this one already overturned the
-rule that was about to be written; the next review argues from a trend.
+from the file that twenty separate moments in a session each pull
+in. So `scripts/validate-skill-bundle.py` prints the per-file trigger
+count on every run, and gates growth only for a skill that opts in with
+per-file ceilings ("Reference-file ceilings — the growth barrier",
+below): there the declared count picks the remedy for a file that
+outgrows its ceiling, split above 12 triggers, trim or a reasoned raise
+at 12 or fewer.
 When a split is made, it needs a load-observation test per moved episode
 (below), and never two structural splits in one test period — a
 regression could not be attributed to either.
@@ -312,8 +300,7 @@ the copy with a stop condition, not a shorter copy.** Duplication
 defended as insurance is the least audited kind — the argument for
 copying it is also an argument against questioning the copy, so the
 copies carrying the most important rules are the ones most likely to be
-silently stale (found in practice: a third copy of a rule set still
-carried a convention its source had superseded, and nothing detected it).
+silently stale.
 A copy of a rule can drift out of agreement with its source; a refusal to
 proceed without the source cannot. "If the skill did not load, stop and
 report — do not proceed from this prompt" is one line and has nothing to
@@ -439,6 +426,20 @@ short-form ("[Author] and contributors") in the frontmatter, the footer,
 reference-file and script headers, and long-form ("Created and maintained
 by [Author], improved by its community of users") in human-facing docs.
 
+**A skill this skill helps create ships two maintenance aids.** Its README
+gets a short "How this skill improves" section, written for the skill's
+next maintainer: the input is repeated corrections and gaps filled by hand;
+the manual method is two lines — note each correction where the skill's
+rule was missing or wrong, and fold the notes into the skill at a regular
+review; task-observer automates that capture and review; and
+benchmarked-optimisation tools, which score a skill against a test set,
+complement it. Its attribution block carries the canonical-source line,
+`metadata.source` as in the template above, which is what lets a
+downstream user route a finding upstream. SKILL.md, loaded every session,
+gets at most a one-line pointer to the README section. A "scaffolded with"
+footer was considered and rejected: it serves the author, not the reader,
+and forks strip it.
+
 **Distribution-channel note:** the template's feedback routing assumes
 public-repo distribution. Only reference a repository URL once that
 repository actually exists — never write a reference to an artefact before
@@ -486,13 +487,10 @@ known to contain one. A generic path segment the skill itself names
 (`skill-observations`, `observation-log`) is not an identifier and stays
 off the list.
 
-The failure this prevents: a verification report posted to an upstream
-maintainer carried two private project names, because the multi-log block
-asks that every id leaving its log carry its workspace key, and in a local
-install the key IS the project's directory name. The report complied with
-the rule and leaked because of it. A human noticed about ten minutes after
-posting; the fix was delete and re-post, because an edit leaves the first
-version in the edit history.
+Failure shape: the rule that cross-log ids carry their workspace key
+leaks project names when the key is a directory name, so a report can
+comply with the rule and leak because of it; an edited post keeps its
+first version in the history, so the fix is delete and re-post.
 
 **The draft's claims about its own runs are checked against the record.**
 The pre-flight checks the reported problem at HEAD and the gate checks
@@ -511,24 +509,14 @@ a test workspace") from the observation into the report; on an existing
 thread, read all of it first and say only what it lacks; and re-measure
 versions and other tickets' states at send time. This is Step 5's
 factual-claims rule (`weekly-review.md`) applied where text leaves the
-machine. Observed: five drafts from one session's evidence, after a
-clean pre-flight and identifier scan, had 3 of 28 numbered claims
-refuted, and further rounds on the corrected drafts refuted more — a
-result claimed for cases never measured, a dropped precondition, a
-constructed fixture told as "we hit", a generalisation over a family of
-code pages that two of the four tested contradicted.
+machine.
 
 **A draft a person will paste is checked the way it will be consumed.**
 The pre-flight runs before a draft exists and the gate above reads the
 draft for what must not be in it; neither reads it as a paste source,
 and two properties break in transit that no content check sees.
-Observed: three issue drafts in one file, each headed `**Title:**
-<title>` and hard-wrapped with blank lines between paragraphs, posted by
-hand — every published title began with `** ` because the label's
-closing asterisks were selected with the value, and every body lost all
-of its blank lines, so its paragraphs rendered merged; the pre-flight
-had passed, the identifier scan was clean, and a post-publication
-comparison that normalised whitespace called the bodies identical. So,
+Failure shape: a `**Title:**` label pasted with its asterisks, and
+hard-wrapped bodies that lose their blank lines. So,
 for any report handed over to be posted by hand: (1) **shape** — each
 field alone in its own fenced block, the fence longer than any backtick
 run inside it and carrying no info string (a selection that starts on the
@@ -550,6 +538,19 @@ see. The same holds for every artefact handed over for pasting — an
 activation block, a hook entry, a handoff document; the config case
 carries its own read-back in `environments.md` ("A delegated setup step
 is not done until you have observed it").
+
+**Where the agent runs on the person's machine, remove the selection.**
+The paste-check reads the file; the defects above entered at the person's
+selection, which no check on the file can see. Where a clipboard tool
+exists, load one field into the clipboard yourself (Windows PowerShell:
+`Set-Clipboard -Value (Get-Content -Raw -Encoding UTF8 "<file>")`), read
+it back (`Get-Clipboard -Raw`), compare it with the source line by line,
+blank lines included, and only then name the field to paste into. Load a
+field only once the target form is open in front of the person, and give
+nothing else to copy in that message — links as plain links, no code
+blocks, no commands: a read-back proves the clipboard at the moment of the
+read, and anything copied before the paste replaces it. The read-back
+after posting (3) stays.
 
 ## The description has more than one reader
 
@@ -730,19 +731,16 @@ verification claim in any public artefact, in ANY date format.** The
 shapes are examples subordinate to that definition, never the definition:
 `YYYY-MM-DD`, `DD/MM/YYYY`, `Mon YYYY`, `Month YYYY`, `QN YYYY`, the
 bare-year "as of 2026", and the sentence-position forms "on <date>" and
-"run on <date>". The list matters because the rule was once specified as
-"month-name + year patterns", and every scan thereafter grepped exactly
-that shape: a reviewer running the example has complied with the
+"run on <date>". The list matters because a scan greps exactly the shapes it was given:
+a reviewer running the example has complied with the
 rule as written, so nothing prompts the question whether the pattern
-covers the rule, and twelve ISO-dated claims survived — one inside a
-reviewed, signed-off release commit. So make the check mechanical and
+covers the rule. So make the check mechanical and
 auditable: any publishing workflow scans public artefacts before
 committing — a scan, not a reminder — with the pattern set in a script
 where it can be extended in one place, and **the scan records WHICH
 patterns ran**; a green result whose coverage is unstated is unauditable.
 Two consequences follow. A count produced by an enumerated set of shapes
-is a **lower bound**, never a "corrected" figure: the sweep that reported
-eight sites as corrected had missed three the least specific grep found.
+is a **lower bound**, never a "corrected" figure.
 And a check that has passed every run is evidence about the check, not
 about the artefact — the instrument guard (`observation-log.md`, "Every
 instrument gets the same guard") applies to green results exactly as to
@@ -760,13 +758,6 @@ installation, and those may legitimately name current state. The unstated
 assumption is that someone re-checks that state — but nothing fires when it
 drifts, so "internal, therefore dated facts are fine" becomes "internal,
 therefore permanently wrong".
-
-Observed: an internal skill opened with a hardcoded version number of the
-system it described; the deployed system moved on and the skill's first
-paragraph was wrong within a day. It was the second time the same number
-had gone stale, and five further copies sat in memory files and handover
-notes. The first paragraph is where it does most damage, because it is read
-before anything that might contradict it.
 
 So an internal skill may carry current state only with a **named
 re-check**: what re-derives the value, and when. "Version X (re-derive from
@@ -801,18 +792,11 @@ re-check exists, do not record the value — record how to obtain it.
    different inode from live's (`stat -c %i` on GNU, `stat -f %i` on
    macOS) — refuse to edit when they match. The manifest's install
    instructions name the resolved real path, since that is the file the
-   user must overwrite. Scope and precedence: staging-only governs every context
-   and every size of change. The direct-apply clause in SKILL.md ("Acting
-   on Observations") decides *when* a small change is made — now, rather
-   than at the next review — never *where*; it does not license an
-   in-place edit.
+   user must overwrite.
 2. Always base edits on a fresh read of the live file — never a workspace
    copy, prior draft, or memory.
 3. Before overwriting any staged/workspace copy, diff it against the live
-   file; if they differ, rebase your edits on the live version. (Observed
-   failure: an update built on a stale snapshot silently dropped two
-   sections added to the live skill the same day; only a pre-merge diff
-   caught it.)
+   file; if they differ, rebase your edits on the live version.
 4. Before any cross-copy sync or publish work (live install, workspace
    copies, published repo/branch), enumerate all copies of the artefact
    and establish freshness PER COPY from evidence — mtime, content
@@ -862,11 +846,25 @@ re-check exists, do not record the value — record how to obtain it.
    has its file in the staged set — a path qualified with an owning skill
    name (`<skill-name>/references/<file>`) is a cross-reference, exempt by
    construction, and that is the convention for citing another skill's
-   file (weekly-review.md, Delivery). The validator extracts a path that
+   file; a file in the repository the skill operates on is cited
+   repository-relative (`./scripts/<file>`), exempt the same way in prose
+   and in command position — the convention for that case, not the
+   disguise the gate forbids (both: weekly-review.md, Delivery); the
+   skill's own files keep the bare prefix, since either spelling would
+   pass one that is missing. The validator extracts a path that
    fills a whole backtick span, and also one in command position — after
-   an interpreter (`python3`, `bash`, `node`, `uv run` …) inside an inline
-   span or a fenced block, with arguments behind it — while a bare path
-   quoted as an example with no interpreter stays unchecked; (2) the delivery artefact
+   an interpreter (`python3`, `py`, `bash`, `node`, `uv run` …) inside an
+   inline span or a fenced block, with arguments behind it — while a bare
+   path quoted as an example with no interpreter stays unchecked. For the
+   Python and shell families the interpreter's own options are skipped
+   first (`py -3`, `bash -eu`), and `-m` or `-c` means no script follows,
+   so `python3 -m pytest scripts/t.py` is not checked. It also warns
+   on every `$` followed by a digit, and on `$ARGUMENTS`, in SKILL.md: a
+   loader that passes skill arguments rewrites them in the delivered body
+   (the file on disk is unchanged), so an awk field reference there is
+   written `$ 2`, and a command that needs `$1` belongs in a script or a
+   reference file; a warning, not a failure, because a placeholder can be
+   intended; (2) the delivery artefact
    is the `.skill` bundle — bare file links fail this gate even when all
    files are staged; (3) frontmatter constraints — measure the description
    (the FOLDED value, not the raw YAML block) and fail the delivery above
@@ -908,10 +906,10 @@ re-check exists, do not record the value — record how to obtain it.
    candidate over the existing corpus first and record, per rule: (a)
    hits on today's corpus, (b) true defects among them, (c) the
    normalisation needed to remove the rest. None of that is knowable from
-   the idea alone — measured on one corpus, one candidate class produced
-   35 hits that were nearly all locale artefacts, two produced 0 hits
-   (free locks, addable today), one produced 7 of which 2 were defects
-   and 5 legitimate content a naive rule would flag forever. A proposed
+   the idea alone: one candidate class fires mostly on artefacts of the
+   corpus, another finds nothing and is a free lock to add today, and a
+   third mixes a few real defects with legitimate content a naive rule
+   would flag forever. A proposed
    guard is a claim about the future, and the cheapest evidence for it
    already exists in the artefact being audited; a rule with an
    unmeasured false-positive rate is a proposal to make people ignore a
@@ -938,12 +936,8 @@ re-check exists, do not record the value — record how to obtain it.
    `chmod -R u+w` on the staged path. A workaround documented as
    equivalent to another must be re-verified per failure surface — an
    option that works for single files can still fail for directory trees.
-   Use the exact snippet in `weekly-review.md` Step 5 rather than
-   reconstructing it: strip the live prefix **without** a trailing slash so
-   the top-level directory maps to the staged root, and keep `IFS=` on the
-   read loops for paths containing spaces. Both are easy to get wrong from
-   this description alone, and the resulting phantom directories cannot be
-   deleted on a mount that denies `unlink`.
+   Use the exact snippet in `weekly-review.md` Step 5; its notes explain
+   the two details that are easy to get wrong.
 7. Match process rigour to the change: complex/open-source/uncertain design
    → use the skill-creator if available; internal skills with requirements
    already established in conversation → write directly, flagging
@@ -965,10 +959,7 @@ re-check exists, do not record the value — record how to obtain it.
    doing the superseded thing, and the only witness is the user noticing an
    old behaviour reappear weeks after asking for it to stop. And drift is
    fast — it is the source's rate of change that predicts it, not the
-   copy's age (observed: four days from an anti-drift rule being written to
-   a live violation of it, in a skill whose rules were under active
-   rewrite, found only because the prompt happened to be opened for an
-   unrelated reason).
+   copy's age.
 
    **A rename is a migration, not an edit.** Where skills are hosted by an
    account or an app, a skill under a new name is a new skill. Before the
@@ -982,13 +973,9 @@ re-check exists, do not record the value — record how to obtain it.
    String replacement edits text, but a list, a table, a `## Contents`
    index, a frontmatter block or a numbered sequence of steps is
    structure, and an anchor-relative insert is safe only if you know what
-   is adjacent to the anchor — which `replace` gives no way to assert.
-   Observed: a list entry prepended to the paragraph that followed the
-   list, "entry + blank line + anchor", pushed the list's own closing
-   blank into its middle; rendered, one list became two, and the defect
-   survived a validator run, a confidentiality scan and a commit review,
-   because an *unchanged* line had moved relative to its neighbours and
-   none of the three reads shape. So: parse to lines, locate the insertion
+   is adjacent to the anchor — which `replace` gives no way to assert
+   (an unchanged line that moved survives a validator, a scan and a
+   review, since none reads shape). So: parse to lines, locate the insertion
    point by a **structural predicate** (the last line matching `^- `, the
    last row before the blank, the key after which the new key sorts),
    splice, rejoin. Never anchor on the text of a neighbouring paragraph.
@@ -1003,14 +990,6 @@ you.** The rules above cover editing safely; nothing covers confirming
 afterwards that the edit took. Three things get conflated — the file on
 disk, the copy the loader injected into this session, and what a fresh
 session would receive — and they can all differ at once.
-
-Observed, in one session: the loader served a *previous lineage* of a
-`SKILL.md`, missing an entire section and stating the opposite rule on a
-formatting standard, while the file on disk (hash-verified, edited 45
-minutes earlier in that same session) carried the corrected text. Answering
-from the injected copy would have given the user exactly the wrong answer
-on a normative question. It was caught only because someone grepped the
-file on disk for a literal quote.
 
 The obvious remedy fails too: launching a subagent to simulate "a fresh
 session" does not break the freeze. A subagent's context starts cold but
@@ -1035,11 +1014,6 @@ agent can check rather than infer:
 
 > Applies ONLY when the project has a `package.json` with a `react`
 > dependency. In every other project, ignore this section entirely.
-
-Observed working in both directions inside a single session on a machine
-serving two unrelated lines of work: the section stayed inert while the
-working directory was a documents folder, and governed the whole workflow
-once a React project was open.
 
 **State the negative branch explicitly**, because it is the half that gets
 left out. "Applies when X" reads as complete and leaves the agent to decide
@@ -1143,12 +1117,6 @@ because nothing in the delivery compares against the tip it is landing on.
 Git will not save you here: the relocation is a set of whole files, not a
 patch, so there is nothing to conflict.
 
-Observed: a split of one file into a core plus new reference files, built
-and verified three ways (line-range diff against the old base, exact-match
-against the new files, word-count check), all of which passed — against the
-base from an hour earlier. One line inside a moved block had changed in the
-meantime.
-
 So express the relocation as something **re-derivable from whatever the
 live base currently is** — a script, or a procedure precise enough to
 re-run — and re-derive immediately before delivery rather than trusting the
@@ -1182,15 +1150,8 @@ and consistency with the family is a legitimate design value — which is
 precisely why the inherited-but-unnecessary step survives review. It does
 not read as wrong; it reads as belonging.
 
-Observed: a family whose every member opens by identifying a governing
-institution, because every member's output depends on which rulebook
-applies. The new member copied that step and required the institution to be
-resolved before any work. The user's correction was one line: *don't ask
-about the institution — just ask how many items I want of each kind.* They
-already knew the numbers. An inherited question had turned a one-line input
-into a two-step interrogation.
-
-The person who detects this is the one who has to answer the question, and
+The person who detects this is the one who has to answer an inherited
+question, and
 by then it has shipped. So make it an explicit authoring step: for each
 step copied from a sibling, state **what this skill's output would lose if
 the step were removed**. A step whose answer is "consistency" is inherited,
@@ -1215,10 +1176,8 @@ weekly-review.md Step 5): a staged copy that never went live has no live
 file to diff against, so nothing else in the procedure surfaces it, and
 a from-scratch draft beside it drops whatever it carried.
 
-Use the skill-creator when available, passing the observation(s) as the
-brief. Determine type early: open-source → strip and generalise; internal →
-include specifics freely; uncertain → default open-source and let the user
-add internal detail afterwards.
+Where the skill-creator is used (editing rule 7), pass the observation(s)
+as its brief.
 
 **First decide whether the skill joins a family, and if it does, read the
 siblings before drafting.** Intent → interview → draft is right for a
@@ -1228,9 +1187,7 @@ registry is `skill-observations/skill-families.md`; see
 of the answer, distributed unevenly across its members. Drafting from the
 current session's experience and consulting the siblings only for the
 tool-agnostic parts you happen to remember produces a third divergent
-member: observed, a new skill carried a category neither sibling had and
-omitted two that one sibling had, taking a family from two inconsistent
-members to three. The cost is asymmetric and front-loaded — reading two
+member. The cost is asymmetric and front-loaded — reading two
 siblings first is minutes; reconciling three divergent skills afterwards
 means re-reading all of them, deciding per rule whether each divergence is
 intentional, and editing in three places, with the divergences hardest to
@@ -1270,9 +1227,7 @@ one mover, and require that mover to produce **both** halves of every
 section it splits (the core text and the companion's remainder) plus the
 coverage table from "Verifying relocations and restructures". The
 reconciliation notes, not the diffs, are the deliverable the maintainer
-reviews. Two independent movers flagging the same ambiguity means the
-brief is the defect: fix the brief and re-issue rather than adjudicating
-the outputs.
+reviews.
 
 **A script that ships with a skill is verified by a hostile test, not a
 normal run.** Each of these failure shapes passes an ordinary run and is
@@ -1304,53 +1259,48 @@ caught only by a test built to break it.
 ## Runtime prerequisites — declare what the skill needs to be able to run
 
 A skill that drives something outside itself — a CLI binary, a daemon, an
-API key, a container runtime — is only as installed as the thing it drives.
-Presence in the skill listing says the files are there. It says nothing
-about whether invoking them can work.
+API key, a container runtime — is only as installed as the thing it
+drives: the listing says the files are there, not that they can run.
 
 The failure this produces is specific and expensive: the agent reads a
 full, confident description, selects the skill for the task it names, and
 discovers the missing prerequisite only partway through the work. It reads
 as the agent's error rather than the inventory's, and the task it was
-chosen for is already half-done. In one reported estate, nine skills for a
-single security tool sat in the listing indistinguishable from working
-ones; the tool needed Docker, which was absent, and a paid API key outside
-the user's subscription. The adopter's only defence was a hand-written
-prohibition in `CLAUDE.md` naming all nine — a rule that has to be read and
-obeyed, rather than a fact the system knows.
-
-The same estate showed why this has to be a required element rather than
-good practice: an audit found 2 of the 9 members declared the prerequisite
-in their own `SKILL.md` and 7 did not. Left optional, a family drifts.
+chosen for is already half-done. Failure shape: listed skills that cannot
+run are indistinguishable from working ones, and the adopter's only
+defence is a hand-written prohibition — a rule that has to be read and
+obeyed, rather than a fact the system knows; left optional, a family drifts.
 
 **Required for any skill that drives an external tool.** Declare the
 prerequisites as *checkable facts*, so that something other than a human
-reader can evaluate them:
+reader can evaluate them, in ONE string under `metadata` — the Agent
+Skills spec types `metadata` as string→string, and a top-level key of
+our own fails its validators as an unexpected key:
 
 ```yaml
-requires:
-  - binary: docker          # on PATH
-  - env: OPENAI_API_KEY     # set and non-empty
-  - service: http://localhost:11434   # reachable
+metadata:
+  requires: "binary:docker; binary:ffmpeg -version; binary:python>=3.9; env:OPENAI_API_KEY; service:http://localhost:11434"
 ```
 
-Three forms cover nearly everything: a binary on `PATH`, an environment
-variable that is set, and an endpoint that answers. Each is one cheap
-command. Anything that cannot be reduced to one of those is a prose note in
-the skill body, not a declaration — a check nobody can run is worse than an
-honest sentence, because it looks like a guarantee.
+Entries are separated by `;`, each `kind:value`. Three kinds cover
+nearly everything: `binary:NAME` is a binary that starts (its version
+flag exits 0; a flag after the name replaces `--version`, and
+`>=VERSION` after the name is the least its output may report),
+`env:NAME` is an environment variable that is set and non-empty, and
+`service:URL` is an endpoint that answers. Each is one cheap command.
+Locating the binary is the presence check one level down — a shim or
+launcher on `PATH` that aborts at load is found and cannot run;
+presence in a registry is not capability. Anything that
+cannot be reduced to one of those is a prose note in the skill body, not
+a declaration — a check nobody can run is worse than an honest sentence,
+because it looks like a guarantee.
 
 **What consumes it.** Session Start step 6 resolves `skill:` targets and
-reports the ones that do not resolve; with this block it can also report the
+reports the ones that do not resolve; with this string it can also report the
 ones that resolve *and cannot run*. A dead target and a deleted target both
 mean "observations are accumulating against something that will never act on
 them", and for any skill driving an external tool the dead one is the
 commoner case.
-
-**The general principle.** Presence in a registry is not capability. Any
-inventory an agent selects from needs a liveness dimension, because the
-failure it otherwise produces — confidently choosing a listed thing that
-cannot run — is invisible at selection time and expensive at use time.
 
 ## Retiring skills — harvest before you retire
 
@@ -1398,3 +1348,27 @@ any skill creation or regeneration.
 **Propagation:** [immediate | opportunistic]
 **Status:** [active]
 ```
+
+## Reference-file ceilings — the growth barrier
+
+The trigger count the validator prints on every run becomes a gate for a
+skill that opts in. Opting in is one file, `references/ceilings.txt`, with a
+line per reference file — `<file.md> <ceiling>`, seeded at each file's
+current count — and one `Load triggers: a; b; c` line in each reference
+file's header (before its first `## ` heading), one entry per distinct
+episode that loads it: a pointer scan cannot count episodes exactly. With
+the sidecar present, `validate-skill-bundle.py` fails when:
+
+- a file exceeds its ceiling. The remedy follows its declared trigger
+  count: more than 12, split it by episode; 12 or fewer, trim it, or raise
+  the ceiling with a dated one-line reason beside the number
+  (`<file.md> <lines> YYYY-MM-DD <why>`);
+- a ceiling sits more than 3 lines above its file: lower it in the commit
+  that trimmed;
+- a file has no ceiling line or no `Load triggers:` line.
+
+Size alone never forces a split, so a single-episode file is still never
+split to meet a size rule. Without the sidecar nothing is gated, which is
+why it has a plain name: an install route that drops dotfiles would switch
+the gate off without a word. Change a file's `Load triggers:` line in the
+same edit as any core pointer into it.
