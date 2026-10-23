@@ -1203,8 +1203,20 @@ def who(model):
     return "Codex" if codex.is_model(model or "") else "Claude"
 
 
-def codex_note(p):
+def answer_only_roots(p):
+    """The folders an answer-only Codex session may write in: the board (its reports) and the task-observer log."""
+    obs = os.path.join(p.path, "skill-observations")
+    return [os.path.realpath(p.board), *([os.path.realpath(obs)] if os.path.isdir(obs) else [])]
+
+
+def codex_note(p, answer_only=False):
     """Appended to a Codex session's prompt: the brief is written for Claude Code."""
+    if answer_only:
+        return codex_note(p) + (
+            f" This card is answer-only: you start in an empty scratch folder, and the project is in "
+            f"{shell_path(p.path)}. Read it there (use `cd` or full paths; its AGENTS.md and CLAUDE.md apply). The "
+            "project is read-only for you, and nothing can lift that. The board folder (for the report command) and "
+            "the temp folder are the only places you can write.")
     return ("Note: you run in OpenAI's Codex CLI, not Claude Code, so there is no Skill tool and no Agent tool. Where "
             "this brief names a skill to invoke, use it if it is in your own skills list; otherwise read its SKILL.md "
             f"(user skills are in {shell_path(os.path.expanduser('~/.claude/skills'))}/<name>/SKILL.md, project skills in "
@@ -1221,8 +1233,9 @@ def start_session(p, task_id, name, prompt, model, effort="", worker=""):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
         effort_args(effort)  # and a bad effort level
-        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path,
-                           session_effort(model, effort))
+        locked = answer_only_task(p, task_id)
+        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p, locked), model, p.path,
+                           session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
     # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
     # A resume keeps it (the job's respawnFlags).
