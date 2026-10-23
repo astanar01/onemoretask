@@ -591,6 +591,11 @@ def worker_model(model, on_codex):
     return model if model and MODEL.fullmatch(model) and codex.is_model(model) == on_codex else ""
 
 
+def pinned_worker(t, model):
+    """The model a delegating Claude card's session pins its subagents to (start_session's `worker`), else ''."""
+    return worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and not codex.is_model(model) else ""
+
+
 def delegate_lines(model, report, answer_only=False, codex=False):
     """`codex`: the session runs on Codex, whose subagents are workers from its spawn_agent / wait tools."""
     model = worker_model(model, codex)
@@ -829,8 +834,7 @@ def _launch(p, task_id, model, effort=""):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(prompt)
-        worker = worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and not codex.is_model(model) else ""
-        aid = start_session(p, task_id, name, prompt, model, effort, worker)
+        aid = start_session(p, task_id, name, prompt, model, effort, pinned_worker(t, model))
     except Exception:
         # No session: take back what this send made. No --force and -d, so anything holding work stays.
         if "worktree" in made:
@@ -3312,7 +3316,8 @@ def reopen(p, task_id, text, images=(), handed=0):
     if images:
         prompt += "\n\nImages attached to this message (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
-    aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, model, t["agent"].get("effort") or "")
+    aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, model, t["agent"].get("effort") or "",
+                        pinned_worker(t, model))
     if handed:  # notes sent while the recap was written: already on the card
         reports.append(p.board, task_id, "resume", f"Handed {who(model)} {handed} message{'s' if handed > 1 else ''} it "
                        "had not read yet", "you", session=aid)
