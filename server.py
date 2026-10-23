@@ -471,10 +471,17 @@ def answer_only_lines(report):
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
-            "what to do next. If they then reply asking you to go ahead, that reply lifts the no-changes rule, not the "
-            "branch rule: make the changes in the project folder on the branch it is on now. Never create, switch or "
-            "check out a branch there (other tasks share that folder), even to keep the work apart; if the work needs "
-            "its own branch, ask on the card first."]
+            "what to do next.",
+            "- " + ANSWER_ONLY_WORK]
+
+
+# Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.
+ANSWER_ONLY_WORK = (
+    "This card stays answer-only for its whole life: no reply lifts the no-changes rule, not \"go ahead\", \"do it\" "
+    "or \"fix it\". When a reply asks you to make changes (edit, code, commit, install), do none of it, not even a "
+    "small part. Answer any question it also asks, then end with a `done` report saying that this card only answers "
+    "and that the work needs a new card: the \"Create new task\" button on this card starts one from this answer. "
+    "The board also refuses file edits and git writes in the project for an answer-only card.")
 
 
 def worktree_lines(wt, main):
@@ -1144,10 +1151,13 @@ def commit_ref(p, t):
 
 def inbox_settings(p, task_id, worker=""):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
-    branch_guard.py, so no session switches the branch of the main checkout that other tasks share. `worker`: the
+    branch_guard.py, so no session switches the branch of the main checkout that other tasks share (and an
+    answer-only card edits no files and writes nothing with git). `worker`: the
     card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request)."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
-    guard = [{"matcher": "Bash", "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
+    # Edit tools too: on an answer-only card the guard also refuses file edits and git writes in a repo.
+    guard = [{"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+              "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
     # bgIsolation none: Claude Code's own background-session isolation would otherwise put the session in a
     # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
     # folder). The board makes the worktree itself when the card asks for one.
@@ -2678,6 +2688,8 @@ def board_tail(p, task_id):
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     extra += delegate_reminder(t)
+    if t and t.get("answerOnly"):
+        extra += "\n\n" + ANSWER_ONLY_WORK
     # Every reply restates the setting: it may have been switched since the session's first brief.
     # False (not missing) means the user switched it off, so a session briefed with it on stops.
     if simple_words(state):

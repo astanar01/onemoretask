@@ -2,6 +2,7 @@
 
 ## 2026-10-23
 
+- A card set to "answer only" now never does the work, even if you say "go ahead". It tells you to start a new card for that, with the "Create new task" button.
 - When a card says which model its helpers should use, they now use that model. Before, they could quietly use a bigger one.
 
 ## 2026-10-22
