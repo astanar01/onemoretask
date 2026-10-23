@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-23
+
+- When a card says which model its helpers should use, they now use that model. Before, they could quietly use a bigger one.
+
 ## 2026-10-22
 
 - The helper that writes down ideas to make Claude's skills better is now the newest version. It checks itself better when it starts and keeps its notes safer. The Update button now brings you its newest version too.

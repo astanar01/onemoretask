@@ -829,7 +829,8 @@ def _launch(p, task_id, model, effort=""):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(prompt)
-        aid = start_session(p, task_id, name, prompt, model, effort)
+        worker = worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and not codex.is_model(model) else ""
+        aid = start_session(p, task_id, name, prompt, model, effort, worker)
     except Exception:
         # No session: take back what this send made. No --force and -d, so anything holding work stays.
         if "worktree" in made:
@@ -1141,16 +1142,19 @@ def commit_ref(p, t):
     return "HEAD"
 
 
-def inbox_settings(p, task_id):
+def inbox_settings(p, task_id, worker=""):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
-    branch_guard.py, so no session switches the branch of the main checkout that other tasks share."""
+    branch_guard.py, so no session switches the branch of the main checkout that other tasks share. `worker`: the
+    card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request)."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
     guard = [{"matcher": "Bash", "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
     # bgIsolation none: Claude Code's own background-session isolation would otherwise put the session in a
     # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
     # folder). The board makes the worktree itself when the card asks for one.
-    return json.dumps({"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook},
-                       "worktree": {"bgIsolation": "none"}})
+    s = {"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}}
+    if worker:
+        s["env"] = {"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"}
+    return json.dumps(s)
 
 
 def is_codex(s):
@@ -1176,7 +1180,7 @@ def codex_note(p):
             "brief says.")
 
 
-def start_session(p, task_id, name, prompt, model, effort=""):
+def start_session(p, task_id, name, prompt, model, effort="", worker=""):
     if codex.is_model(model):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
@@ -1187,7 +1191,8 @@ def start_session(p, task_id, name, prompt, model, effort=""):
     # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
     # A resume keeps it (the job's respawnFlags).
     r = run_claude(["--bg", "-n", name, "--permission-mode", PERMISSION_MODE, "--disallowedTools", "AskUserQuestion",
-                    *model_args(model), *effort_args(effort), "--settings", inbox_settings(p, task_id), prompt], cwd=p.path, timeout=60)
+                    *model_args(model), *effort_args(effort), "--settings", inbox_settings(p, task_id, worker), prompt],
+                   cwd=p.path, timeout=60)
     out = ANSI.sub("", r.stdout + r.stderr)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]+)", out)
     if r.returncode != 0 or not m:
