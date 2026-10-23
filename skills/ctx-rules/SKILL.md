@@ -5,15 +5,11 @@ description: "Use ctx_search before re-running commands this session. Triggers o
 
 ## Context Mode (session memory)
 
-The full protocol lives in `~/.claude/rules/ctx-rules.md`, which is loaded in every session —
-it is the single source; this skill exists because session hooks invoke `Skill('ctx-rules')`.
-Re-read that file's sections when needed:
+The full protocol is the always-loaded `~/.claude/rules/ctx-rules.md`; this skill exists because
+session hooks invoke `Skill('ctx-rules')`. Re-read that file's sections when needed:
 
-- **What gets indexed** — only `ctx_batch_execute`, `ctx_execute`/`ctx_execute_file` with
-  `intent=` and output over 5 KB, `ctx_index` and `ctx_fetch_and_index`. Plain Bash/Read/Grep
-  output is NOT searchable later.
-- **Retrieval protocol** — `ctx_search` before re-running anything; about one search per 3–5
-  indexing operations.
-- **Anti-patterns** — never cap output with `head`/`tail`/`sed -n`/`grep -m` inside captured
-  commands; filter in code and print only findings.
-- **`ctx_execute_file` is text-only** — for binary assets open the bytes in `ctx_execute`.
+- **What gets indexed**: only `ctx_batch_execute`, `ctx_execute`/`ctx_execute_file` with `intent=`
+  and output over 5 KB, `ctx_index`, `ctx_fetch_and_index`. Plain Bash/Read/Grep output is not searchable later.
+- **Retrieval protocol**: `ctx_search` before re-running anything; about one search per 3–5 indexing operations.
+- **Anti-patterns**: never cap output with `head`/`tail`/`sed -n`/`grep -m` in captured commands; filter in code.
+- **`ctx_execute_file` is text-only**: open binary assets in `ctx_execute`.
