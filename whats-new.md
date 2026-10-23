@@ -2,6 +2,7 @@
 
 ## 2026-10-23
 
+- When Claude asks you a question on a card that has its own copy of your project, the "Run app" button now stays next to "Reply in Conversation", so you can try the app before you answer.
 - When a card says which model its helpers should use, they now use that model, also when you open a finished card again. Before, they could quietly use a bigger one.
 
 ## 2026-10-22

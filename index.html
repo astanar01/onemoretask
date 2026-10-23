@@ -2340,7 +2340,8 @@ function nextAction(t, ag, g) {
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
     return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
       text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
-      actions: replyOpen(t) ? [toReply()] : [] };
+      // A question often follows "try it with Run app", so keep that button beside the reply one while the worktree exists.
+      actions: replyOpen(t) ? [toReply(), ...(useServer && t.agent.worktree && ag.worktree && !t.answerOnly ? [runApp()] : [])] : [] };
   }
   // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
   // Below the working / needs_you branches so a reply still shows progress and permission buttons.
