@@ -36,9 +36,9 @@ def installed():
 def log_dir(board):
     return os.path.join(board, "agent_reports", "codex")
 
-def start(board, task_id, name, prompt, model, cwd, effort=""):
+def start(board, task_id, name, prompt, model, cwd, effort="", writable=None):
     STARTS.append({"board": board, "task": task_id, "name": name, "prompt": prompt, "model": model, "cwd": cwd,
-                   "effort": effort})
+                   "effort": effort, "writable": writable})
     return "cdx-%d" % len(STARTS)
 
 def resume(board, thread_id, message):
@@ -154,6 +154,22 @@ aid = server.start_session(p, "t1", "task: Codex task", "THE BRIEF", "opus")
 assert aid == "abc123" and claude_calls and claude_calls[-1][0] == "--bg" and "opus" in claude_calls[-1], claude_calls
 assert len(codex.STARTS) == 1, "a Claude start went to codex"
 print("ok  start_session: gpt-5.5 -> codex.start with the Codex note at the end; opus -> claude --bg")
+assert st["writable"] is None, st
+
+# ---- (a2) an answer-only card: Codex may write only in the board (and the observer log), never the project
+tasks["tasks"][0]["answerOnly"] = True
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(tasks, f)
+os.makedirs(os.path.join(proj, "skill-observations"), exist_ok=True)
+server.start_session(p, "t1", "task: Codex task", "THE BRIEF", "gpt-5.5")
+st = codex.STARTS[-1]
+assert st["writable"] == [os.path.realpath(p.board), os.path.realpath(os.path.join(proj, "skill-observations"))], st
+assert st["prompt"].endswith(server.codex_note(p, True)) and "read-only" in st["prompt"], st["prompt"][-300:]
+codex.STARTS.pop()
+tasks["tasks"][0].pop("answerOnly")
+with open(p.data, "w", encoding="utf-8") as f:
+    json.dump(tasks, f)
+print("ok  answer-only Codex start: writable = board + observer log only, prompt says the project is read-only")
 
 # ---- (b) the watcher follows the Codex session
 LOG = os.path.join(p.board, "agent_reports", "codex", "cdx-1.jsonl")

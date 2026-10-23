@@ -4,6 +4,7 @@
 
 - When Claude asks you a question on a card that has its own copy of your project, the "Run app" button now stays next to "Reply in Conversation", so you can try the app before you answer.
 - When a card says which model its helpers should use, they now use that model, also when you open a finished card again. Before, they could quietly use a bigger one.
+- A card set to "answer only" now never does the work, even if you say "go ahead". It tells you to start a new card for that, with the "Create new task" button.
 
 ## 2026-10-22
 

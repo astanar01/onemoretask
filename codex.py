@@ -294,11 +294,30 @@ def _kill(proc):
         proc.wait()
 
 
-def start(board, task_id, name, prompt, model, cwd, effort=""):
-    """Launch a new Codex session for a card; returns its thread id once codex has named it."""
+def lock_args(roots):
+    """-c overrides that keep a session's writes to `roots` (and the temp dir), with no way to ask for more: the
+    user's config may send such requests to an automatic reviewer that says yes. Only -c, since `exec resume`
+    takes no -s or --add-dir; it is passed again on every resume."""
+    return ["-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"',
+            "-c", "sandbox_workspace_write.writable_roots=" + json.dumps(roots)]
+
+
+def answer_dir(task_id):
+    """The working folder of an answer-only session: an empty one outside the project, since Codex can always write
+    in its working folder."""
+    return os.path.join(tempfile.gettempdir(), "task-board-answer", task_id)
+
+
+def start(board, task_id, name, prompt, model, cwd, effort="", writable=None):
+    """Launch a new Codex session for a card; returns its thread id once codex has named it. `writable`: the only
+    folders it may write in (an answer-only card); it then works from answer_dir, so `cwd` stays read-only."""
     base = os.path.join(folder(board), f"{task_id}-{int(time.time() * 1000)}")
     log, err = base + ".jsonl", base + ".err"
-    argv = CODEX_CMD + ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write"]
+    lock = lock_args(writable) if writable is not None else []
+    if lock:
+        cwd = answer_dir(task_id)
+        os.makedirs(cwd, exist_ok=True)
+    argv = CODEX_CMD + ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write", *lock]
     if model:
         argv += ["-m", model]
     if effort:
@@ -311,7 +330,7 @@ def start(board, task_id, name, prompt, model, cwd, effort=""):
     PROCS[thread_id] = proc
     _write_meta(board, {"id": thread_id, "task": task_id, "name": name, "model": model, "effort": effort, "cwd": cwd, "log": log,
                         "err": err, "started": time.time(), "pid": proc.pid, "pid_start": _pid_start(proc.pid), "turns": 1,
-                        "exit": None, "removed": False})
+                        "exit": None, "removed": False, **({"lock": lock} if lock else {})})
     return thread_id
 
 
@@ -325,7 +344,9 @@ def resume(board, thread_id, message):
     log, err = meta["log"], meta["err"]
     offset = os.path.getsize(log) if os.path.exists(log) else 0
     err_offset = os.path.getsize(err) if os.path.exists(err) else 0
-    argv = CODEX_CMD + ["exec", "resume", "--json", "--skip-git-repo-check"]
+    argv = CODEX_CMD + ["exec", "resume", "--json", "--skip-git-repo-check", *(meta.get("lock") or [])]
+    if meta.get("lock") and meta.get("cwd"):
+        os.makedirs(meta["cwd"], exist_ok=True)  # a temp folder: a restart may have emptied it
     if meta.get("model"):
         argv += ["-m", meta["model"]]
     if meta.get("effort"):

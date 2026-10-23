@@ -138,6 +138,27 @@ except RuntimeError as e:
     assert "bad auth" in str(e), e
 print("ok  a start that exits early raises RuntimeError with the stderr")
 
+# --- an answer-only card: locked to the given folders, from an empty folder, on start AND on every resume
+roots = [os.path.join(TMP, "board-only")]
+tid5 = codex.start(BOARD, "t5", "locked", "hello", "", CWD, writable=roots)
+wait_idle(tid5)
+lock = codex.lock_args(roots)
+got = [json.loads(l)["argv"] for l in open(GOT, encoding="utf-8")]
+start_argv = got[-1]
+assert all(a in start_argv for a in lock) and 'approval_policy="never"' in start_argv, start_argv
+assert start_argv[start_argv.index("-C") + 1] == codex.answer_dir("t5") != CWD, start_argv
+m5 = json.load(open(os.path.join(codex.folder(BOARD), tid5 + ".json"), encoding="utf-8"))
+assert m5["lock"] == lock and m5["cwd"] == codex.answer_dir("t5"), m5
+codex.resume(BOARD, tid5, "again")
+wait_idle(tid5)
+resume_argv = [json.loads(l)["argv"] for l in open(GOT, encoding="utf-8")][-1]
+assert "resume" in resume_argv and all(a in resume_argv for a in lock), resume_argv
+assert 'sandbox_workspace_write.writable_roots=' + json.dumps(roots) in resume_argv, resume_argv
+plain = [a for a in got if "resume" not in a and "-C" in a and a[a.index("-C") + 1] == CWD]
+assert plain and not any("approval_policy" in x for a in plain for x in a), plain
+codex.remove(BOARD, tid5)
+print("ok  writable=: start and resume carry the lock, the session works from an empty folder; others carry none")
+
 # --- models
 assert codex.is_model("gpt-5.5") and codex.is_model("O3-mini") and codex.is_model("codex-auto")
 assert not codex.is_model("opus") and not codex.is_model("") and not codex.is_model(None)

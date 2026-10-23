@@ -470,11 +470,22 @@ def answer_only_lines(report):
             "Merge button, so a merge line in the recap misleads the user.",
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
+            "- Your shell commands run in a sandbox where the project folder is read-only: run the report command "
+            "exactly as given (it runs outside the sandbox). Scratch files go in $TMPDIR. That includes the "
+            "task-observer log in the project: only its new-observation.sh runs outside the sandbox, so write and "
+            "change its files with the Write and Edit tools, and skip a log step that needs a shell write there.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
-            "what to do next. If they then reply asking you to go ahead, that reply lifts the no-changes rule, not the "
-            "branch rule: make the changes in the project folder on the branch it is on now. Never create, switch or "
-            "check out a branch there (other tasks share that folder), even to keep the work apart; if the work needs "
-            "its own branch, ask on the card first."]
+            "what to do next.",
+            "- " + ANSWER_ONLY_WORK]
+
+
+# Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.
+ANSWER_ONLY_WORK = (
+    "This card stays answer-only for its whole life: no reply lifts the no-changes rule, not \"go ahead\", \"do it\" "
+    "or \"fix it\". When a reply asks you to make changes (edit, code, commit, install), do none of it, not even a "
+    "small part. Answer any question it also asks, then end with a `done` report saying that this card only answers "
+    "and that the work needs a new card: the \"Create new task\" button on this card starts one from this answer. "
+    "The board also refuses file edits and git writes in the project for an answer-only card.")
 
 
 def worktree_lines(wt, main):
@@ -1148,17 +1159,44 @@ def commit_ref(p, t):
 
 def inbox_settings(p, task_id, worker=""):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
-    branch_guard.py, so no session switches the branch of the main checkout that other tasks share. `worker`: the
+    branch_guard.py, so no session switches the branch of the main checkout that other tasks share (and an
+    answer-only card edits no files and writes nothing with git; its shell runs in a read-only sandbox). `worker`: the
     card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request)."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
-    guard = [{"matcher": "Bash", "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
+    # Edit tools too: on an answer-only card the guard also refuses file edits and git writes in a repo.
+    guard = [{"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+              "hooks": [{"type": "command", "command": script_cmd(p, task_id, "branch_guard.py")}]}]
     # bgIsolation none: Claude Code's own background-session isolation would otherwise put the session in a
     # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
     # folder). The board makes the worktree itself when the card asks for one.
     s = {"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}}
+    if answer_only_task(p, task_id):
+        s["sandbox"] = answer_only_sandbox(p, task_id)
     if worker:
         s["env"] = {"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"}
     return json.dumps(s)
+
+
+def answer_only_task(p, task_id):
+    try:
+        state = load_tasks(p)
+    except (OSError, ValueError):
+        return False
+    return any(t.get("id") == task_id and t.get("answerOnly") for t in state.get("tasks") or [])
+
+
+def observer_script():
+    return os.path.join(observations.config_dir(), "skills", "task-observer", "scripts", "new-observation.sh")
+
+
+def answer_only_sandbox(p, task_id):
+    """Claude Code's sandbox for an answer-only card's shell commands: the project folder is read-only (the hook
+    only sees edit tools and git). A deny beats any allow inside it, so the report script and the task-observer's
+    id script, which write in the board and log folders, run outside the sandbox instead. The temp dir stays
+    writable and the network open, so looking things up still works."""
+    return {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
+            "excludedCommands": [report_cmd(p, task_id) + " *", f"bash {shlex.quote(shell_path(observer_script()))} *"],
+            "filesystem": {"denyWrite": [os.path.realpath(p.path)]}, "network": {"allowedDomains": ["*"]}}
 
 
 def is_codex(s):
@@ -1171,8 +1209,20 @@ def who(model):
     return "Codex" if codex.is_model(model or "") else "Claude"
 
 
-def codex_note(p):
+def answer_only_roots(p):
+    """The folders an answer-only Codex session may write in: the board (its reports) and the task-observer log."""
+    obs = os.path.join(p.path, "skill-observations")
+    return [os.path.realpath(p.board), *([os.path.realpath(obs)] if os.path.isdir(obs) else [])]
+
+
+def codex_note(p, answer_only=False):
     """Appended to a Codex session's prompt: the brief is written for Claude Code."""
+    if answer_only:
+        return codex_note(p) + (
+            f" This card is answer-only: you start in an empty scratch folder, and the project is in "
+            f"{shell_path(p.path)}. Read it there (use `cd` or full paths; its AGENTS.md and CLAUDE.md apply). The "
+            "project is read-only for you, and nothing can lift that. The board folder (for the report command) and "
+            "the temp folder are the only places you can write.")
     return ("Note: you run in OpenAI's Codex CLI, not Claude Code, so there is no Skill tool and no Agent tool. Where "
             "this brief names a skill to invoke, use it if it is in your own skills list; otherwise read its SKILL.md "
             f"(user skills are in {shell_path(os.path.expanduser('~/.claude/skills'))}/<name>/SKILL.md, project skills in "
@@ -1189,8 +1239,9 @@ def start_session(p, task_id, name, prompt, model, effort="", worker=""):
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
         effort_args(effort)  # and a bad effort level
-        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p), model, p.path,
-                           session_effort(model, effort))
+        locked = answer_only_task(p, task_id)
+        return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p, locked), model, p.path,
+                           session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
     # --disallowedTools takes several values, so it must not sit right before the prompt (it would swallow it).
     # A resume keeps it (the job's respawnFlags).
@@ -2682,6 +2733,8 @@ def board_tail(p, task_id):
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     extra += delegate_reminder(t)
+    if t and t.get("answerOnly"):
+        extra += "\n\n" + ANSWER_ONLY_WORK
     # Every reply restates the setting: it may have been switched since the session's first brief.
     # False (not missing) means the user switched it off, so a session briefed with it on stops.
     if simple_words(state):
