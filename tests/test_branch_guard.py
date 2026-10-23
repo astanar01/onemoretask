@@ -170,7 +170,9 @@ git_denied = ["git commit -m x", "git add .", "git push", "git merge feature", "
               "git apply p.diff", "git rebase main", "git status && git commit -am x", f"git -C {main} add a.txt",
               "bash -c 'git commit -m x'", "git config user.name X", "git checkout a.txt", "git rm a.txt",
               "git symbolic-ref HEAD refs/heads/feature", "git symbolic-ref -d HEAD", "git symbolic-ref -m why HEAD x",
-              "git diff --output=x.txt", "git log --output x.txt"]
+              "git diff --output=x.txt", "git log --output x.txt", "git config --unset user.name",
+              "git config --global --unset user.name", "git config --unset-all x.y", "git config --remove-section core",
+              "git config --rename-section core x", "git config --add x.y", "git config --edit", "git config -e"]
 for cmd in git_denied:
     check(f"answer-only: denies {cmd!r}", guard(cmd) == "deny")
 git_allowed = ["git status", "git log --oneline -5", "git diff HEAD~1", "git show HEAD", "git branch",
@@ -197,6 +199,8 @@ check("answer-only session: the report command runs outside the sandbox",
       server.report_cmd(p, "t1") + " *" in sb.get("excludedCommands", []))
 check("other cards: no sandbox", "sandbox" not in json.loads(server.inbox_settings(p, "t2")))
 check("answer-only prompt names the read-only sandbox", "read-only" in " ".join(server.answer_only_lines("report")))
+check("answer-only prompt: observer log files go through the edit tools",
+      "new-observation.sh" in " ".join(server.answer_only_lines("report")))
 check("answer-only reply restates the rule", "no reply lifts" in server.ANSWER_ONLY_WORK)
 
 print(f"\n{len(fails)} failed" if fails else "\nall passed")

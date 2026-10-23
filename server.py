@@ -471,7 +471,9 @@ def answer_only_lines(report):
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
             "- Your shell commands run in a sandbox where the project folder is read-only: run the report command "
-            "exactly as given (it runs outside the sandbox). Scratch files go in $TMPDIR.",
+            "exactly as given (it runs outside the sandbox). Scratch files go in $TMPDIR. That includes the "
+            "task-observer log in the project: only its new-observation.sh runs outside the sandbox, so write and "
+            "change its files with the Write and Edit tools, and skip a log step that needs a shell write there.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
             "what to do next.",
             "- " + ANSWER_ONLY_WORK]

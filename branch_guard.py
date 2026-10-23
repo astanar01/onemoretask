@@ -11,7 +11,8 @@ guard against a habit, not a sandbox.
 
 On an answer-only card (tasks.json "answerOnly", read on every call, so the card's tick counts as it is now) it also
 refuses Edit / Write / NotebookEdit on a file inside a git work tree or the session's folder (the task-observer folders
-excepted) and every git command that is not a read. Shell redirects and scripts still get through.
+excepted) and every git command that is not a read. Shell redirects and scripts are left to the read-only sandbox
+server.answer_only_sandbox puts the session's shell in.
 """
 import json
 import os
@@ -145,6 +146,9 @@ def git_writes(sub, args):
     if sub == "reflog":
         return bool(names) and names[0] != "show"
     if sub == "config":
+        if {"--unset", "--unset-all", "--remove-section", "--rename-section", "--add", "--replace-all", "-e",
+                "--edit"} & set(args):
+            return True
         return not any(a in {"-l", "--list", "--get-regexp", "--get-all"} or a.startswith("--get") for a in args) \
             and names[:1] not in (["get"], ["list"]) and len(names) != 1
     return True
