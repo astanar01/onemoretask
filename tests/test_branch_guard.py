@@ -168,17 +168,35 @@ check("answer-only: Read is allowed", guard("", tool="Read", tool_input={"file_p
 git_denied = ["git commit -m x", "git add .", "git push", "git merge feature", "git stash", "git reset --hard",
               "git branch new", "git branch -D feature", "git worktree add ../x", "git tag v1", "git restore a.txt",
               "git apply p.diff", "git rebase main", "git status && git commit -am x", f"git -C {main} add a.txt",
-              "bash -c 'git commit -m x'", "git config user.name X", "git checkout a.txt", "git rm a.txt"]
+              "bash -c 'git commit -m x'", "git config user.name X", "git checkout a.txt", "git rm a.txt",
+              "git symbolic-ref HEAD refs/heads/feature", "git symbolic-ref -d HEAD", "git symbolic-ref -m why HEAD x",
+              "git diff --output=x.txt", "git log --output x.txt"]
 for cmd in git_denied:
     check(f"answer-only: denies {cmd!r}", guard(cmd) == "deny")
 git_allowed = ["git status", "git log --oneline -5", "git diff HEAD~1", "git show HEAD", "git branch",
                "git branch -a", "git branch --show-current", "git worktree list", "git stash list", "git tag",
                "git remote -v", "git config --get user.name", "git config user.name", "git blame a.txt",
-               "git rev-parse HEAD", "git --version", "ls; cat a.txt", "echo 'git commit'"]
+               "git rev-parse HEAD", "git --version", "ls; cat a.txt", "echo 'git commit'", "git symbolic-ref HEAD",
+               "git symbolic-ref --short HEAD", "git symbolic-ref -q HEAD"]
 for cmd in git_allowed:
     check(f"answer-only: allows {cmd!r}", guard(cmd) == "allow")
 os.remove(os.path.join(TMP, "tasks.json"))
 check("no tasks.json: git commit is allowed", guard("git commit -m x") == "allow")
+check("symbolic-ref write really was refused: HEAD still on main", git("symbolic-ref", "HEAD") == "refs/heads/main")
+
+# ---- answer-only card: its Claude session gets a read-only sandbox for shell commands
+os.makedirs(p.board, exist_ok=True)
+with open(p.data, "w") as f:
+    json.dump({"tasks": [{"id": "t1", "answerOnly": True}, {"id": "t2"}]}, f)
+sb = json.loads(server.inbox_settings(p, "t1")).get("sandbox") or {}
+check("answer-only session: sandbox on, no way out of it",
+      sb.get("enabled") is True and sb.get("allowUnsandboxedCommands") is False)
+check("answer-only session: project folder is read-only",
+      sb.get("filesystem", {}).get("denyWrite") == [os.path.realpath(main)])
+check("answer-only session: the report command runs outside the sandbox",
+      server.report_cmd(p, "t1") + " *" in sb.get("excludedCommands", []))
+check("other cards: no sandbox", "sandbox" not in json.loads(server.inbox_settings(p, "t2")))
+check("answer-only prompt names the read-only sandbox", "read-only" in " ".join(server.answer_only_lines("report")))
 check("answer-only reply restates the rule", "no reply lifts" in server.ANSWER_ONLY_WORK)
 
 print(f"\n{len(fails)} failed" if fails else "\nall passed")

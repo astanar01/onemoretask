@@ -470,6 +470,8 @@ def answer_only_lines(report):
             "Merge button, so a merge line in the recap misleads the user.",
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
+            "- Your shell commands run in a sandbox where the project folder is read-only: run the report command "
+            "exactly as given (it runs outside the sandbox). Scratch files go in $TMPDIR.",
             f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
             "what to do next.",
             "- " + ANSWER_ONLY_WORK]
@@ -1152,7 +1154,7 @@ def commit_ref(p, t):
 def inbox_settings(p, task_id, worker=""):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
     branch_guard.py, so no session switches the branch of the main checkout that other tasks share (and an
-    answer-only card edits no files and writes nothing with git). `worker`: the
+    answer-only card edits no files and writes nothing with git; its shell runs in a read-only sandbox). `worker`: the
     card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request)."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
     # Edit tools too: on an answer-only card the guard also refuses file edits and git writes in a repo.
@@ -1162,9 +1164,33 @@ def inbox_settings(p, task_id, worker=""):
     # `worktree-<name>` worktree the board knows nothing about (no Run app / Merge buttons, Changes read the main
     # folder). The board makes the worktree itself when the card asks for one.
     s = {"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}}
+    if answer_only_task(p, task_id):
+        s["sandbox"] = answer_only_sandbox(p, task_id)
     if worker:
         s["env"] = {"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"}
     return json.dumps(s)
+
+
+def answer_only_task(p, task_id):
+    try:
+        state = load_tasks(p)
+    except (OSError, ValueError):
+        return False
+    return any(t.get("id") == task_id and t.get("answerOnly") for t in state.get("tasks") or [])
+
+
+def observer_script():
+    return os.path.join(observations.config_dir(), "skills", "task-observer", "scripts", "new-observation.sh")
+
+
+def answer_only_sandbox(p, task_id):
+    """Claude Code's sandbox for an answer-only card's shell commands: the project folder is read-only (the hook
+    only sees edit tools and git). A deny beats any allow inside it, so the report script and the task-observer's
+    id script, which write in the board and log folders, run outside the sandbox instead. The temp dir stays
+    writable and the network open, so looking things up still works."""
+    return {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
+            "excludedCommands": [report_cmd(p, task_id) + " *", f"bash {shlex.quote(shell_path(observer_script()))} *"],
+            "filesystem": {"denyWrite": [os.path.realpath(p.path)]}, "network": {"allowedDomains": ["*"]}}
 
 
 def is_codex(s):

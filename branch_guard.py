@@ -30,7 +30,7 @@ EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # git subcommands that only read. Some read only with certain arguments: see git_writes.
 GIT_READS = {"status", "log", "diff", "show", "blame", "grep", "ls-files", "ls-tree", "ls-remote", "rev-parse",
              "rev-list", "cat-file", "describe", "shortlog", "merge-base", "name-rev", "for-each-ref", "show-ref",
-             "symbolic-ref", "check-ignore", "whatchanged", "range-diff", "count-objects", "help", "version",
+             "check-ignore", "whatchanged", "range-diff", "count-objects", "help", "version",
              "show-branch", "cherry", "var", "diff-tree", "diff-index", "diff-files"}
 
 
@@ -121,9 +121,13 @@ def expand(path, where):
 
 def git_writes(sub, args):
     """True when `git <sub> <args>` may change a repo (an answer-only card may only read)."""
+    if any(a.startswith("--output") for a in args):  # git diff / log --output=<file> writes that file
+        return True
     if sub in GIT_READS or sub in {"-h", "--help", "--version"}:
         return False
     names = [a for a in args if not a.startswith("-")]
+    if sub == "symbolic-ref":  # one name reads it; a second name or -d sets or deletes it
+        return len(names) != 1 or bool({"-d", "--delete", "-m"} & set(args))
     if sub == "branch":
         if {"-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "-f", "--force", "-u",
                 "--unset-upstream", "--edit-description"} & set(args) or any(a.startswith("--set-upstream") for a in args):
