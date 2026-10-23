@@ -26,7 +26,7 @@ try:
         json.dump({"columns": [{"id": "c", "name": "To Do"}],
                    "tasks": [{"id": "t1", "title": "Fix it", "column": "c", "worktree": False}]}, f)
     stopped, removed = [], []
-    server.start_session = lambda p_, task_id, name, prompt, model, effort="": "cdx-1" if server.codex.is_model(model) else "a1"
+    server.start_session = lambda p_, task_id, name, prompt, model, effort="", worker="": "cdx-1" if server.codex.is_model(model) else "a1"
     server.run_claude = lambda args, **kw: stopped.append(args) or types.SimpleNamespace(returncode=0, stdout="", stderr="")
     server.codex.remove = lambda board, tid: removed.append(tid)
 

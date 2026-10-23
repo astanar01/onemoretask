@@ -2,7 +2,7 @@
 
 ## 2026-10-23
 
-- When a card says which model its helpers should use, they now use that model. Before, they could quietly use a bigger one.
+- When a card says which model its helpers should use, they now use that model, also when you open a finished card again. Before, they could quietly use a bigger one.
 
 ## 2026-10-22
 
