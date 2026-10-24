@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-24
+
+- A card set to "answer only" now always shows Claude's answer. Before, an answer with code words in it could get lost, and the card said Claude was stuck.
+
 ## 2026-10-23
 
 - When Claude asks you a question on a card that has its own copy of your project, the "Run app" button now stays next to "Reply in Conversation", so you can try the app before you answer.

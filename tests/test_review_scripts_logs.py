@@ -1,4 +1,5 @@
-"""Card logs and report.py: a broken log is kept aside, an image is never left cut off, `-` reads stdin.
+"""Card logs and report.py: a broken log is kept aside, an image is never left cut off, `-` reads stdin,
+`--file` reads a file, and a read-only board gets a retry hint.
 
     python3 tests/test_review_scripts_logs.py
 """
@@ -109,6 +110,34 @@ try:
     r = run("t1", "progress", "plain words")
     check("a normal message is posted as given",
           r.returncode == 0 and len(reports.read(board, "t1")) == n + 1)
+
+    # 4. `--file` reads the message from a file: the form an answer-only sandbox lets through.
+    msg = os.path.join(tmp, "answer.md")
+    with open(msg, "w", encoding="utf-8") as f:
+        f.write("Use `git worktree add` and $(x) here.\n\n- **bold** < more\n")
+    r = run("--lang", "English", "t1", "done", "--file", msg)
+    check("done --file posts the file's text as is", r.returncode == 0
+          and reports.read(board, "t1")[-1]["message"] == "Use `git worktree add` and $(x) here.\n\n- **bold** < more")
+    with open(msg, "w", encoding="utf-8") as f:
+        json.dump(dec | {"query": "From a file?"}, f)
+    r = run("t1", "decision", "--file", msg)
+    check("decision --file reads the JSON",
+          r.returncode == 0 and reports.read(board, "t1")[-1].get("decision", {}).get("query") == "From a file?")
+    for args in (("t1", "done", "--file", os.path.join(tmp, "missing.md")), ("t1", "done", "text", "--file", msg),
+                 ("t1", "done", "--file")):
+        r = run(*args)
+        check(f"refused without a traceback: {args[2:]}", r.returncode != 0 and "Traceback" not in r.stderr)
+
+    # 5. A board the shell may not write to (the answer-only sandbox) says how to retry, not a traceback.
+    n = len(reports.read(board, "t1"))
+    os.chmod(folder, 0o555)
+    try:
+        r = run("--lang", "English", "t1", "done", "the answer")
+    finally:
+        os.chmod(folder, 0o755)
+    check("a refused write explains the --file retry", r.returncode != 0 and "Traceback" not in r.stderr
+          and "--file <that file>" in r.stderr and f"--board {board} t1 done" in r.stderr)
+    check("nothing was posted", len(reports.read(board, "t1")) == n)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
