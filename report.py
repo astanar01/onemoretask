@@ -6,7 +6,9 @@
     python3 report.py [--board DIR] <task_id> done "what I did, what is left"
     python3 report.py [--board DIR] <task_id> decision -   < decision.json   (or a JSON string instead of -)
 
-A message of `-` is read from stdin, for every status.
+A message of `-` is read from stdin, for every status. `--file <path>` in place of the message reads it
+from that file: the form an answer-only card's sandbox lets through when the text holds a backtick, `$(`,
+a `<` or a heredoc.
 
 A decision is a choice between options; the card draws all of a task's decisions as one horizontal
 tree, each hanging off the option chosen before it, and redraws it as new ones arrive. Its JSON:
@@ -33,13 +35,15 @@ the card is refused. When the user asked for that language, pass
 `--lang <language>` to post it anyway.
 """
 import json
+import os
+import shlex
 import sys
 
 import reports
 
 STATUSES = ("progress", "question", "done")
 
-args, files, board, lang, options, parts = [], [], None, None, [], []
+args, files, board, lang, options, parts, msg_file = [], [], None, None, [], [], None
 it = iter(sys.argv[1:])
 for a in it:
     if a == "--image":
@@ -54,12 +58,21 @@ for a in it:
         board = next(it, None) or sys.exit("--board needs a folder")
     elif a == "--lang":
         lang = next(it, None) or sys.exit("--lang needs a language")
+    elif a == "--file":
+        msg_file = next(it, None) or sys.exit("--file needs a file")
     else:
         args.append(a)
-if len(args) != 3 or args[1] not in STATUSES + ("decision",):
+if len(args) != (2 if msg_file else 3) or args[1] not in STATUSES + ("decision",):
     sys.exit(__doc__)
+if msg_file:
+    try:
+        with open(msg_file, encoding="utf-8") as f:
+            args.append(f.read())
+    except (OSError, UnicodeDecodeError) as e:
+        sys.exit(f"--file {msg_file}: {e}")
 task_id, status, message = args
-if message == "-":
+asked = status
+if message == "-" and not msg_file:
     message = sys.stdin.read()
 try:
     reports._path("", task_id)
@@ -96,15 +109,36 @@ if mismatch:
     sys.exit(f"Not posted: this report is in {mismatch[0]}, but the user's latest message on the card is in "
              f"{mismatch[1]}. Write it again in {mismatch[1]}. A task ABOUT {mismatch[0]} is not a request to "
              f"answer in it. Only if the user asked for {mismatch[0]} answers, add --lang {mismatch[0]}.")
+
+
+def refused(e):
+    """The board folder is read-only for this shell: Claude Code's sandbox kept the command inside it (see
+    --file above), so say how to post the same text instead of a traceback."""
+    retry = " ".join(shlex.quote(a) for a in ("python3", os.path.abspath(__file__), "--board", board, task_id, asked))
+    sys.exit(f"Not posted: the board refused the write ({e}). This shell runs in a sandbox where the project is "
+             "read-only. The report command only runs outside it when its text has no backtick, no `$(`, no `<` "
+             "and no heredoc. Write the message to a file outside the project with the Write tool, then post it "
+             f"with: {retry} --file <that file>")
+
+
 images = []
 for p in files:
     try:
         with open(p, "rb") as f:
-            name = reports.store_image(f.read(), reports.log_images(board))
+            data = f.read()
+    except OSError as e:
+        sys.exit(f"{p}: {e}")
+    try:
+        name = reports.store_image(data, reports.log_images(board))
+    except PermissionError as e:
+        refused(e)
     except (OSError, ValueError) as e:
         sys.exit(f"{p}: {e}")
     if name not in images:
         images.append(name)
-reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
-               options=options, parts=parts)
+try:
+    reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
+                   options=options, parts=parts)
+except PermissionError as e:
+    refused(e)
 print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {len(images)} image(s)" if images else ""))
