@@ -230,6 +230,24 @@ this** button and fit check as on the board. **Create new task** at the top adds
 the search box at the top filters the list. Drag the list's edge to make it wider or narrower; double-click
 the edge to reset it. The board view is one click back in the same menu.
 
+### Plan milestones
+
+**View → Layout → Plan** is a place to plan before anything reaches the board. **New milestone** makes one:
+give it a name and say what should be true when it is done. Add its tasks one by one (type, then Enter), or
+click **Suggest tasks**: Claude (Sonnet, no tools) reads the milestone, the project's README and recent card
+titles, and adds a few dashed "Suggested" drafts. Edit them, open their notes with **≡**, remove them with
+**✕**, drag rows to reorder. Nothing goes to the board yet.
+
+When you are ready, tick some tasks and click **Send ticked**, or click **Send all**. The milestone lands in
+To Do as one card (marked **⚑**) with the sent tasks as its subtasks; no session starts, you send each card to
+Claude yourself. Each task's prompt names the milestone and carries its notes. You can send more later: they
+join the same milestone card.
+
+The milestone stays on the Plan page with a done count. A sent task shows its card's column and opens the card
+on click; edit it there. A card deleted from the board shows **Not on the board** and can be sent again.
+**Delete milestone** removes the plan only: its cards stay on the board. **Hide done milestones** keeps the
+list short.
+
 ### Use a worktree
 
 Every card has a **Use a worktree** box, ticked by default. A task sent with it on gets its own git
@@ -437,7 +455,11 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 - `agent` is only there once the task was sent to Claude. It holds the Claude session id.
 - Optional fields: `images` (file names in `images/`), `delegate` and `subagentModel`
   (the **Divide in subtasks** options), `answerOnly` (the **Answer only** box), `worktree` (the
-  **Use a worktree** box; missing counts as on).
+  **Use a worktree** box; missing counts as on), `milestone` (on a card sent from the Plan page: the id of
+  its milestone).
+- `milestones` (optional) holds the Plan page: `[{ id, title, notes, order, created, updated, card?, tasks:
+  [{ id, title, notes, order, card?, suggested? }] }]`. `card` is set once sent. A save that leaves the key out
+  (a board tab opened before the Plan page existed) keeps the milestones already on disk.
 
 ### Card messages: `agent_reports/<task_id>.json`
 

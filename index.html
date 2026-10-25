@@ -224,6 +224,50 @@ body.list-resizing { user-select: none; cursor: col-resize; }
   .lcard .tags { display: none; }
 }
 
+/* Plan layout (View menu): milestones on the left, the open one's tasks on the right. */
+#board.plan { padding: 0; gap: 0; overflow: hidden; align-items: stretch; min-height: 0; }
+body.view-plan #search { visibility: hidden; }
+.plan { flex: 1; display: grid; grid-template-columns: var(--list-w) 1fr; min-height: 0; min-width: 0; }
+.pl-side { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px 20px; border-right: 1px solid var(--line); overflow-y: auto; min-height: 0; }
+.pl-new { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; align-self: flex-start; }
+.pl-hide { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: calc(13px * var(--ts)); user-select: none; }
+.pl-item { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; min-width: 0; }
+.pl-item:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.pl-item.cur { border-color: var(--accent); background: var(--accent-soft); }
+.pl-item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pl-item .progress, .pl-head .progress { color: var(--muted); font-size: calc(12px * var(--ts)); }
+.pl-item.done .t { text-decoration: line-through; color: var(--muted); }
+.pl-drop-before { box-shadow: 0 -3px 0 var(--drop); }
+.pl-drop-after { box-shadow: 0 3px 0 var(--drop); }
+.pl-main { overflow-y: auto; min-height: 0; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
+.pl-empty { color: var(--muted); padding: 24px 0; }
+.pl-title { font-size: calc(20px * var(--ts)); font-weight: 600; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; margin-left: -7px; width: 100%; }
+.pl-title:hover, .pl-title:focus { border-color: var(--line); background: var(--card); }
+.pl-notes, .pl-row textarea { width: 100%; min-height: 70px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; background: var(--card); padding: 6px 8px; font: inherit; }
+.pl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pl-head .grow { flex: 1; }
+.pl-tasks { display: flex; flex-direction: column; gap: 6px; }
+.pl-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 8px; align-items: center; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.pl-row.sug { border-style: dashed; }
+.pl-row input[type="text"] { border: 1px solid transparent; background: transparent; border-radius: 4px; padding: 3px 5px; min-width: 0; width: 100%; }
+.pl-row input[type="text"]:hover, .pl-row input[type="text"]:focus { border-color: var(--line); }
+.pl-row .sent { cursor: pointer; padding: 4px 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-row .sent:hover { color: var(--accent); }
+.pl-row textarea { grid-column: 2 / -1; min-height: 50px; }
+.pl-row .icon { border: 0; background: transparent; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
+.pl-row .icon:hover, .pl-row .icon.on { background: var(--col); color: var(--text); }
+.pl-chip { font-size: calc(11px * var(--ts)); color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
+.pl-chip.is-done { color: var(--ok); border-color: var(--ok); }
+.pl-chip.gone { color: var(--wait); border-color: var(--wait); }
+.pl-add { border: 1px dashed var(--line); border-radius: 8px; background: transparent; padding: 8px 10px; width: 100%; }
+.pl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pl-actions .grow { flex: 1; }
+@media (max-width: 640px) {
+  .plan { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .pl-side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+  .pl-main { padding: 12px; }
+}
+
 /* detail panel */
 #overlay { position: fixed; inset: var(--hdr-h, 0px) 0 0; background: rgba(0,0,0,.35); display: none; justify-content: center; align-items: stretch; padding: 12px; }
 #overlay.open { display: flex; }
@@ -759,7 +803,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 <div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
   <button class="pop-row" id="theme"></button>
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
-  <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option></select></label>
+  <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option><option value="plan">Plan</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
   <label class="pop-row" id="notify-row" title="Pop up a note when Claude needs you or is done" hidden><span>Notifications<small id="notify-hint" hidden>Your browser blocks them. Allow them in this site's settings.</small></span><input type="checkbox" id="notify"></label>
   <label class="pop-row" id="sound-row" title="Play a chime with each note" hidden><span>Notification sound</span><input type="checkbox" id="notify-sound"></label>
@@ -1249,7 +1293,7 @@ function toggleCollapsed(id) {
 
 // Board or list layout: per-browser like `collapsed`.
 let view = "board";
-try { if (localStorage.getItem(LS_KEY + ":view") === "list") view = "list"; } catch (_) {}
+try { const v = localStorage.getItem(LS_KEY + ":view"); if (v === "list" || v === "plan") view = v; } catch (_) {}
 
 // Unsent reply text per card (one shared textarea), kept in this browser across reloads.
 // Read fresh on every use: another board tab may have saved its own drafts since.
@@ -1338,7 +1382,9 @@ function matches(t, q) {
 function render() {
   if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
   document.body.classList.toggle("view-list", view === "list");
+  document.body.classList.toggle("view-plan", view === "plan");
   if (view === "list") { queueMicrotask(syncListAria); return renderList(); }
+  if (view === "plan") return renderPlan();
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const board = $("#board");
   const q = $("#search").value.trim().toLowerCase();
@@ -1442,8 +1488,9 @@ function cardEl(t, top, nestedCount) {
       <div class="title">${t.priority ? `<span class="prio p-${esc(t.priority)}" title="${{ high: window.t("High priority"), med: window.t("Medium priority"), low: window.t("Low priority") }[t.priority]}"></span>` : ""}${esc(t.title)}</div>
       ${nestedCount && shut ? `<span class="hidden-count" title="${window.t("Hidden subtasks")}">+${nestedCount}</span>` : ""}
     </div>
-    ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length) ? `<div class="meta">
-      ${kids.length ? `<span class="progress" title="${window.t("{done} of {total} subtasks done", { done: doneKids, total: kids.length })}"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
+    ${(kids.length || t.tags.length || t.notes || t.answerOnly || t.agent || (t.images || []).length || t.milestone) ? `<div class="meta">
+      ${t.milestone ? `<span title="${window.t("Milestone from the Plan page")}">⚑</span>` : ""}
+      ${kids.length ?`<span class="progress" title="${window.t("{done} of {total} subtasks done", { done: doneKids, total: kids.length })}"><span class="bar"><i style="width:${(100 * doneKids / kids.length).toFixed(0)}%"></i></span>${doneKids}/${kids.length}</span>` : ""}
       ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
       ${t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
@@ -1555,6 +1602,253 @@ function listRowEl(x, depth) {
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(x.id); } };
   return el;
 }
+
+// ---------------------------------------------------------------- plan layout (milestones)
+// tasks.json "milestones": [{ id, title, notes, order, created, updated, card?, tasks: [{ id, title, notes, order,
+// card?, suggested? }] }]. A task is a draft here until it is sent; from then on its card is the truth (title, column).
+// Sending puts the milestone in To Do as one card (made again if it was deleted) with the sent tasks as its subtasks.
+let planOpen = null;           // milestone shown on the right
+try { planOpen = localStorage.getItem(LS_KEY + ":plan"); } catch (_) {}
+let planHideDone = false;
+try { planHideDone = localStorage.getItem(LS_KEY + ":planHideDone") === "1"; } catch (_) {}
+const planTick = new Set();    // ticked tasks, this page only
+const planNotes = new Set();   // tasks whose notes box is open
+let planBusy = null;           // milestone waiting on Suggest tasks
+let planArmed = null;          // milestone whose Delete was clicked once
+let planDrag = null;           // { kind: "m" | "d", id } while a milestone or a task row is dragged
+let planHtml = "";             // what the plan was last drawn from: polls redraw only on a change
+const milestones = () => (state.milestones = Array.isArray(state.milestones) ? state.milestones : []);
+const msById = (id) => milestones().find((m) => m.id === id);
+const planCard = (x) => (x.card && task(x.card)) || null;
+const planSendable = (d) => !planCard(d) && !!(d.title || "").trim();
+const byOrder = (a, b) => a.order - b.order;
+const nextIn = (list) => (list.length ? Math.max(...list.map((x) => x.order)) + 1 : 0);
+function planCount(m) {
+  const cards = m.tasks.map(planCard).filter(Boolean);
+  return { total: m.tasks.length, done: cards.filter(isDone).length, onBoard: cards.length };
+}
+const planDone = (m) => { const c = planCount(m); return c.total > 0 && c.done === c.total; };
+function planProgress(m) {
+  const c = planCount(m);
+  if (!c.total) return `<span class="progress">${t("No tasks yet")}</span>`;
+  return `<span class="progress" title="${esc(t("{n} on the board", { n: c.onBoard }))}"><span class="bar"><i style="width:${(100 * c.done / c.total).toFixed(0)}%"></i></span>${esc(t("{done} of {total} done", c))}</span>`;
+}
+function planChip(d) {
+  const c = planCard(d);
+  if (!d.card) return d.suggested ? `<span class="pl-chip">${t("Suggested")}</span>` : "";
+  if (!c) return `<span class="pl-chip gone" title="${esc(t("Its card was deleted. Tick it to send it again."))}">${t("Not on the board")}</span>`;
+  const col = column(c.column);
+  return `<span class="pl-chip${isDone(c) ? " is-done" : ""}">${esc(col ? t(col.name) : "")}</span>`;
+}
+function planRowHtml(d) {
+  const c = planCard(d), open = !c && planNotes.has(d.id);
+  const name = c ? `<span class="sent" data-open="${esc(c.id)}" title="${esc(t("Open its card"))}">${esc(c.title || t("Untitled task"))}</span>`
+    : `<input type="text" data-f="title" value="${esc(d.title || "")}" placeholder="${esc(t("Task title"))}">`;
+  const tools = c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`;
+  return `<div class="pl-row${d.suggested && !d.card ? " sug" : ""}" data-d="${esc(d.id)}" draggable="true">
+    <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${!c && planTick.has(d.id) ? " checked" : ""} title="${esc(c ? t("Already on the board") : t("Tick to send"))}">
+    ${name}<span>${planChip(d)}</span><span>${tools}</span>
+    ${open ? `<textarea data-f="notes" placeholder="${esc(t("Notes for Claude"))}">${esc(d.notes || "")}</textarea>` : ""}</div>`;
+}
+function planMainHtml(m) {
+  const rows = m.tasks.slice().sort(byOrder);
+  const ticked = rows.filter((d) => planTick.has(d.id) && planSendable(d)).length, left = rows.filter(planSendable).length;
+  const armed = planArmed === m.id;
+  return `<input class="pl-title" data-mf="title" value="${esc(m.title || "")}" placeholder="${esc(t("Milestone name"))}">
+    <textarea class="pl-notes" data-mf="notes" placeholder="${esc(t("What should be true when this milestone is done? Claude reads this to suggest tasks, and each task gets it too."))}">${esc(m.notes || "")}</textarea>
+    <div class="pl-head"><b>${t("Tasks")}</b>${planProgress(m)}<span class="grow"></span>
+      ${useServer ? `<button type="button" class="btn pl-suggest"${planBusy ? " disabled" : ""} title="${esc(t("Claude reads the milestone and adds task ideas here. Nothing goes to the board."))}">${planBusy === m.id ? t("Thinking…") : t("Suggest tasks")}</button>` : ""}</div>
+    <div class="pl-tasks">${rows.map(planRowHtml).join("")}</div>
+    <input class="pl-add" placeholder="${esc(t("+ Add a task and press Enter"))}">
+    <div class="pl-actions"><button type="button" class="btn danger pl-delm${armed ? " armed" : ""}" title="${esc(t("Its cards on the board stay"))}">${armed ? t("Really delete? Click again") : t("Delete milestone")}</button><span class="grow"></span>
+      <button type="button" class="btn pl-send-ticked"${ticked ? "" : " disabled"} title="${esc(t("Put the ticked tasks in To Do"))}">${t("Send ticked ({n})", { n: ticked })}</button>
+      <button type="button" class="btn primary pl-send-all"${left ? "" : " disabled"} title="${esc(t("Put every task not on the board yet in To Do"))}">${t("Send all ({n})", { n: left })}</button></div>`;
+}
+// force: redraw even while a plan field has the cursor (after the user's own click or Enter).
+function renderPlan(force = false) {
+  const board = $("#board");
+  board.classList.remove("list"); board.classList.add("plan");
+  const a = document.activeElement, typing = a && board.contains(a) && ((a.tagName === "INPUT" && a.type === "text") || a.tagName === "TEXTAREA");
+  if (!force && (typing || planDrag)) return;
+  const ms = milestones().slice().sort(byOrder);
+  if (!msById(planOpen)) planOpen = (ms[0] || {}).id || null;
+  const m = msById(planOpen);
+  const side = ms.filter((x) => !planHideDone || !planDone(x) || x.id === planOpen).map((x) =>
+    `<div class="pl-item${x.id === planOpen ? " cur" : ""}${planDone(x) ? " done" : ""}" data-m="${esc(x.id)}" draggable="true" tabindex="0" role="button"><span class="t">${esc(x.title || t("Untitled milestone"))}</span>${planProgress(x)}</div>`).join("");
+  const html = `<div class="plan"><aside class="pl-side"><button type="button" class="btn primary pl-new">${licon("plus", 14)}<span>${t("New milestone")}</span></button>
+    <label class="pl-hide"><input type="checkbox" class="pl-hide-done"${planHideDone ? " checked" : ""}>${t("Hide done milestones")}</label>
+    <div class="pl-list">${side}</div></aside>
+    <section class="pl-main">${m ? planMainHtml(m) : `<div class="pl-empty">${t("Make a milestone, write the tasks it needs, then send them to the board when you are ready.")}</div>`}</section></div>`;
+  if (html === planHtml && board.querySelector(".plan")) return;
+  const y = board.querySelector(".pl-main"), ys = board.querySelector(".pl-side");
+  const keep = [y ? y.scrollTop : 0, ys ? ys.scrollTop : 0];
+  board.innerHTML = planHtml = html;
+  board.querySelector(".pl-main").scrollTop = keep[0]; board.querySelector(".pl-side").scrollTop = keep[1];
+}
+function planNew() {
+  const ms = milestones();
+  const m = { id: uid(), title: "", notes: "", order: nextIn(ms), created: now(), updated: now(), tasks: [] };
+  ms.push(m); planOpen = m.id; save();
+  renderPlan(true); $(".pl-title").focus();
+}
+function planAddTask(m, title, notes = "", suggested = false) {
+  const d = { id: uid(), title, notes, order: nextIn(m.tasks) };
+  if (suggested) d.suggested = true;
+  m.tasks.push(d); touch(m);
+  return d;
+}
+function planSend(m, drafts) {
+  if (!drafts.length) return;
+  const todo = (state.columns.find((c) => !c.done && !c.role) || { id: firstOpenCol() }).id;
+  let big = planCard(m);
+  if (!big) {
+    big = withDelegateChoice(addTask((m.title || "").trim() || t("Untitled milestone"), todo));
+    big.notes = m.notes || ""; big.milestone = m.id; m.card = big.id;
+  }
+  for (const d of drafts.slice().sort(byOrder)) {
+    const c = withDelegateChoice(addTask(d.title.trim(), todo, big.id));
+    c.notes = d.notes || ""; d.card = c.id; delete d.suggested; planTick.delete(d.id);
+  }
+  touch(m); renderPlan(true);
+}
+async function planSuggest(m) {
+  if (!(m.title || "").trim() && !(m.notes || "").trim()) { setStatus(t("Write what the milestone is about first"), true); return; }
+  planBusy = m.id; renderPlan(true);
+  const pid = P;
+  try {
+    const res = await post("/api/plan/suggest", { p: P, title: m.title || "", notes: m.notes || "",
+      have: m.tasks.map((d) => (planCard(d) || d).title).filter(Boolean) });
+    const live = pid === P && msById(m.id);   // the board may have been reloaded meanwhile
+    const got = res.tasks || [];
+    if (live) got.forEach((x) => planAddTask(live, x.title, x.notes || "", true));
+    if (!got.length) setStatus(t("Claude had no new tasks to add"));
+  } catch (e) {
+    setStatus(t("Could not get task ideas: {error}", { error: t(e.message) }), true);
+  }
+  planBusy = null; renderPlan();
+}
+const planIn = (e) => view === "plan" && e.target.closest && e.target.closest(".plan");
+$("#board").addEventListener("click", (e) => {
+  if (!planIn(e)) return;
+  const el = e.target, m = msById(planOpen), item = el.closest(".pl-item"), row = el.closest(".pl-row");
+  const d = m && row && m.tasks.find((x) => x.id === row.dataset.d);
+  if (planArmed && !el.closest(".pl-delm")) { planArmed = null; renderPlan(true); }
+  if (el.closest(".pl-new")) return planNew();
+  if (item) {
+    planOpen = item.dataset.m; planArmed = null;
+    try { localStorage.setItem(LS_KEY + ":plan", planOpen); } catch (_) {}
+    return renderPlan(true);
+  }
+  if (!m) return;
+  if (el.closest(".sent")) return openDetail(el.closest(".sent").dataset.open);
+  if (el.closest(".pl-nt") && d) {
+    planNotes.has(d.id) ? planNotes.delete(d.id) : planNotes.add(d.id);
+    renderPlan(true);
+    const box = planNotes.has(d.id) && $(`.pl-row[data-d="${CSS.escape(d.id)}"] textarea`);
+    if (box) box.focus();
+    return;
+  }
+  if (el.closest(".pl-del") && d) { m.tasks = m.tasks.filter((x) => x !== d); planTick.delete(d.id); touch(m); return renderPlan(true); }
+  if (el.closest(".pl-delm")) {
+    if (planArmed !== m.id) { planArmed = m.id; return renderPlan(true); }
+    state.milestones = milestones().filter((x) => x !== m); planArmed = null; planOpen = null; save();
+    return renderPlan(true);
+  }
+  if (el.closest(".pl-send-all")) return planSend(m, m.tasks.filter(planSendable));
+  if (el.closest(".pl-send-ticked")) return planSend(m, m.tasks.filter((x) => planTick.has(x.id) && planSendable(x)));
+  if (el.closest(".pl-suggest")) return planSuggest(m);
+});
+$("#board").addEventListener("change", (e) => {
+  if (!planIn(e)) return;
+  const c = e.target.classList;
+  if (c.contains("pl-hide-done")) {
+    planHideDone = e.target.checked;
+    try { localStorage.setItem(LS_KEY + ":planHideDone", planHideDone ? "1" : "0"); } catch (_) {}
+    renderPlan(true);
+  } else if (c.contains("pl-tick")) {
+    const id = e.target.closest(".pl-row").dataset.d;
+    e.target.checked ? planTick.add(id) : planTick.delete(id);
+    renderPlan(true);
+  }
+});
+// Typing saves as it goes without a redraw (that would take the cursor away); leaving the field redraws.
+$("#board").addEventListener("input", (e) => {
+  const m = planIn(e) && msById(planOpen);
+  if (!m) return;
+  const mf = e.target.dataset.mf, f = e.target.dataset.f;
+  if (mf) {
+    m[mf] = e.target.value; touch(m);
+    const s = mf === "title" && $(`.pl-item[data-m="${CSS.escape(m.id)}"] .t`);
+    if (s) s.textContent = m.title || t("Untitled milestone");
+  } else if (f) {
+    const d = m.tasks.find((x) => x.id === e.target.closest(".pl-row").dataset.d);
+    if (d) { d[f] = e.target.value; touch(m); }
+  } else if (e.target.classList.contains("pl-add")) {
+    // Leaving the add box keeps what is in it as a task, so Send all counts it already.
+    const b = $(".pl-send-all"), n = m.tasks.filter(planSendable).length + (e.target.value.trim() ? 1 : 0);
+    if (b) { b.disabled = !n; b.textContent = t("Send all ({n})", { n }); }
+  }
+});
+// The redraw after leaving a field waits for the mouse button to come up: a redraw between press and release
+// replaces the button under the pointer and the browser drops the click.
+let planPress = false, planLater = false;
+$("#board").addEventListener("pointerdown", (e) => { if (planIn(e)) planPress = true; });
+for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, () => {
+  planPress = false;
+  if (planLater) { planLater = false; setTimeout(() => { if (view === "plan") renderPlan(); }); }
+});
+$("#board").addEventListener("focusout", (e) => {
+  if (!planIn(e)) return;
+  const m = msById(planOpen), text = e.target.classList.contains("pl-add") && e.target.value.trim();
+  if (m && text) { e.target.value = ""; planAddTask(m, text); }
+  setTimeout(() => { if (view !== "plan") return; if (planPress) planLater = true; else renderPlan(); });
+});
+$("#board").addEventListener("keydown", (e) => {
+  if (!planIn(e)) return;
+  const item = e.target.closest(".pl-item");
+  if (item && e.target === item && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); item.click(); return; }
+  if (e.key !== "Enter" || e.isComposing) return;
+  const m = msById(planOpen);
+  if (m && e.target.classList.contains("pl-add") && e.target.value.trim()) {
+    planAddTask(m, e.target.value.trim());
+    e.target.value = "";   // the redraw drops this box; a focusout from it must not add the task twice
+    renderPlan(true); $(".pl-add").focus();
+  } else if (e.target.dataset.f === "title" || e.target.dataset.mf === "title") e.target.blur();
+});
+// Milestones and tasks drag up or down in their own list.
+const planDropAt = () => document.querySelectorAll(".pl-drop-before, .pl-drop-after").forEach((x) => x.classList.remove("pl-drop-before", "pl-drop-after"));
+const planTarget = (e) => planDrag && e.target.closest && e.target.closest(planDrag.kind === "m" ? ".pl-item" : ".pl-row");
+// A drag that starts in a field selects its text instead of moving the row.
+$("#board").addEventListener("pointerdown", (e) => { const r = planIn(e) && e.target.closest(".pl-row"); if (r) r.draggable = !e.target.closest("input, textarea, button"); });
+$("#board").addEventListener("dragstart", (e) => {
+  const el = planIn(e) && e.target.closest(".pl-item, .pl-row");
+  if (!el || e.target !== el) return;
+  planDrag = el.dataset.m ? { kind: "m", id: el.dataset.m } : { kind: "d", id: el.dataset.d };
+  e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", planDrag.id);
+});
+$("#board").addEventListener("dragover", (e) => {
+  if (!planDrag) return;
+  planDropAt();
+  const el = planTarget(e);
+  if (!el) return;
+  e.preventDefault();
+  const r = el.getBoundingClientRect();
+  el.classList.add(e.clientY < r.top + r.height / 2 ? "pl-drop-before" : "pl-drop-after");
+});
+$("#board").addEventListener("drop", (e) => {
+  const el = planTarget(e), m = msById(planOpen);
+  if (!el || (planDrag.kind === "d" && !m)) return;
+  e.preventDefault();
+  const list = (planDrag.kind === "m" ? milestones() : m.tasks).slice().sort(byOrder);
+  const moving = list.find((x) => x.id === planDrag.id), at = list.find((x) => x.id === (el.dataset.m || el.dataset.d));
+  if (!moving || !at || moving === at) return;
+  const after = el.classList.contains("pl-drop-after");
+  list.splice(list.indexOf(moving), 1);
+  list.splice(list.indexOf(at) + (after ? 1 : 0), 0, moving);
+  list.forEach((x, i) => (x.order = i));
+  save();
+});
+$("#board").addEventListener("dragend", () => { if (planDrag) { planDrag = null; planDropAt(); renderPlan(true); } });
 
 // ---------------------------------------------------------------- drag & drop
 // Columns drag to reorder. Cards drag only up or down among their siblings (same column, same parent box);
@@ -4149,6 +4443,7 @@ $("#layout").addEventListener("change", (e) => {
   view = e.target.value;
   try { localStorage.setItem(LS_KEY + ":view", view); } catch (_) {}
   $("#board").classList.toggle("list", view === "list");
+  $("#board").classList.toggle("plan", view === "plan");
   $("#board").innerHTML = "";
   render();
 });

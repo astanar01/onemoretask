@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-25
+
+- A new Plan page, in the View menu. Make a goal, write the tasks it needs or let Claude suggest some, and send them to the board when you are ready. The goal shows up in To Do as one big card with the tasks inside, and the Plan page counts how many are done.
+
 ## 2026-10-24
 
 - A card set to "answer only" now always shows Claude's answer. Before, an answer with code words in it could get lost, and the card said Claude was stuck.

@@ -36,6 +36,11 @@ Questions come with one button per answer. Permission requests get **Allow**, **
 Each choice Claude makes on its own joins one tree at the top of the card: what was asked, the options,
 and the one picked. The **Decisions** button folds it away.
 
+### Plan milestones first
+
+The **Plan** layout holds milestones: write the tasks a goal needs, or let Claude suggest them, then send
+some or all to To Do as one milestone card with subtasks. The Plan page keeps a done count.
+
 ### Split, review, finish
 
 Tick **Divide in subtasks** and Claude hands parts of the work to subagents. The card lists each one.
