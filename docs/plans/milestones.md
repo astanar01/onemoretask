@@ -1,6 +1,8 @@
 # Plan: milestones (the Plan page)
 
-Card `mvnzyrajw45d7`, 2026-10-25. Nothing is built yet; this is the build plan.
+Card `mvnzyrajw45d7`, 2026-10-25. Built on the same card (user guide: `docs/guide.md` "Plan milestones";
+tests: `tests/test_plan_ui.py`, `tests/test_plan_suggest.py`). Differences from this plan: reordering a sent
+task on the Plan page does not reorder its card on the board.
 
 ## What the user asked for
 
