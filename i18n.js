@@ -601,6 +601,7 @@ const I18N = {
     "The board switched project, so the task was not sent": "Le tableau a changé de projet, la tâche n’a donc pas été envoyée",
     "Drag to resize, double-click to reset": "Glisser pour redimensionner, double-cliquer pour réinitialiser",
     "Plan": "Plan",
+    "Plan milestones, then send their tasks to the board": "Planifier des étapes, puis envoyer leurs tâches au tableau",
     "Milestone from the Plan page": "Étape de la page Plan",
     "No tasks yet": "Pas encore de tâches",
     "{n} on the board": "{n} sur le tableau",

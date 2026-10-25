@@ -38,7 +38,7 @@ and the one picked. The **Decisions** button folds it away.
 
 ### Plan milestones first
 
-The **Plan** layout holds milestones: write the tasks a goal needs, or let Claude suggest them, then send
+The **Plan** button opens the Plan tool, which holds milestones: write the tasks a goal needs, or let Claude suggest them, then send
 some or all to To Do as one milestone card with subtasks. The Plan page keeps a done count.
 
 ### Split, review, finish
