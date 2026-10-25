@@ -107,6 +107,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 @media (max-width: 560px) { header { gap: 8px; } .hbtn .t { display: none; } .hbtn { padding-left: 7px; padding-right: 7px; } }
 .hbtn[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .hbtn[aria-expanded="true"] svg { color: var(--accent); }
+.hbtn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.hbtn[aria-pressed="true"] svg { color: var(--accent); }
 .pop { position: fixed; z-index: 40; min-width: 250px; max-width: calc(100vw - 16px); background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.08); padding: 6px; font-size: calc(13px * var(--ts)); display: flex; flex-direction: column; gap: 2px; }
 .pop[hidden] { display: none; }
@@ -792,6 +794,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <button class="btn" id="unpushed" data-pop="unpushed-pop" aria-haspopup="dialog" aria-expanded="false" hidden></button>
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span><span class="badge warn" id="obs-due"></span></button>
+  <button class="btn hbtn" id="plan-btn" aria-pressed="false" title="Plan milestones, then send their tasks to the board"><span data-ico="flag" data-s="16"></span><span class="t">Plan</span></button>
   <button class="btn hbtn" id="view-btn" data-pop="view-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-menu" title="View options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="t">View</span></button>
   <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
@@ -803,7 +806,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 <div class="pop" id="view-menu" role="dialog" aria-label="View" hidden>
   <button class="pop-row" id="theme"></button>
   <label class="pop-row"><span>Text size</span><select id="text-size" title="Text size"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
-  <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option><option value="plan">Plan</option></select></label>
+  <label class="pop-row"><span>Layout</span><select id="layout" title="Layout"><option value="board">Board</option><option value="list">List</option></select></label>
   <label class="pop-row"><span>Show subtasks on board</span><input type="checkbox" id="show-subs" checked></label>
   <label class="pop-row" id="notify-row" title="Pop up a note when Claude needs you or is done" hidden><span>Notifications<small id="notify-hint" hidden>Your browser blocks them. Allow them in this site's settings.</small></span><input type="checkbox" id="notify"></label>
   <label class="pop-row" id="sound-row" title="Play a chime with each note" hidden><span>Notification sound</span><input type="checkbox" id="notify-sound"></label>
@@ -1291,9 +1294,12 @@ function toggleCollapsed(id) {
   render();
 }
 
-// Board or list layout: per-browser like `collapsed`.
+// Board or list layout: per-browser like `collapsed`. The Plan tool (header button) shows in place of the
+// layout; `layout` is where closing it goes back to.
 let view = "board";
 try { const v = localStorage.getItem(LS_KEY + ":view"); if (v === "list" || v === "plan") view = v; } catch (_) {}
+let layout = view === "list" ? "list" : "board";
+try { if (view === "plan" && localStorage.getItem(LS_KEY + ":layout") === "list") layout = "list"; } catch (_) {}
 
 // Unsent reply text per card (one shared textarea), kept in this browser across reloads.
 // Read fresh on every use: another board tab may have saved its own drafts since.
@@ -4438,15 +4444,21 @@ $("#notify-sound").addEventListener("change", (e) => {
   try { localStorage.setItem(LS_KEY + ":sound", e.target.checked ? "1" : "0"); } catch (_) {}
   if (e.target.checked) chime();   // a sample, and this click lets the page play sound from now on
 });
-$("#layout").value = view;
-$("#layout").addEventListener("change", (e) => {
-  view = e.target.value;
-  try { localStorage.setItem(LS_KEY + ":view", view); } catch (_) {}
+function setView(v) {
+  view = v;
+  if (v !== "plan") layout = v;
+  try { localStorage.setItem(LS_KEY + ":view", view); localStorage.setItem(LS_KEY + ":layout", layout); } catch (_) {}
+  $("#layout").value = layout;
+  $("#plan-btn").setAttribute("aria-pressed", String(view === "plan"));
   $("#board").classList.toggle("list", view === "list");
   $("#board").classList.toggle("plan", view === "plan");
   $("#board").innerHTML = "";
   render();
-});
+}
+$("#layout").value = layout;
+$("#plan-btn").setAttribute("aria-pressed", String(view === "plan"));
+$("#layout").addEventListener("change", (e) => setView(e.target.value));
+$("#plan-btn").addEventListener("click", () => setView(view === "plan" ? layout : "plan"));
 // Header menus: one open at a time; outside click, Escape, resize or header scroll closes them.
 let popBtn = null;
 function closePop(focusBtn) {

@@ -139,8 +139,10 @@ true`;
 await ev(HELPERS);
 
 const sel = `document.querySelector('#layout')`;
-out.empty = await ev(`${sel}.value = 'plan'; ${sel}.dispatchEvent(new Event('change')); document.querySelector('.pl-empty')?.textContent.trim()`);
-out.boardClass = await ev(`[document.querySelector('#board').classList.contains('plan'), document.querySelector('#board').classList.contains('list')]`);
+const planBtn = `document.querySelector('#plan-btn')`;
+out.noPlanLayout = await ev(`[...${sel}.options].map((o) => o.value)`);
+out.empty = await ev(`${planBtn}.click(); document.querySelector('.pl-empty')?.textContent.trim()`);
+out.boardClass = await ev(`[document.querySelector('#board').classList.contains('plan'), document.querySelector('#board').classList.contains('list'), ${planBtn}.getAttribute('aria-pressed')]`);
 out.make = await ev(`document.querySelector('.pl-new').click();
 const focused = document.activeElement === document.querySelector('.pl-title');
 __type(document.querySelector('.pl-title'), 'Login works');
@@ -208,11 +210,17 @@ await ev(HELPERS);
 await sleep(200);
 out.reload = await ev(`({ view, title: document.querySelector('.pl-title')?.value, rows: __rows().length })`);
 // The Board shows the milestone card with its flag and subtasks.
-out.board = await ev(`${sel}.value = 'board'; ${sel}.dispatchEvent(new Event('change'));
+out.board = await ev(`${planBtn}.click();
 const card = document.querySelector('.card[data-id="' + __big()[0].id + '"]');
-({ flag: !!card && card.textContent.includes('⚑'), progress: card?.querySelector('.progress')?.textContent.trim(), planGone: !document.querySelector('.plan') })`);
+({ flag: !!card && card.textContent.includes('⚑'), progress: card?.querySelector('.progress')?.textContent.trim(), planGone: !document.querySelector('.plan'), pressed: ${planBtn}.getAttribute('aria-pressed') })`);
+// Closing the Plan tool goes back to the layout it was opened from: the list here.
+out.backToList = await ev(`${sel}.value = 'list'; ${sel}.dispatchEvent(new Event('change'));
+${planBtn}.click(); const inPlan = !!document.querySelector('.plan');
+${planBtn}.click();
+const r = [inPlan, document.querySelector('#board').classList.contains('list'), ${sel}.value];
+${sel}.value = 'board'; ${sel}.dispatchEvent(new Event('change')); r`);
 await shot('plan-board');
-out.del = await ev(`${sel}.value = 'plan'; ${sel}.dispatchEvent(new Event('change'));
+out.del = await ev(`${planBtn}.click();
 document.querySelector('.pl-delm').click();
 const armed = document.querySelector('.pl-delm').textContent;
 document.querySelector('.pl-delm').click();
@@ -302,7 +310,8 @@ def main():
             return 1
 
     check("empty Plan page explains what to do", (res["empty"] or "").startswith("Make a milestone"))
-    check("board is in plan layout, not list", res["boardClass"], [True, False])
+    check("the Layout menu has only Board and List", res["noPlanLayout"], ["board", "list"])
+    check("the Plan button opens the Plan tool and shows pressed", res["boardClass"], [True, False, "true"])
     m = res["make"]
     check("New milestone puts the cursor in its name", m["focused"])
     check("typing the name updates the left list at once", m["side"], "Login works")
@@ -346,6 +355,8 @@ def main():
           (True, {"view": "plan", "title": "Login works", "rows": 5}))
     bo = res["board"]
     check("the board shows the milestone card with its flag and subtasks", (bo["flag"], bo["progress"], bo["planGone"]), (True, "0/5", True))
+    check("clicking Plan again closes it, button no longer pressed", bo["pressed"], "false")
+    check("closing Plan goes back to the list when opened from the list", res["backToList"], [True, True, "list"])
     x = res["del"]
     check("Delete milestone asks for a second click", x["armed"], "Really delete? Click again")
     check("deleting the milestone keeps its cards", (x["ms"], x["cardsKept"], x["empty"]), (0, 1, True))

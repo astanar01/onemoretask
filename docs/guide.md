@@ -232,7 +232,8 @@ the edge to reset it. The board view is one click back in the same menu.
 
 ### Plan milestones
 
-**View → Layout → Plan** is a place to plan before anything reaches the board. **New milestone** makes one:
+The **Plan** button at the top of the board opens a place to plan before anything reaches the board. It is a
+tool of its own, not a layout: click **Plan** again to go back to the board or list you came from. **New milestone** makes one:
 give it a name and say what should be true when it is done. Add its tasks one by one (type, then Enter), or
 click **Suggest tasks**: Claude (Sonnet, no tools) reads the milestone, the project's README and recent card
 titles, and adds a few dashed "Suggested" drafts. Edit them, open their notes with **≡**, remove them with
