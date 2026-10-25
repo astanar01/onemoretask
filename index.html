@@ -262,6 +262,8 @@ body.view-plan #search { visibility: hidden; }
 .pl-chip.is-done { color: var(--ok); border-color: var(--ok); }
 .pl-chip.gone { color: var(--wait); border-color: var(--wait); }
 .pl-add { border: 1px dashed var(--line); border-radius: 8px; background: transparent; padding: 8px 10px; width: 100%; }
+.pl-row.pl-subrow { margin-left: 34px; padding: 4px 10px; }
+.pl-sub-add { margin-left: 34px; width: calc(100% - 34px); border: 1px dashed var(--line); border-radius: 8px; background: transparent; padding: 5px 10px; }
 .pl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pl-actions .grow { flex: 1; }
 @media (max-width: 640px) {
@@ -1611,14 +1613,16 @@ function listRowEl(x, depth) {
 
 // ---------------------------------------------------------------- plan layout (milestones)
 // tasks.json "milestones": [{ id, title, notes, order, created, updated, card?, tasks: [{ id, title, notes, order,
-// card?, suggested? }] }]. A task is a draft here until it is sent; from then on its card is the truth (title, column).
-// Sending puts the milestone in To Do as one card (made again if it was deleted) with the sent tasks as its subtasks.
+// card?, suggested?, tasks?: [subtasks, same shape, one level only] }] }]. A task is a draft here until it is sent; from
+// then on its card is the truth (title, column). Sending puts the milestone in To Do as one card (made again if it was
+// deleted) with the sent tasks as its subtasks, and each task's own subtasks under the task's card.
 let planOpen = null;           // milestone shown on the right
 try { planOpen = localStorage.getItem(LS_KEY + ":plan"); } catch (_) {}
 let planHideDone = false;
 try { planHideDone = localStorage.getItem(LS_KEY + ":planHideDone") === "1"; } catch (_) {}
 const planTick = new Set();    // ticked tasks, this page only
 const planNotes = new Set();   // tasks whose notes box is open
+let planSubAt = null;          // task whose "add a subtask" box is open (one at a time)
 let planBusy = null;           // milestone waiting on Suggest tasks
 let planArmed = null;          // milestone whose Delete was clicked once
 let planDrag = null;           // { kind: "m" | "d", id } while a milestone or a task row is dragged
@@ -1629,6 +1633,24 @@ const planCard = (x) => (x.card && task(x.card)) || null;
 const planSendable = (d) => !planCard(d) && !!(d.title || "").trim();
 const byOrder = (a, b) => a.order - b.order;
 const nextIn = (list) => (list.length ? Math.max(...list.map((x) => x.order)) + 1 : 0);
+const planSubs = (d) => (Array.isArray(d.tasks) ? d.tasks : []);
+// Every task with its subtasks right after it, in plan order: [{ d, up }] (up = the task a subtask sits under).
+const planRows = (m) => m.tasks.slice().sort(byOrder).flatMap((d) => [{ d, up: null }, ...planSubs(d).slice().sort(byOrder).map((s) => ({ d: s, up: d }))]);
+const planFind = (m, id) => planRows(m).find((r) => r.d.id === id) || null;
+// A subtask goes only under its task's card: the task is on the board already or goes with it.
+const planCanSend = (r) => planSendable(r.d) && (!r.up || !!planCard(r.up) || planSendable(r.up));
+// What a send puts on the board, in plan order: a task brings its subtasks; a subtask brings its task if that is not
+// on the board yet.
+function planPick(m, want) {
+  const rows = planRows(m), pick = new Set();
+  for (const r of rows) {
+    if (!want(r.d) || !planCanSend(r)) continue;
+    pick.add(r.d);
+    if (r.up) { if (!planCard(r.up)) pick.add(r.up); }
+    else planSubs(r.d).filter(planSendable).forEach((s) => pick.add(s));
+  }
+  return rows.filter((r) => pick.has(r.d));
+}
 function planCount(m) {
   const cards = m.tasks.map(planCard).filter(Boolean);
   return { total: m.tasks.length, done: cards.filter(isDone).length, onBoard: cards.length };
@@ -1646,25 +1668,29 @@ function planChip(d) {
   const col = column(c.column);
   return `<span class="pl-chip${isDone(c) ? " is-done" : ""}">${esc(col ? t(col.name) : "")}</span>`;
 }
-function planRowHtml(d) {
+function planRowHtml({ d, up }) {
   const c = planCard(d), open = !c && planNotes.has(d.id);
   const name = c ? `<span class="sent" data-open="${esc(c.id)}" title="${esc(t("Open its card"))}">${esc(c.title || t("Untitled task"))}</span>`
-    : `<input type="text" data-f="title" value="${esc(d.title || "")}" placeholder="${esc(t("Task title"))}">`;
-  const tools = c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`;
-  return `<div class="pl-row${d.suggested && !d.card ? " sug" : ""}" data-d="${esc(d.id)}" draggable="true">
+    : `<input type="text" data-f="title" value="${esc(d.title || "")}" placeholder="${esc(up ? t("Subtask title") : t("Task title"))}">`;
+  const sub = up ? "" : `<button type="button" class="icon pl-addsub${planSubAt === d.id ? " on" : ""}" title="${esc(t("Add a subtask"))}">+</button>`;
+  const tools = sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`);
+  return `<div class="pl-row${up ? " pl-subrow" : ""}${d.suggested && !d.card ? " sug" : ""}" data-d="${esc(d.id)}" data-up="${up ? esc(up.id) : ""}" draggable="true">
     <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${!c && planTick.has(d.id) ? " checked" : ""} title="${esc(c ? t("Already on the board") : t("Tick to send"))}">
     ${name}<span>${planChip(d)}</span><span>${tools}</span>
     ${open ? `<textarea data-f="notes" placeholder="${esc(t("Notes for Claude"))}">${esc(d.notes || "")}</textarea>` : ""}</div>`;
 }
+// A task's row, its subtasks' rows, then its "add a subtask" box when open.
+const planTaskHtml = (d) => planRowHtml({ d, up: null }) + planSubs(d).slice().sort(byOrder).map((s) => planRowHtml({ d: s, up: d })).join("")
+  + (planSubAt === d.id ? `<input class="pl-sub-add" data-up="${esc(d.id)}" placeholder="${esc(t("+ Add a subtask and press Enter"))}">` : "");
 function planMainHtml(m) {
   const rows = m.tasks.slice().sort(byOrder);
-  const ticked = rows.filter((d) => planTick.has(d.id) && planSendable(d)).length, left = rows.filter(planSendable).length;
+  const ticked = planPick(m, (d) => planTick.has(d.id)).length, left = planPick(m, () => true).length;
   const armed = planArmed === m.id;
   return `<input class="pl-title" data-mf="title" value="${esc(m.title || "")}" placeholder="${esc(t("Milestone name"))}">
     <textarea class="pl-notes" data-mf="notes" placeholder="${esc(t("What should be true when this milestone is done? Claude reads this to suggest tasks, and each task gets it too."))}">${esc(m.notes || "")}</textarea>
     <div class="pl-head"><b>${t("Tasks")}</b>${planProgress(m)}<span class="grow"></span>
       ${useServer ? `<button type="button" class="btn pl-suggest"${planBusy ? " disabled" : ""} title="${esc(t("Claude reads the milestone and adds task ideas here. Nothing goes to the board."))}">${planBusy === m.id ? t("Thinking…") : t("Suggest tasks")}</button>` : ""}</div>
-    <div class="pl-tasks">${rows.map(planRowHtml).join("")}</div>
+    <div class="pl-tasks">${rows.map(planTaskHtml).join("")}</div>
     <input class="pl-add" placeholder="${esc(t("+ Add a task and press Enter"))}">
     <div class="pl-actions"><button type="button" class="btn danger pl-delm${armed ? " armed" : ""}" title="${esc(t("Its cards on the board stay"))}">${armed ? t("Really delete? Click again") : t("Delete milestone")}</button><span class="grow"></span>
       <button type="button" class="btn pl-send-ticked"${ticked ? "" : " disabled"} title="${esc(t("Put the ticked tasks in To Do"))}">${t("Send ticked ({n})", { n: ticked })}</button>
@@ -1703,17 +1729,24 @@ function planAddTask(m, title, notes = "", suggested = false) {
   m.tasks.push(d); touch(m);
   return d;
 }
-function planSend(m, drafts) {
-  if (!drafts.length) return;
+function planAddSub(m, d, title) {
+  if (!Array.isArray(d.tasks)) d.tasks = [];
+  d.tasks.push({ id: uid(), title, notes: "", order: nextIn(d.tasks) }); touch(m);
+}
+// rows: from planPick, so a task comes before its subtasks and its card exists when they are sent.
+function planSend(m, rows) {
+  if (!rows.length) return;
   const todo = (state.columns.find((c) => !c.done && !c.role) || { id: firstOpenCol() }).id;
   let big = planCard(m);
   if (!big) {
     big = withDelegateChoice(addTask((m.title || "").trim() || t("Untitled milestone"), todo));
     big.notes = m.notes || ""; big.milestone = m.id; m.card = big.id;
   }
-  for (const d of drafts.slice().sort(byOrder)) {
-    const c = withDelegateChoice(addTask(d.title.trim(), todo, big.id));
+  for (const { d, up } of rows) {
+    const c = withDelegateChoice(addTask(d.title.trim(), todo, up ? planCard(up).id : big.id));
     c.notes = d.notes || ""; d.card = c.id; delete d.suggested; planTick.delete(d.id);
+    // The task's card was deleted: its subtasks still on the board move under the new one.
+    if (!up) planSubs(d).forEach((s) => { const sc = planCard(s); if (sc) sc.parent = c.id; });
   }
   touch(m); renderPlan(true);
 }
@@ -1737,7 +1770,7 @@ const planIn = (e) => view === "plan" && e.target.closest && e.target.closest(".
 $("#board").addEventListener("click", (e) => {
   if (!planIn(e)) return;
   const el = e.target, m = msById(planOpen), item = el.closest(".pl-item"), row = el.closest(".pl-row");
-  const d = m && row && m.tasks.find((x) => x.id === row.dataset.d);
+  const r = m && row && planFind(m, row.dataset.d), d = r && r.d;
   if (planArmed && !el.closest(".pl-delm")) { planArmed = null; renderPlan(true); }
   if (el.closest(".pl-new")) return planNew();
   if (item) {
@@ -1754,14 +1787,25 @@ $("#board").addEventListener("click", (e) => {
     if (box) box.focus();
     return;
   }
-  if (el.closest(".pl-del") && d) { m.tasks = m.tasks.filter((x) => x !== d); planTick.delete(d.id); touch(m); return renderPlan(true); }
+  if (el.closest(".pl-addsub") && d) {
+    planSubAt = planSubAt === d.id ? null : d.id;
+    renderPlan(true);
+    const box = $(`.pl-sub-add[data-up="${CSS.escape(d.id)}"]`);
+    if (box) box.focus();
+    return;
+  }
+  if (el.closest(".pl-del") && d) {
+    if (r.up) r.up.tasks = planSubs(r.up).filter((x) => x !== d);
+    else { m.tasks = m.tasks.filter((x) => x !== d); planSubs(d).forEach((s) => planTick.delete(s.id)); }
+    planTick.delete(d.id); touch(m); return renderPlan(true);
+  }
   if (el.closest(".pl-delm")) {
     if (planArmed !== m.id) { planArmed = m.id; return renderPlan(true); }
     state.milestones = milestones().filter((x) => x !== m); planArmed = null; planOpen = null; save();
     return renderPlan(true);
   }
-  if (el.closest(".pl-send-all")) return planSend(m, m.tasks.filter(planSendable));
-  if (el.closest(".pl-send-ticked")) return planSend(m, m.tasks.filter((x) => planTick.has(x.id) && planSendable(x)));
+  if (el.closest(".pl-send-all")) return planSend(m, planPick(m, () => true));
+  if (el.closest(".pl-send-ticked")) return planSend(m, planPick(m, (x) => planTick.has(x.id)));
   if (el.closest(".pl-suggest")) return planSuggest(m);
 });
 $("#board").addEventListener("change", (e) => {
@@ -1787,11 +1831,11 @@ $("#board").addEventListener("input", (e) => {
     const s = mf === "title" && $(`.pl-item[data-m="${CSS.escape(m.id)}"] .t`);
     if (s) s.textContent = m.title || t("Untitled milestone");
   } else if (f) {
-    const d = m.tasks.find((x) => x.id === e.target.closest(".pl-row").dataset.d);
-    if (d) { d[f] = e.target.value; touch(m); }
-  } else if (e.target.classList.contains("pl-add")) {
-    // Leaving the add box keeps what is in it as a task, so Send all counts it already.
-    const b = $(".pl-send-all"), n = m.tasks.filter(planSendable).length + (e.target.value.trim() ? 1 : 0);
+    const r = planFind(m, e.target.closest(".pl-row").dataset.d);
+    if (r) { r.d[f] = e.target.value; touch(m); }
+  } else if (e.target.classList.contains("pl-add") || e.target.classList.contains("pl-sub-add")) {
+    // Leaving an add box keeps what is in it as a task, so Send all counts it already.
+    const b = $(".pl-send-all"), n = planPick(m, () => true).length + (e.target.value.trim() ? 1 : 0);
     if (b) { b.disabled = !n; b.textContent = t("Send all ({n})", { n }); }
   }
 });
@@ -1805,31 +1849,47 @@ for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, (
 });
 $("#board").addEventListener("focusout", (e) => {
   if (!planIn(e)) return;
-  const m = msById(planOpen), text = e.target.classList.contains("pl-add") && e.target.value.trim();
-  if (m && text) { e.target.value = ""; planAddTask(m, text); }
+  const m = msById(planOpen), c = e.target.classList, text = (c.contains("pl-add") || c.contains("pl-sub-add")) && e.target.value.trim();
+  if (m && text) {
+    e.target.value = "";
+    if (c.contains("pl-add")) planAddTask(m, text);
+    else { const r = planFind(m, e.target.dataset.up); if (r) planAddSub(m, r.d, text); }
+  }
   setTimeout(() => { if (view !== "plan") return; if (planPress) planLater = true; else renderPlan(); });
 });
 $("#board").addEventListener("keydown", (e) => {
   if (!planIn(e)) return;
   const item = e.target.closest(".pl-item");
   if (item && e.target === item && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); item.click(); return; }
+  const sub = e.target.classList.contains("pl-sub-add") && e.target.dataset.up;
+  if (sub && e.key === "Escape") { planSubAt = null; renderPlan(true); return; }
   if (e.key !== "Enter" || e.isComposing) return;
   const m = msById(planOpen);
   if (m && e.target.classList.contains("pl-add") && e.target.value.trim()) {
     planAddTask(m, e.target.value.trim());
     e.target.value = "";   // the redraw drops this box; a focusout from it must not add the task twice
     renderPlan(true); $(".pl-add").focus();
+  } else if (m && sub && e.target.value.trim()) {
+    const r = planFind(m, sub);
+    if (r) planAddSub(m, r.d, e.target.value.trim());
+    e.target.value = "";
+    renderPlan(true);
+    const box = $(`.pl-sub-add[data-up="${CSS.escape(sub)}"]`);
+    if (box) box.focus();
   } else if (e.target.dataset.f === "title" || e.target.dataset.mf === "title") e.target.blur();
 });
-// Milestones and tasks drag up or down in their own list.
+// Milestones, tasks and a task's subtasks drag up or down in their own list.
 const planDropAt = () => document.querySelectorAll(".pl-drop-before, .pl-drop-after").forEach((x) => x.classList.remove("pl-drop-before", "pl-drop-after"));
-const planTarget = (e) => planDrag && e.target.closest && e.target.closest(planDrag.kind === "m" ? ".pl-item" : ".pl-row");
+const planTarget = (e) => {
+  const el = planDrag && e.target.closest && e.target.closest(planDrag.kind === "m" ? ".pl-item" : ".pl-row");
+  return el && (planDrag.kind === "m" || el.dataset.up === planDrag.up) ? el : null;
+};
 // A drag that starts in a field selects its text instead of moving the row.
 $("#board").addEventListener("pointerdown", (e) => { const r = planIn(e) && e.target.closest(".pl-row"); if (r) r.draggable = !e.target.closest("input, textarea, button"); });
 $("#board").addEventListener("dragstart", (e) => {
   const el = planIn(e) && e.target.closest(".pl-item, .pl-row");
   if (!el || e.target !== el) return;
-  planDrag = el.dataset.m ? { kind: "m", id: el.dataset.m } : { kind: "d", id: el.dataset.d };
+  planDrag = el.dataset.m ? { kind: "m", id: el.dataset.m } : { kind: "d", id: el.dataset.d, up: el.dataset.up };
   e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", planDrag.id);
 });
 $("#board").addEventListener("dragover", (e) => {
@@ -1845,7 +1905,8 @@ $("#board").addEventListener("drop", (e) => {
   const el = planTarget(e), m = msById(planOpen);
   if (!el || (planDrag.kind === "d" && !m)) return;
   e.preventDefault();
-  const list = (planDrag.kind === "m" ? milestones() : m.tasks).slice().sort(byOrder);
+  const up = planDrag.up && planFind(m, planDrag.up);
+  const list = (planDrag.kind === "m" ? milestones() : up ? planSubs(up.d) : m.tasks).slice().sort(byOrder);
   const moving = list.find((x) => x.id === planDrag.id), at = list.find((x) => x.id === (el.dataset.m || el.dataset.d));
   if (!moving || !at || moving === at) return;
   const after = el.classList.contains("pl-drop-after");

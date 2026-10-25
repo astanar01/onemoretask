@@ -2,6 +2,7 @@
 
 ## 2026-10-25
 
+- On the Plan page, a task can now have its own smaller steps. Click the + on a task to add them. When you send the task, its steps go to the board inside its card.
 - A new Plan button at the top of the board. Make a goal, write the tasks it needs or let Claude suggest some, and send them to the board when you are ready. The goal shows up in To Do as one big card with the tasks inside, and the Plan page counts how many are done. Click Plan again to go back to your board.
 
 ## 2026-10-24

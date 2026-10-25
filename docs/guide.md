@@ -239,6 +239,11 @@ click **Suggest tasks**: Claude (Sonnet, no tools) reads the milestone, the proj
 titles, and adds a few dashed "Suggested" drafts. Edit them, open their notes with **≡**, remove them with
 **✕**, drag rows to reorder. Nothing goes to the board yet.
 
+A task can have its own subtasks: click **+** on its row, type one, press Enter (Escape closes the box). They
+sit indented under the task and drag only among themselves. Sending a task takes its subtasks with it, as
+subtasks of the task's card; a ticked subtask takes its task along if that is not on the board yet. **+** also
+works on a task already sent: the new subtask goes under its card on the next send.
+
 When you are ready, tick some tasks and click **Send ticked**, or click **Send all**. The milestone lands in
 To Do as one card (marked **⚑**) with the sent tasks as its subtasks; no session starts, you send each card to
 Claude yourself. Each task's prompt names the milestone and carries its notes. You can send more later: they
@@ -459,7 +464,8 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
   **Use a worktree** box; missing counts as on), `milestone` (on a card sent from the Plan page: the id of
   its milestone).
 - `milestones` (optional) holds the Plan page: `[{ id, title, notes, order, created, updated, card?, tasks:
-  [{ id, title, notes, order, card?, suggested? }] }]`. `card` is set once sent. A save that leaves the key out
+  [{ id, title, notes, order, card?, suggested?, tasks? }] }]`; a task's `tasks` are its subtasks, same shape,
+  one level only. `card` is set once sent. A save that leaves the key out
   (a board tab opened before the Plan page existed) keeps the milestones already on disk.
 
 ### Card messages: `agent_reports/<task_id>.json`

@@ -133,6 +133,8 @@ const HELPERS = `window.__type = (el, v) => { el.focus(); el.value = v; el.dispa
 window.__enter = (el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 window.__rows = () => [...document.querySelectorAll('.pl-row')].map((r) => ({ title: (r.querySelector('input[type=text]') || {}).value ?? r.querySelector('.sent').textContent,
   chip: r.querySelector('.pl-chip')?.textContent ?? '', sug: r.classList.contains('sug'), tickOff: r.querySelector('.pl-tick').disabled }));
+window.__srows = () => [...document.querySelectorAll('.pl-row')].map((r) => [(r.querySelector('input[type=text]') || {}).value ?? r.querySelector('.sent').textContent, r.classList.contains('pl-subrow')]);
+window.__rowEl = (title) => [...document.querySelectorAll('.pl-row')].find((r) => ((r.querySelector('input[type=text]') || {}).value ?? r.querySelector('.sent').textContent) === title);
 window.__ms = () => state.milestones[0];
 window.__big = () => state.tasks.filter((x) => x.milestone);
 true`;
@@ -253,6 +255,57 @@ await send('Input.insertText', { text: 'Second' });
 out.addLabel = await ev(`document.querySelector('.pl-send-all').textContent`);
 await press('.pl-send-all');
 out.addSend = { kids: await ev(mouseKids), box: await ev(`document.querySelector('.pl-add').value`) };
+// Subtasks: the + on a task opens a box under it; they go to the board under their task's card.
+const subMs = `state.milestones.find((m) => m.title === 'Sub test')`;
+await ev(`document.querySelector('.pl-new').click(); __type(document.querySelector('.pl-title'), 'Sub test');
+for (const v of ['Parent A', 'Parent B']) { const a = document.querySelector('.pl-add'); a.value = v; __enter(a); }
+document.activeElement.blur(); await new Promise((r) => setTimeout(r, 50)); true`);
+out.subAdd = await ev(`__rowEl('Parent A').querySelector('.pl-addsub').click();
+const focused = document.activeElement === document.querySelector('.pl-sub-add');
+for (const v of ['A1', 'A2']) { const b = document.querySelector('.pl-sub-add'); b.value = v; __enter(b); }
+({ focused, keep: document.activeElement === document.querySelector('.pl-sub-add'), rows: __srows(), sendAll: document.querySelector('.pl-send-all').textContent })`);
+await shot('plan-subtasks');
+out.subEsc = await ev(`document.querySelector('.pl-sub-add').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+!document.querySelector('.pl-sub-add')`);
+out.subTicked = await ev(`__rowEl('A2').querySelector('.pl-tick').click();
+const label = document.querySelector('.pl-send-ticked').textContent;
+document.querySelector('.pl-send-ticked').click();
+const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A');
+({ label, kids: children(ms.card).map((k) => k.title), aKids: children(a.card).map((k) => [k.title, k.column]), sendAll: document.querySelector('.pl-send-all').textContent })`);
+out.subAll = await ev(`document.querySelector('.pl-send-all').click();
+const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A');
+({ kids: children(ms.card).map((k) => k.title), aKids: children(a.card).map((k) => k.title).sort(), sendAllOff: document.querySelector('.pl-send-all').disabled })`);
+out.subLate = await ev(`__rowEl('Parent A').querySelector('.pl-addsub').click();
+const b = document.querySelector('.pl-sub-add'); b.value = 'A3'; __enter(b);
+const label = document.querySelector('.pl-send-all').textContent;
+document.querySelector('.pl-send-all').click();
+const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A');
+({ label, aKids: children(a.card).map((k) => k.title).sort() })`);
+out.subDrag = await ev(`const dragTo = (src, dst) => { const dt = new DataTransfer(), r = dst.getBoundingClientRect();
+  const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 10, clientY: r.top + 3 };
+  src.dispatchEvent(new DragEvent('dragstart', at)); dst.dispatchEvent(new DragEvent('dragover', at));
+  dst.dispatchEvent(new DragEvent('drop', at)); src.dispatchEvent(new DragEvent('dragend', at)); };
+dragTo(__rowEl('A3'), __rowEl('A1'));
+const after = __srows().map((r) => r[0]);
+dragTo(__rowEl('A3'), __rowEl('Parent B'));
+({ after, refused: __srows().map((r) => r[0]) })`);
+out.subRe = await ev(`const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A'), old = a.card;
+state.tasks = state.tasks.filter((x) => x.id !== old); render();
+const label = document.querySelector('.pl-send-all').textContent;
+document.querySelector('.pl-send-all').click();
+({ label, fresh: a.card !== old, aKids: children(a.card).map((k) => k.title).sort(), inBig: task(a.card).parent === ms.card })`);
+out.subDel = await ev(`const a = document.querySelector('.pl-add'); a.value = 'Parent C'; __enter(a);
+__rowEl('Parent C').querySelector('.pl-addsub').click();
+const b = document.querySelector('.pl-sub-add'); b.value = 'C1'; __enter(b);
+const had = __srows().map((r) => r[0]).includes('C1');
+__rowEl('Parent C').querySelector('.pl-del').click();
+({ had, rows: __srows().map((r) => r[0]) })`);
+// A subtask typed without Enter is not lost when a real mouse presses Send all next.
+await ev(`__rowEl('Parent B').querySelector('.pl-addsub').click(); true`);
+await send('Input.insertText', { text: 'B1' });
+await press('.pl-send-all');
+out.subMouse = await ev(`const ms = ${subMs}, b = ms.tasks.find((d) => d.title === 'Parent B'); children(b.card).map((k) => k.title)`);
+await shot('plan-subtasks-sent');
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -364,6 +417,28 @@ def main():
     check("Send all counts a task still in the add box", res["addLabel"], "Send all (1)")
     check("a task left in the add box is sent too, and the box empties", res["addSend"],
           {"kids": ["First edited", "Second"], "box": ""})
+    s = res["subAdd"]
+    check("the + on a task opens a subtask box with the cursor in it", s["focused"])
+    check("subtasks added with Enter sit under their task; the box keeps the cursor", (s["rows"], s["keep"]),
+          ([["Parent A", False], ["A1", True], ["A2", True], ["Parent B", False]], True))
+    check("Send all counts subtasks too", s["sendAll"], "Send all (4)")
+    check("Escape closes the subtask box", res["subEsc"])
+    s = res["subTicked"]
+    check("a ticked subtask brings its task along", s["label"], "Send ticked (2)")
+    check("the task goes under the milestone card, the subtask under the task's card",
+          (s["kids"], s["aKids"], s["sendAll"]), (["Parent A"], [["A2", "c1"]], "Send all (2)"))
+    s = res["subAll"]
+    check("Send all sends the rest of the subtasks under their task", (s["kids"], s["aKids"], s["sendAllOff"]),
+          (["Parent A", "Parent B"], ["A1", "A2"], True))
+    check("a subtask added to a task already on the board goes under its card", res["subLate"],
+          {"label": "Send all (1)", "aKids": ["A1", "A2", "A3"]})
+    check("a subtask drags among its task's subtasks", res["subDrag"]["after"], ["Parent A", "A3", "A1", "A2", "Parent B"])
+    check("a subtask cannot be dragged out of its task", res["subDrag"]["refused"], ["Parent A", "A3", "A1", "A2", "Parent B"])
+    check("a task's deleted card is made again and keeps its subtasks", res["subRe"],
+          {"label": "Send all (1)", "fresh": True, "aKids": ["A1", "A2", "A3"], "inBig": True})
+    check("removing a task removes its subtasks", (res["subDel"]["had"], res["subDel"]["rows"]),
+          (True, ["Parent A", "A3", "A1", "A2", "Parent B"]))
+    check("a subtask left in its box is sent by a real click on Send all", res["subMouse"], ["B1"])
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0
