@@ -217,6 +217,34 @@ document.querySelector('.pl-delm').click();
 const armed = document.querySelector('.pl-delm').textContent;
 document.querySelector('.pl-delm').click();
 ({ armed, ms: state.milestones.length, cardsKept: __big().length, empty: !!document.querySelector('.pl-empty') })`);
+// A real mouse, held down like a person's click, right after typing: leaving the field redraws the plan, and that
+// redraw must not swallow the click. Synthetic .click() above never moves the focus, so it cannot catch this.
+const press = async (selector) => {
+  const r = await ev(`const b = document.querySelector('${selector}').getBoundingClientRect(); ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })`);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  await sleep(120);
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  await sleep(150);
+};
+const enter = () => send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+await ev(`document.querySelector('.pl-new').click(); true`);
+await send('Input.insertText', { text: 'Mouse test' });
+await ev(`document.querySelector('.pl-add').focus(); true`);
+await send('Input.insertText', { text: 'First' });
+await enter();
+await ev(`const f = document.querySelector('.pl-row input[type=text]'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); true`);
+await send('Input.insertText', { text: ' edited' });
+await press('.pl-send-all');
+const mouseKids = `const ms = state.milestones.find((m) => m.title === 'Mouse test'); const big = ms && ms.card && task(ms.card);
+big ? children(big.id).map((c) => c.title) : null`;
+out.mouseSend = await ev(mouseKids);
+// A task typed in the add box without Enter is not lost when a button is pressed next.
+await ev(`document.querySelector('.pl-add').focus(); true`);
+await send('Input.insertText', { text: 'Second' });
+out.addLabel = await ev(`document.querySelector('.pl-send-all').textContent`);
+await press('.pl-send-all');
+out.addSend = { kids: await ev(mouseKids), box: await ev(`document.querySelector('.pl-add').value`) };
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -321,6 +349,10 @@ def main():
     x = res["del"]
     check("Delete milestone asks for a second click", x["armed"], "Really delete? Click again")
     check("deleting the milestone keeps its cards", (x["ms"], x["cardsKept"], x["empty"]), (0, 1, True))
+    check("a real click on Send all right after typing a task name works", res["mouseSend"], ["First edited"])
+    check("Send all counts a task still in the add box", res["addLabel"], "Send all (1)")
+    check("a task left in the add box is sent too, and the box empties", res["addSend"],
+          {"kids": ["First edited", "Second"], "box": ""})
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0

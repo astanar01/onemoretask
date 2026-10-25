@@ -1783,9 +1783,26 @@ $("#board").addEventListener("input", (e) => {
   } else if (f) {
     const d = m.tasks.find((x) => x.id === e.target.closest(".pl-row").dataset.d);
     if (d) { d[f] = e.target.value; touch(m); }
+  } else if (e.target.classList.contains("pl-add")) {
+    // Leaving the add box keeps what is in it as a task, so Send all counts it already.
+    const b = $(".pl-send-all"), n = m.tasks.filter(planSendable).length + (e.target.value.trim() ? 1 : 0);
+    if (b) { b.disabled = !n; b.textContent = t("Send all ({n})", { n }); }
   }
 });
-$("#board").addEventListener("focusout", (e) => { if (planIn(e)) setTimeout(() => { if (view === "plan") renderPlan(); }); });
+// The redraw after leaving a field waits for the mouse button to come up: a redraw between press and release
+// replaces the button under the pointer and the browser drops the click.
+let planPress = false, planLater = false;
+$("#board").addEventListener("pointerdown", (e) => { if (planIn(e)) planPress = true; });
+for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, () => {
+  planPress = false;
+  if (planLater) { planLater = false; setTimeout(() => { if (view === "plan") renderPlan(); }); }
+});
+$("#board").addEventListener("focusout", (e) => {
+  if (!planIn(e)) return;
+  const m = msById(planOpen), text = e.target.classList.contains("pl-add") && e.target.value.trim();
+  if (m && text) { e.target.value = ""; planAddTask(m, text); }
+  setTimeout(() => { if (view !== "plan") return; if (planPress) planLater = true; else renderPlan(); });
+});
 $("#board").addEventListener("keydown", (e) => {
   if (!planIn(e)) return;
   const item = e.target.closest(".pl-item");
@@ -1794,6 +1811,7 @@ $("#board").addEventListener("keydown", (e) => {
   const m = msById(planOpen);
   if (m && e.target.classList.contains("pl-add") && e.target.value.trim()) {
     planAddTask(m, e.target.value.trim());
+    e.target.value = "";   // the redraw drops this box; a focusout from it must not add the task twice
     renderPlan(true); $(".pl-add").focus();
   } else if (e.target.dataset.f === "title" || e.target.dataset.mf === "title") e.target.blur();
 });
