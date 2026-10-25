@@ -8,6 +8,12 @@ carries the recall/remember reminder. When working on a feature area, recall key
 relevant is stored, so an empty result is a real "no memory", not a failure. Semantic recall needs
 embeddings; local Ollama with `nomic-embed-text`, set in `~/.muninn/muninn.env`, is optional.
 
+**A changed fact replaces the old one; it is never added beside it.** Recall ranks by similarity, not
+by date, so an old, detailed memory left active outranks its newer replacement. Before storing a fact,
+recall its topic: `muninn_evolve` the memory it replaces, or `muninn_forget` with `not_true_since`
+when it simply stopped being true. Recall with `annotate: true` and treat a `stale` or
+`possibly_superseded_by` result as a lead to check, not a fact.
+
 ### If Muninn is unreachable, fix it — don't shrug it off
 
 Claude talks to `muninn mcp`, a stdio proxy; the proxy talks to the Muninn daemon on port 8750. The

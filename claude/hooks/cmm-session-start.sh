@@ -100,7 +100,7 @@ shorthand this guidance uses — the bare name returns "No such tool available"
 even when the server is connected.
 
 **Step 1 — Open the gate:**
-- `mcp__codebase-memory-mcp__index_repository` — ensures graph is current (incremental, fast when already indexed); opens gate automatically
+- `mcp__codebase-memory-mcp__index_repository` with NO `mode` argument — ensures graph is current (incremental, quick when already indexed); opens gate automatically. `mode` fast/moderate is refused: they skip source folders
 
 **Allow-listed tools (bypass gate before sentinel exists):**
 - `mcp__codebase-memory-mcp__*` — ALL CMM tools pass Phase 2 unconditionally
@@ -148,8 +148,9 @@ whose text content is empty, and that 400 error poisons the rest of the session.
 bare shorthand this guidance uses. The bare name returns "No such tool available"
 even when the server is connected.
 
-1. Say one short line AND call `mcp__codebase-memory-mcp__index_repository` in the same turn — the index is incremental
-   and fast when already indexed.
+1. Say one short line AND call `mcp__codebase-memory-mcp__index_repository` in the same turn, with only
+   `repo_path` — NO `mode` argument (fast/moderate skip source folders and are refused). The index is
+   incremental and quick when already indexed.
 2. Only after the index is confirmed current, proceed with the user's request.
 3. Invoke `Skill('cmm-rules')` and `Skill('ctx-rules')` via the Skill tool so their protocols
    load into context: CMM orient-first navigation (get_architecture → search_graph → get_code_snippet)

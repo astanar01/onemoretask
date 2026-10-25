@@ -92,6 +92,15 @@
             "command": "bash \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/ctx-execute-cmm-nudge.sh\""
           }
         ]
+      },
+      {
+        "matcher": "mcp__codebase-memory-mcp__index_repository",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/cmm-index-mode-guard.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
