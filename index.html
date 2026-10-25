@@ -1653,7 +1653,10 @@ function planPick(m, want) {
 }
 function planCount(m) {
   const cards = m.tasks.map(planCard).filter(Boolean);
-  return { total: m.tasks.length, done: cards.filter(isDone).length, onBoard: cards.length };
+  // A task counts as done only once its subtasks are done too.
+  const doneHere = (x) => { const c = planCard(x); return !!c && isDone(c); };
+  const done = m.tasks.filter((d) => doneHere(d) && planSubs(d).every(doneHere)).length;
+  return { total: m.tasks.length, done, onBoard: cards.length };
 }
 const planDone = (m) => { const c = planCount(m); return c.total > 0 && c.done === c.total; };
 function planProgress(m) {

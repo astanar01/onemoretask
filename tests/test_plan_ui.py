@@ -306,6 +306,12 @@ await send('Input.insertText', { text: 'B1' });
 await press('.pl-send-all');
 out.subMouse = await ev(`const ms = ${subMs}, b = ms.tasks.find((d) => d.title === 'Parent B'); children(b.card).map((k) => k.title)`);
 await shot('plan-subtasks-sent');
+// A task in Done with a subtask still open does not count as done.
+out.subDone = await ev(`const ms = ${subMs}, dc = state.columns.find((c) => c.done).id;
+ms.tasks.forEach((d) => (task(d.card).column = dc));
+const before = planCount(ms).done;
+ms.tasks.forEach((d) => planSubs(d).forEach((s) => (task(s.card).column = dc)));
+({ before, after: planCount(ms).done })`);
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -439,6 +445,7 @@ def main():
     check("removing a task removes its subtasks", (res["subDel"]["had"], res["subDel"]["rows"]),
           (True, ["Parent A", "A3", "A1", "A2", "Parent B"]))
     check("a subtask left in its box is sent by a real click on Send all", res["subMouse"], ["B1"])
+    check("a task counts as done only once its subtasks are done", res["subDone"], {"before": 0, "after": 2})
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0
