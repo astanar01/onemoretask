@@ -48,7 +48,9 @@ if [ -n "$REPO" ] && [ -d "$REPO" ]; then
   GD=$(cd "$REPO" 2>/dev/null && cd "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null && pwd -P)
   GC=$(cd "$REPO" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
   if [ -n "$GD" ] && [ -n "$GC" ] && [ "$GD" != "$GC" ]; then
-    MAIN=$(cd "$GC/.." 2>/dev/null && pwd -P)
+    # Same root the session-start hook names; a nested project's common dir sits in the outer .git/modules.
+    MAIN=$(cd "$REPO" 2>/dev/null && . "${BASH_SOURCE[0]%/*}/lib/project-root.sh" && printf '%s' "$PROJECT_ROOT")
+    [ -n "$MAIN" ] || MAIN=$(cd "$GC/.." 2>/dev/null && pwd -P)
     cat >&2 <<EOF
 BLOCKED: $REPO is a git worktree. Worktrees get no code index of their own (each would be a
 full extra copy that is never deleted). Call index_repository with repo_path "$MAIN"

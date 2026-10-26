@@ -188,6 +188,22 @@ class CmmHooks(unittest.TestCase):
         rc, out, _ = e.run("cmm-session-start.sh", "SessionStart")
         self.assertNotIn("Git worktree", out)
 
+    def test_nested_project_worktree_names_outer_project(self):
+        """A worktree of a submodule is pointed at the outer project, not at a folder inside .git."""
+        e = HookEnv("normal")
+        self.addCleanup(shutil.rmtree, e.root, True)
+        def git(*a):
+            subprocess.run(["git", *a], check=True, env={**os.environ, "HOME": str(e.home)}, capture_output=True)
+        sub, wt = e.root / "sub", e.root / "modwt"
+        git("init", "-q", str(sub))
+        git("-C", str(sub), "commit", "-q", "--allow-empty", "-m", "s")
+        git("-C", str(e.project), "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "mod")
+        git("-C", str(e.project / "mod"), "worktree", "add", "-q", "-b", "w", str(wt))
+        event, fields = pre("mcp__codebase-memory-mcp__index_repository", repo_path=str(wt))
+        rc, _, err = e.run("cmm-index-mode-guard.sh", event, **fields)
+        self.assertEqual(rc, 2, err)
+        self.assertIn(f'repo_path "{e.project}"', err)
+
     def test_merge_marks_index_stale(self):
         e = HookEnv("normal")
         self.addCleanup(shutil.rmtree, e.root, True)
