@@ -11,7 +11,7 @@
 # Read stdin once (can only be consumed once), then check if this is a git commit command.
 # Exit immediately for non-commit Bash calls — avoids the expensive git traversal for ~95% of calls.
 INPUT=$(cat)
-echo "$INPUT" | grep -q 'git.*commit' || exit 0
+echo "$INPUT" | grep -qE 'git.*(commit|merge)' || exit 0
 
 # --- Stable Sentinel Path Computation (lib/project-root.sh: submodules, worktrees) ---
 . "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
@@ -22,19 +22,20 @@ CMD=$(echo "$INPUT" | omt_py -c "import sys,json; print(json.load(sys.stdin).get
 STDOUT=$(echo "$INPUT" | omt_py -c "import sys,json; d=json.load(sys.stdin); r=d.get('tool_response') or d.get('tool_output') or {}; print(r.get('stdout','') if isinstance(r,dict) else r)" 2>/dev/null || echo "")
 
 # --- Commit Detection ---
-# Only act on git commit commands; exit immediately for all other Bash calls
-# Also `git -C dir commit` and `git add -A && git commit`.
-printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])git([[:space:]]+-[cC][[:space:]]+[^[:space:]]+|[[:space:]]+--[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)' || exit 0
+# Only act on git commit and merge commands; exit immediately for all other Bash calls
+# Also `git -C dir commit` and `git add -A && git commit`. A merge is how a worktree's work reaches
+# the main checkout, whose index worktree sessions share.
+printf '%s\n' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])git([[:space:]]+-[cC][[:space:]]+[^[:space:]]+|[[:space:]]+--[^[:space:]]+)*[[:space:]]+(commit|merge)([[:space:]]|$)' || exit 0
 
 # --- False-Positive Guard ---
 # If git reported no actual commit (nothing staged), skip marking stale
 case "$STDOUT" in
-  *"nothing to commit"*|*"no changes"*) exit 0 ;;
+  *"nothing to commit"*|*"no changes"*|*"Already up to date"*|*"Already up-to-date"*) exit 0 ;;
 esac
-# A commit that landed prints `[branch sha] msg`; a rejected one (pre-commit hook, error) does not.
-# `-q` prints nothing either way, so a quiet commit still counts.
-if ! printf '%s\n' "$STDOUT" | grep -qE '^\[[^]]* [0-9a-f]{4,40}\] ' &&
-   ! printf '%s\n' "$CMD" | grep -qE 'commit([[:space:]]+[^[:space:];&|]+)*[[:space:]]+(-[[:alnum:]]*q[[:alnum:]]*|--quiet)([[:space:]]|$)'; then
+# A commit that landed prints `[branch sha] msg`, a merge `Merge made by` or `Fast-forward`; a rejected
+# one (pre-commit hook, conflict, error) prints none. `-q` prints nothing either way, so a quiet one counts.
+if ! printf '%s\n' "$STDOUT" | grep -qE '^\[[^]]* [0-9a-f]{4,40}\] |^(Merge made by|Fast-forward)' &&
+   ! printf '%s\n' "$CMD" | grep -qE '(commit|merge)([[:space:]]+[^[:space:];&|]+)*[[:space:]]+(-[[:alnum:]]*q[[:alnum:]]*|--quiet)([[:space:]]|$)'; then
   exit 0
 fi
 

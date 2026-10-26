@@ -165,4 +165,22 @@ A stale index (after a recent commit) does not block tools — you'll see an adv
 PROMPT
 fi
 
+# --- Git worktree: no code index of its own ---
+# Indexing a worktree builds a second full graph that nobody deletes. PROJECT_ROOT is already the
+# main checkout (lib/project-root.sh), so point the index call there; cmm-index-mode-guard.sh refuses
+# a worktree repo_path.
+_WT_GD="$(cd "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null && pwd -P)"
+_WT_GC="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)"
+if [ -n "$_WT_GD" ] && [ -n "$_WT_GC" ] && [ "$_WT_GD" != "$_WT_GC" ]; then
+  _WT_PROJECT="${PROJECT_ROOT#/}"
+  _WT_PROJECT="${_WT_PROJECT//\//-}"
+  cat <<EOF
+
+**Git worktree:** this session runs in a worktree of \`$PROJECT_ROOT\`. A worktree gets no code index
+of its own: call \`index_repository\` with \`repo_path\` = \`$PROJECT_ROOT\` (the main checkout) and
+query project \`$_WT_PROJECT\`. That index holds the main branch, not this branch's edits: Read this
+worktree's own files before editing them. Once the branch is merged, the main index picks the work up.
+EOF
+fi
+
 exit 0

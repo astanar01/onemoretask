@@ -165,6 +165,40 @@ class CmmHooks(unittest.TestCase):
     def test_only_python_not_python3(self):
         self.check_env("python-only")
 
+    def test_worktree_uses_main_index(self):
+        """A worktree session is told to index the main checkout, and indexing the worktree itself is refused."""
+        e = HookEnv("normal")
+        self.addCleanup(shutil.rmtree, e.root, True)
+        wt = e.root / "wt"
+        subprocess.run(["git", "-C", str(e.project), "worktree", "add", "-q", "-b", "side", str(wt)], check=True,
+                       env={**os.environ, "HOME": str(e.home)}, capture_output=True)
+        def guard(repo):
+            event, fields = pre("mcp__codebase-memory-mcp__index_repository", repo_path=str(repo))
+            return e.run("cmm-index-mode-guard.sh", event, **fields)
+        rc, _, err = guard(wt)
+        self.assertEqual(rc, 2, err)
+        self.assertIn(str(e.project), err)
+        rc, _, err = guard(e.project)
+        self.assertEqual((rc, err), (0, ""))
+        p = subprocess.run(["bash", str(e.claude / "hooks" / "cmm-session-start.sh")],
+                           input=json.dumps({"session_id": SID, "hook_event_name": "SessionStart"}), cwd=wt,
+                           env=e.env, capture_output=True, text=True, timeout=60)
+        self.assertIn("Git worktree", p.stdout)
+        self.assertIn(f"`{e.project}`", p.stdout)
+        rc, out, _ = e.run("cmm-session-start.sh", "SessionStart")
+        self.assertNotIn("Git worktree", out)
+
+    def test_merge_marks_index_stale(self):
+        e = HookEnv("normal")
+        self.addCleanup(shutil.rmtree, e.root, True)
+        sentinel = e.tmp / f"cmm-session-ready-{e.hash}"
+        merged = post("Bash", {"stdout": "Updating 1a2b..3c4d\nFast-forward\n x.py | 2 +-"}, command="git merge side")
+        noop = post("Bash", {"stdout": "Already up to date."}, command="git merge side")
+        for (event, fields), want in ((noop, False), (merged, True)):
+            sentinel.write_text("ready\n")
+            e.run("reindex-after-commit.sh", event, **fields)
+            self.assertEqual(sentinel.read_text().strip() == "stale", want, fields["tool_input"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

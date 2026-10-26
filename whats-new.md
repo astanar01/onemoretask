@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-26
+
+- A task that works in its own copy of a project now shares Claude's main code map instead of making a big new one, so your disk stops filling up. When the task's work is added back to the project, the main map picks it up.
+
 ## 2026-10-25
 
 - Claude now always looks through all of a project's code, not just part of it. When it learns that something changed, it replaces the old fact in its memory instead of keeping both.
