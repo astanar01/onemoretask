@@ -3208,6 +3208,13 @@ def merge_leftovers(p, wt):
             i += 1  # with -z a rename's old path comes next
         if not _in_main(main, wt["path"], e[3:].rstrip("/")):
             left.append(e[3:])
+    # status never reports edits to files marked assume-unchanged (lower-case tag) or skip-worktree (S): compare those
+    # directly. A skip-worktree file left out by a sparse checkout is not on disk and holds nothing.
+    for e in git_run(wt["path"], "ls-files", "-v", "-z").split("\0"):
+        rel = e[2:]
+        if (e[:1].islower() or e[:1] == "S") and rel not in left and os.path.lexists(os.path.join(wt["path"], rel)) \
+                and not _in_main(main, wt["path"], rel):
+            left.append(rel)
     return left
 
 
@@ -3236,7 +3243,10 @@ def tidy_merged(p, t):
     if inner:
         return ("a project inside it holds commits the main copy's does not have: " + ", ".join(inner[:5])
                 + ". Delete worktree throws them away.")
-    if users_of(wt["path"]):
+    users = users_of(wt["path"])
+    if users is None:
+        return "the board could not check whether a program still runs from it. Use Delete worktree once none does."
+    if users:
         return "a program still runs from it. Stop it, then use Delete worktree."
     git_run(p.path, "worktree", "remove", "--force", wt["path"])  # --force: only caches and copies are left
     if has_branch:
@@ -3263,12 +3273,15 @@ def inner_leftovers(main, wt_path):
 
 
 def users_of(path):
-    """Process ids whose working directory is `path` or inside it ([] when lsof is missing)."""
+    """Process ids whose working directory is `path` or inside it; None when lsof is missing, hangs or lists nothing
+    (it always lists at least this server, so empty output means it failed)."""
     try:
         out = subprocess.run(["lsof", "-d", "cwd", "-Fpn"], capture_output=True, timeout=20, stdin=subprocess.DEVNULL,
                              **TEXT).stdout
     except (OSError, subprocess.TimeoutExpired):
-        return []
+        return None
+    if not out.strip():
+        return None
     root, pid, found = os.path.realpath(path), "", []
     for line in out.splitlines():
         if line[:1] == "p":

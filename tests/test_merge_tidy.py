@@ -198,6 +198,35 @@ check("same link in the main checkout: removed", (server.tidy_merged(p, t9), os.
       ("", False))
 check("the link's target survives", os.path.isdir(TMP), True)
 
+# git status never shows edits to a file marked assume-unchanged or skip-worktree: they are work too.
+for tid, flag in (("t10", "--assume-unchanged"), ("t11", "--skip-worktree")):
+    marked = add_task(tid, "merged, edit hidden by " + flag)
+    git(marked["path"], "update-index", flag, "app.py")
+    write(os.path.join(marked["path"], "app.py"), "print('only here')\n")
+    check(f"edit hidden by {flag}: kept", (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])),
+          ("it still holds changes that are not in the main copy: app.py. Delete worktree throws them away.", True))
+    write(os.path.join(marked["path"], "app.py"), "print('hi')\n")
+    check(f"{flag} file back to the main copy's text: removed",
+          (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])), ("", False))
+
+# When the process check cannot run, keep the worktree.
+nolsof = add_task("t12", "merged, no lsof")
+real_run = server.subprocess.run
+
+
+def no_lsof(cmd, *a, **k):
+    if cmd[0] == "lsof":
+        raise FileNotFoundError("lsof")
+    return real_run(cmd, *a, **k)
+
+
+server.subprocess.run = no_lsof
+try:
+    check("process check cannot run: kept", (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(nolsof["path"])),
+          ("the board could not check whether a program still runs from it. Use Delete worktree once none does.", True))
+finally:
+    server.subprocess.run = real_run
+
 # A submodule commit made only inside the worktree lives in the worktree's own git dir: keep it.
 lib = os.path.join(TMP, "lib")
 git(TMP, "init", "-q", "-b", "main", lib)
