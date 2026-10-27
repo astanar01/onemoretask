@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,6 +44,15 @@ def fake_claude(answer):
     return asks
 
 
+class ReadyThroughRun:
+    """server.READY for these tests: hands the question to the faked run_claude, split back into ask and stdin."""
+    def ask(self, args, message, timeout):
+        ask, data = message.split("\n", 1)
+        return server.run_claude(args + [ask], input=data, timeout=timeout)
+
+
+server.READY = ReadyThroughRun()
+
 # Twins fold into the board's spelling.
 known = ["Bugs", "ui", "feature-request", "observations"]
 check("plural folds into board tag", server.pick_tags(["bug"], known), ["Bugs"])
@@ -60,12 +70,18 @@ check("garbage tags ignored", server.pick_tags("bug", known), [])
 # One call, JSON answer, even with a preamble around it.
 asks = fake_claude('Here you go:\n{"title": "\\"Fix done column scroll.\\"", "tags": ["bug", "UI"]}\nDone.')
 check("title and tags", server.autofill("notes", True, True, known), {"title": "Fix done column scroll", "tags": ["Bugs", "ui"]})
-check("known tags are in the ask", "Bugs, ui, feature-request" in asks[0], True)
+# The board's tags go in the message, not the system prompt: that stays the same, so the claude started ahead fits.
+args, data = calls[-1]
+check("known tags after the notes", data.endswith("<board_tags>Bugs, ui, feature-request, observations</board_tags>"), True)
+check("known tags not in the arguments", "feature-request" in asks[0], False)
+check("same system prompt as the claude started ahead",
+      args[args.index("--system-prompt") + 1], server.autofill_system(True, True))
 # Haiku answered notes like "why does X fail?" instead of labelling them: the notes go in <notes> tags after the
-# ask, a system prompt says they are data, and no CLAUDE.md, hooks or settings load (--setting-sources "").
+# ask, a system prompt says they are data, and no project instructions, hooks or settings load (--setting-sources "").
+server.autofill("notes", True, False)
 args, data = calls[-1]
 check("notes wrapped in tags", data, "<notes>\nnotes\n</notes>")
-check("no settings, hooks or CLAUDE.md", args[args.index("--setting-sources") + 1], "")
+check("no settings, hooks or project instructions", args[args.index("--setting-sources") + 1], "")
 system = args[args.index("--system-prompt") + 1]
 check("system prompt: notes are data", "never answer" in system and '"title"' in system, True)
 check("no 'Above' in the ask (the notes come after it)", any("Above" in a for a in args), False)
@@ -109,6 +125,70 @@ def failing(exc=None, out=""):
 check("no claude: says so", "not installed or not found" in (failing(FileNotFoundError()) or ""), True)
 check("timeout: says so", "within 90 seconds" in (failing(subprocess.TimeoutExpired("claude", 90)) or ""), True)
 check("old claude: says update", "claude update" in (failing(out="error: unknown option '--tools'") or ""), True)
+
+# A title call still unanswered after AUTOFILL_RETRY seconds is asked again; the first answer wins. A first try that
+# fails is asked again at once.
+server.AUTOFILL_RETRY = 0.3
+
+
+def tries(*plan):
+    """run_claude whose n-th call waits plan[n][0] seconds, then answers plan[n][1] (an exception: raises it)."""
+    n = []
+
+    def run(args, **kw):
+        wait, answer = plan[len(n)]
+        n.append(time.time())
+        time.sleep(wait)
+        if isinstance(answer, Exception):
+            raise answer
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"result": answer}), stderr="")
+    server.run_claude = run
+    return n
+
+
+n = tries((3, '{"title": "slow"}'), (0, '{"title": "fast"}'))
+t0 = time.time()
+got = server.autofill("notes", True, False)
+check("slow first try: a second try's answer, soon after the wait", (got, len(n), time.time() - t0 < 1.5),
+      ({"title": "fast"}, 2, True))
+n = tries((0, '{"title": "first"}'), (0, '{"title": "second"}'))
+check("quick answer: no second try", (server.autofill("notes", True, False), len(n)), ({"title": "first"}, 1))
+n = tries((0, FileNotFoundError()), (0, '{"title": "second"}'))
+t0 = time.time()
+got = server.autofill("notes", True, False)
+check("failed first try: asked again at once", (got, time.time() - t0 < 0.25), ({"title": "second"}, True))
+n = tries((0.5, subprocess.TimeoutExpired("claude", 90)), (0.5, subprocess.TimeoutExpired("claude", 90)))
+try:
+    server.autofill("notes", True, False)
+    check("both tries fail: raises", "returned", "raised")
+except RuntimeError as e:
+    check("both tries fail: raises", ("raised", len(n), "within 90 seconds" in str(e)), ("raised", 2, True))
+
+# ReadyClaude with a stand-in claude that takes 1 s to start, then answers one stream-json question with its pid.
+server.CLAUDE_CMD = [sys.executable, os.path.join(HERE, "fake_stream_claude.py")]
+ready = server.ReadyClaude()
+a, b = ["-p", "--model", "haiku", "a"], ["-p", "--model", "haiku", "b"]
+ready.start(a)
+first = ready.proc.pid
+time.sleep(1.5)                      # the board was open a while before the first title
+t0 = time.time()
+r = ready.ask(a, "q\n<notes>", 10)
+took = time.time() - t0
+ans = json.loads(json.loads(r.stdout)["result"])
+check("started ahead: answers without the start-up wait", (ans["pid"], ans["msg"], took < 0.8), (first, "q\n<notes>", True))
+check("stream-json flags passed", all(x in ans["argv"] for x in ["--input-format", "stream-json", "--verbose"]), True)
+time.sleep(0.3)
+check("taking it starts the next one", bool(ready.proc) and ready.proc.pid != first and ready.args == a, True)
+nxt = ready.proc
+t0 = time.time()
+r = ready.ask(b, "q\nx", 10)
+check("other arguments: not the waiting one, which is stopped",
+      (json.loads(json.loads(r.stdout)["result"])["pid"] != nxt.pid, time.time() - t0 >= 1, nxt.wait(5) is not None),
+      (True, True, True))
+time.sleep(0.3)
+last = ready.proc
+last.stdin.close()                    # the board quit: the waiting claude gets no question and ends
+check("a waiting claude ends when its input closes", last.wait(5), 0)
 
 # The board: one autoFill per card at a time, so Send waits for the call the title box started when it lost focus.
 node = shutil.which("node")
