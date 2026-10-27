@@ -3290,6 +3290,12 @@ MERGE_KEPT = "The board kept the worktree after the merge: "
 FULL_STATUS = ("--untracked-files=normal", "--ignore-submodules=none")
 
 
+def _into(path, root):
+    """True when `path`, with every symlink on the way resolved, is `root` or inside it."""
+    real, top = os.path.realpath(path), os.path.realpath(root)
+    return real == top or real.startswith(top + os.sep)
+
+
 def _in_main(main, wt_path, rel):
     """True when `rel` (a file or folder in the worktree) holds nothing the main checkout `main` lacks: rebuilt
     caches, files byte-identical to the main checkout's at the same path, or symlinks it has with the same target."""
@@ -3297,6 +3303,8 @@ def _in_main(main, wt_path, rel):
         if REBUILT & set(r.split("/")) or r.endswith((".pyc", ".pyo")):
             return True
         a, b = os.path.join(wt_path, r), os.path.join(main, r)
+        if _into(b, wt_path):
+            return False  # the main checkout's copy is a link into the worktree: it goes with it
         if os.path.islink(a):
             return os.path.islink(b) and os.readlink(a) == os.readlink(b)
         return os.path.isfile(a) and os.path.isfile(b) and filecmp.cmp(a, b, shallow=False)
@@ -3326,7 +3334,9 @@ def _staged_in_main(main, wt_path, rel):
         return False
     if staged == git_try(main, "rev-parse", "--verify", "--quiet", f"HEAD:{rel}"):
         return True
-    return os.path.isfile(os.path.join(main, rel)) and staged == git_try(main, "hash-object", "--", rel)
+    there = os.path.join(main, rel)
+    return (os.path.isfile(there) and not _into(there, wt_path)
+            and staged == git_try(main, "hash-object", "--", rel))
 
 
 def _leftovers(main, wt_path):

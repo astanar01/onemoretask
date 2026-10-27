@@ -221,6 +221,24 @@ git(draft["path"], "add", "app.py")
 check("draft unstaged back to the main copy's text: removed",
       (server.tidy_merged(p, t13), os.path.isdir(draft["path"])), ("", False))
 
+# A link in the main checkout pointing back into the worktree is no second copy: it dies with the worktree.
+for tid, where in (("t15", "file"), ("t16", "parent folder")):
+    back = add_task(tid, "merged, main links into it by " + where)
+    write(os.path.join(back["path"], "notes", "n.txt"), "only here\n")
+    if where == "file":
+        os.makedirs(os.path.join(proj, "notes"))
+        os.symlink(os.path.join(back["path"], "notes", "n.txt"), os.path.join(proj, "notes", "n.txt"))
+    else:
+        os.symlink(os.path.join(back["path"], "notes"), os.path.join(proj, "notes"))
+    check(f"main links back into it by {where}: kept",
+          (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(back["path"])),
+          ("it still holds changes that are not in the main copy: notes/. Delete worktree throws them away.", True))
+    if where == "file":
+        os.remove(os.path.join(proj, "notes", "n.txt"))
+        os.rmdir(os.path.join(proj, "notes"))
+    else:
+        os.remove(os.path.join(proj, "notes"))
+
 # When the process check cannot run, keep the worktree.
 nolsof = add_task("t12", "merged, no lsof")
 real_run = server.subprocess.run
