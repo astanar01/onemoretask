@@ -44,16 +44,11 @@ only") gets its own git worktree at launch: launch makes
 session, which still starts in the project folder, to switch into it and do all work and commits there. A folder with no
 repo or no commit answers 409 `norepo`; POST /api/git/init makes one with an "Initial commit". While the worktree
 exists, the task's commits are looked up on its branch, and a card in Review offers "Run app from worktree" and "Merge
-worktree to main" (POST /api/agent/worktree). Merge: the server merges the branch into the base branch itself
-(merge_here, merged_here: no Claude, a board message on the card); when it cannot (uncommitted work in the worktree,
-the main checkout on another branch, a conflict, which it undoes) a canned reply has the session do it (anything going
-wrong: abort, ask on the card). Run app: the server runs the command Claude saved in <board>/run_app.json from the
+worktree to main" (POST /api/agent/worktree). Merge sends the session instructions to merge into the base branch,
+then remove the worktree and branch; if anything goes wrong, ask on the card. The board never merges or cleans up
+finished worktrees automatically. Run app: the server runs the command Claude saved in <board>/run_app.json from the
 worktree (start_saved_run); with none saved, or when it fails, a canned reply has the session run it and save it.
 Board messages (`from: "board"`) are skipped by phase_of and spoken(), so a card's phase and archive stay Claude's.
-Once the session reports that merge
-done, the watcher removes the worktree and branch itself (tidy_merged), only when every commit is in the main
-checkout's HEAD, nothing but rebuilt caches is left (no comparing with the main checkout's files), no submodule was
-filled in, and no process has its cwd there; else it says why on the card.
 "Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
 server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
 `force` once the user confirms. A reply after the worktree was deleted or merged makes a fresh one (renew_worktree).
@@ -2425,7 +2420,6 @@ class Watcher:
         # A card moved to done is marked by reports.close_path (a file, so a server restart keeps it) until it is closed.
         self.closing = set()   # (project id, task id) whose recap is being written
         self.close_failed = set()  # (project id, task id) whose recap failed: no retry until moved to done again
-        self.tidying = set()  # (project id, task id) whose merged worktree is being removed (tidy_merged)
         self.alerts = {}  # (project id, task id) -> alert waiting for the board to show the change
         self.seen = {}    # project id -> last time a board page read its cards
         self.expected = {}  # (project id, task id) -> count of expect() calls, so a poll keeps a newer start
@@ -2494,17 +2488,6 @@ class Watcher:
             except Exception as e:  # noqa: BLE001 — put the notes back; a card reply reopens it
                 reports.untake_notes(p.board, task_id, notes, since)
                 print("reopen after close:", e)
-
-    def _tidy(self, p, t):
-        try:
-            why = tidy_merged(p, t)
-        except Exception as e:  # noqa: BLE001 — the card says why; Delete worktree still works
-            why = f"{e}"
-        if why is not None:
-            reports.append(p.board, t["id"], "progress", MERGE_KEPT + why if why else MERGE_TIDIED, "claude")
-        with self.lock:
-            self.tidying.discard((p.id, t["id"]))
-        self.wake.set()  # the next pass shows the worktree gone
 
     def _deliver(self, p, task_id, info, waiting=False):
         try:
@@ -2615,13 +2598,6 @@ class Watcher:
                 threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
                                                              waiting), daemon=True).start()
             key, closed = (p.id, t["id"]), t.get("column") in done_cols
-            # The merge steps leave the worktree to the board: Claude reported the merge done, so remove it.
-            with self.lock:
-                tidy = phase == "finished" and key not in self.tidying and live_worktree(t) and merge_reported(log)
-                if tidy:
-                    self.tidying.add(key)
-            if tidy:
-                threading.Thread(target=self._tidy, args=(p, t), daemon=True).start()
             # The CLI ends the turn when auto mode's safety check keeps failing, then waits for a message: resume it.
             try:
                 stalled = (phase == "needs_you" and not busy and not closed and not reason.startswith("Claude asks permission")
@@ -2717,7 +2693,6 @@ class Watcher:
             now = time.time()
             # Nothing changes on its own while no session works: a launch, reply or board save wakes the watcher.
             self.idle = not (any(v["phase"] == "working" for v in fresh.values()) or self.delivering or self.closing
-                             or self.tidying
                              or self.alerts or any(now - at < 60 for at in self.launched.values()))
             primed, self.primed = self.primed, True
         save_tokens()
@@ -2984,6 +2959,11 @@ def worktree_steps(p, task_id, wt, action):
                 "npm run dev -- --port {port}`); write {port} where the port goes: the board picks a free one and also "
                 "sets PORT. `url` is the address to open, with {port}, or \"\" when there is nothing to open (a game, "
                 "a desktop app, a command-line demo). If the board said the saved way failed, fix that file."]
+    cleanup = (f"After a successful merge: stop programs running from the worktree, then from {main} run "
+               f"`git worktree remove {path}` and `git branch -d {shell_path(branch)}`. "
+               "Do not force removal. If cleanup refuses, keep what remains and ask on the card; do not undo a "
+               "successful merge just because cleanup failed. Report the merge commit sha and whether cleanup "
+               f'finished with `{rep} done "..."`. Never push.')
     if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{base}") is None:
         # Sent from a detached HEAD (base is a sha), or the base branch is gone: there is no branch to merge into.
         return [f"The user wants this task's branch `{branch}` (worktree {path}) merged, but it was made from "
@@ -2992,8 +2972,7 @@ def worktree_steps(p, task_id, wt, action):
                 f'- Then ask with `{rep} question "..."` which branch to merge `{branch}` into: list the local '
                 f"branches (one `--option` each) and say which one the main checkout {main} is on now.",
                 "- After the answer: merge there. If anything goes wrong, abort the merge so that checkout is exactly "
-                "as it was and ask again. Never push. On success report the merge commit sha with "
-                f'`{rep} done "..."`. ' + LEAVE_WORKTREE]
+                "as it was and ask again. Never push.", cleanup]
     return [f"Merge this task's branch `{branch}` into `{base}`:",
             f"1. In the worktree {path}, commit anything still uncommitted.",
             f"2. In the main checkout {main}: it must be on `{base}`. If it is on another branch, stop and ask with "
@@ -3004,12 +2983,7 @@ def worktree_steps(p, task_id, wt, action):
             f'is exactly as it was before, then tell the user with `{rep} question "..."`: what went wrong, which '
             "files, and the options.",
             "5. Never push.",
-            "6. On success: stop anything still running from the worktree, then report the merge commit sha with "
-            f'`{rep} done "..."`. ' + LEAVE_WORKTREE]
-
-
-LEAVE_WORKTREE = ("Leave the worktree and its branch: once you report done, the board removes them itself, if "
-                  "nothing in them would be lost.")
+            "6. " + cleanup]
 
 
 def worktree_action(p, task_id, action):
@@ -3028,12 +3002,10 @@ def worktree_action(p, task_id, action):
         raise PermissionError("Claude is still working — wait until it stops")
     if action == "merge" and board_runs_from(wt["path"]):
         raise PermissionError(STILL_RUNNING_HERE)
-    # Both buttons first try without Claude; the session gets the job (and why the board stopped) only when that fails.
+    # Merge and cleanup belong to the session. Only Run app tries the saved recipe first.
+    why = ""
     if action == "merge":
-        sha, why = merge_here(p, wt)
-        if sha:
-            merged_here(p, t, wt, sha)
-            return {"merged": sha}
+        stop_run(p, task_id)
     else:
         why = start_saved_run(p, t, wt)
         if why is None:
@@ -3045,61 +3017,11 @@ def worktree_action(p, task_id, action):
 
 
 BOARD = "board"  # the `from` of a card message the board writes itself; phase and session logic skip them
-MERGED_HERE = "The board added this task's work into {base} by itself, without Claude (commit {sha})."
 
 
 def spoken(log):
     """The card's messages between you and Claude: no queued notes, no board messages."""
     return [e for e in log if e.get("status") != "note" and e.get("from") != BOARD]
-
-
-def merge_here(p, wt):
-    """The Merge button without Claude: merge the task's branch into its base branch in the main checkout. Returns
-    (merge commit sha, "") on success, else (None, why it was left to Claude) with the main checkout as it was:
-    uncommitted work in the worktree, the main checkout on another branch or mid-merge, or the merge itself failing
-    (conflicts, local changes in the way, a hook) are Claude's to sort out with the user."""
-    branch, base = wt["branch"], wt["base"]
-    if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{base}") is None:
-        return None, f"`{base}` is not a branch of this repo"
-    dirty = git_try(wt["path"], "status", "--porcelain")
-    if dirty is None or dirty:
-        return None, "the worktree has changes that are not committed"
-    on = git_try(p.path, "symbolic-ref", "--quiet", "--short", "HEAD")
-    if on != base:
-        return None, f"the main checkout is on `{on or 'a detached HEAD'}`, not `{base}`"
-    if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
-        return None, "the main checkout is in the middle of another merge"
-    try:
-        git_run(p.path, "merge", "--no-edit", branch, timeout=120)
-    except RuntimeError as e:
-        files = (git_try(p.path, "diff", "--name-only", "--diff-filter=U") or "").splitlines()
-        if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
-            git_try(p.path, "merge", "--abort", timeout=60)
-            if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
-                return None, f"the merge failed ({e}) and `git merge --abort` did not undo it: the main checkout is mid-merge"
-        return None, (f"the merge hit conflicts in {', '.join(files[:5])} and was undone" if files
-                      else f"the merge failed and nothing changed: {e}")
-    return git_run(p.path, "rev-parse", "--short", "HEAD"), ""
-
-
-def merged_here(p, t, wt, sha):
-    """After merge_here: stop the app the board ran from the worktree, remove the worktree and branch (tidy_merged),
-    and say both on the card in one board message."""
-    stop_run(p, t["id"])
-    key = (p.id, t["id"])
-    with WATCH.lock:
-        WATCH.tidying.add(key)  # the watcher's own tidy pass must not run beside this one
-    try:
-        try:
-            why = tidy_merged(p, t)
-        except Exception as e:  # noqa: BLE001 — the card says why; Delete worktree still works
-            why = f"{e}"
-        tidied = MERGE_TIDIED if why == "" else MERGE_KEPT + why if why else ""
-        reports.append(p.board, t["id"], "merged", MERGED_HERE.format(base=wt["base"], sha=sha) + " " + tidied, BOARD)
-    finally:
-        with WATCH.lock:
-            WATCH.tidying.discard(key)
-    WATCH.wake.set()
 
 
 # Run app from worktree without Claude: Claude saves how it started the app once per project (run_recipe_path), then
@@ -3281,124 +3203,8 @@ def delete_worktree(p, task_id, force=False):
         git_run(p.path, "branch", "-D", branch)  # its commits are on another branch, or the user confirmed losing them
 
 
-# Left in a worktree after its merge, these are remade by tools, never work: they do not keep the worktree.
-REBUILT = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".godot", ".DS_Store"}
-MERGE_TIDIED = "The board removed the worktree and its branch: everything in it is in the main copy."
-MERGE_KEPT = "The board kept the worktree after the merge: "
-# A repo's status.showUntrackedFiles=no or submodule ignore settings would hide work that removing the worktree loses.
+# Include hidden untracked work in the manual Delete worktree confirmation.
 FULL_STATUS = ("--untracked-files=normal", "--ignore-submodules=none")
-
-
-def merge_leftovers(p, wt):
-    """What a merged worktree holds beyond its commits, which removing it would lose. Nothing is compared with the
-    main checkout (each such comparison had a way to be fooled): anything extra keeps the worktree, but rebuilt
-    caches. That is every `git status` entry (staged, unstaged, untracked, ignored: `worktree remove --force` deletes
-    them all), and every file marked assume-unchanged or skip-worktree that is on disk, since status never shows
-    their edits (a sparse checkout's skip-worktree files are not on disk and hold nothing)."""
-    out = git_run(wt["path"], "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
-    left, i = [], 0
-    while i < len(out):
-        e, i = out[i], i + 1
-        if not e:
-            continue
-        if e[0] in "RC":
-            i += 1  # with -z a rename's old path comes next
-        if not (REBUILT & set(e[3:].rstrip("/").split("/")) or e.endswith((".pyc", ".pyo"))):
-            left.append(e[3:])
-    for e in git_run(wt["path"], "ls-files", "-v", "-z").split("\0"):
-        if (e[:1].islower() or e[:1] == "S") and e[2:] not in left and os.path.lexists(os.path.join(wt["path"], e[2:])):
-            left.append(e[2:])
-    return left
-
-
-def tidy_merged(p, t):
-    """After the merge the card asked for, remove the task's worktree and its branch, so a merged copy never stays
-    behind. Only when nothing is lost: the worktree's HEAD and its branch are both in the main checkout's HEAD,
-    merge_leftovers finds nothing, no submodule was filled in, and no process works in it. Returns None when there is
-    no worktree, "" once removed, else why it was kept."""
-    wt = live_worktree(t)
-    if not wt:
-        return None
-    if board_runs_from(wt["path"]):
-        return "the board itself runs from it. Switch the board back to main, then use Delete worktree."
-    branch = wt["branch"]
-    ref = f"refs/heads/{branch}"
-    has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
-    head = git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD")
-    tips = [git_try(wt["path"], "rev-parse", "--verify", "--quiet", "HEAD")] + ([ref] if has_branch else [])
-    if not head or None in tips or any(git_try(p.path, "merge-base", "--is-ancestor", x, head) is None for x in tips):
-        return f"some of its commits are not in the main copy ({os.path.basename(p.path)}) yet."
-    left = merge_leftovers(p, wt)
-    if left:
-        return ("it still holds more than its saved work: " + ", ".join(left[:5])
-                + (f" and {len(left) - 5} more" if len(left) > 5 else "") + ". Delete worktree throws them away.")
-    inner = inner_projects(wt["path"])
-    if inner:
-        return ("a project inside it was filled in, and its own copy goes with it: " + ", ".join(inner[:5])
-                + ". Delete worktree throws it away.")
-    users = users_of(wt["path"])
-    if users is None:
-        return "the board could not check whether a program still runs from it. Use Delete worktree once none does."
-    if users:
-        return "a program still runs from it. Stop it, then use Delete worktree."
-    git_run(p.path, "worktree", "remove", "--force", wt["path"])  # --force: only rebuilt caches are left
-    if has_branch:
-        git_run(p.path, "branch", "-d", branch)  # in HEAD, so -d agrees
-    return ""
-
-
-def inner_projects(wt_path):
-    """Submodules ever filled in inside the worktree. Their git data (commits, ignored and local files' history)
-    lives under the worktree's own git dir, even after a deinit, so removing the worktree loses it."""
-    gd = git_try(wt_path, "rev-parse", "--absolute-git-dir")
-    if gd is None:
-        return ["(its inner projects could not be read)"]
-    try:
-        return sorted(os.listdir(os.path.join(gd, "modules")))
-    except FileNotFoundError:
-        return []
-    except OSError:
-        return ["(its inner projects could not be read)"]
-
-
-def users_of(path):
-    """Process ids whose working directory is `path` or inside it; None when lsof is missing, hangs or lists nothing
-    (it always lists at least this server, so empty output means it failed)."""
-    try:
-        out = subprocess.run(["lsof", "-d", "cwd", "-Fpn"], capture_output=True, timeout=20, stdin=subprocess.DEVNULL,
-                             **TEXT).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if not out.strip():
-        return None
-    root, pid, found = os.path.realpath(path), "", []
-    for line in out.splitlines():
-        if line[:1] == "p":
-            pid = line[1:]
-        elif line[:1] == "n" and (line[1:] == root or line[1:].startswith(root + os.sep)):
-            found.append(pid)
-    return found
-
-
-def merge_reported(log):
-    """Claude reported done after the card's last message asked for a merge (answers to Claude's questions in
-    between do not count as a new ask), and the board has not tidied after it."""
-    said = [e for e in log if e.get("status") != "note"]
-    ask = None
-    for i in range(len(said) - 1, -1, -1):
-        e = said[i]
-        if e.get("from") != "you" or e.get("status") not in ("launch", "review", "reply"):
-            continue
-        if e.get("message", "").startswith("Merge worktree"):
-            ask = i
-            break
-        if not (i and said[i - 1].get("from") == "claude" and said[i - 1].get("status") == "question"):
-            return False
-    if ask is None:
-        return False
-    after = said[ask + 1:]
-    return (any(e.get("from") == "claude" and e.get("status") == "done" for e in after)
-            and not any(e.get("message", "").startswith((MERGE_KEPT, MERGE_TIDIED)) for e in after))
 
 
 def answer_permission(p, task_id, choice, shown):

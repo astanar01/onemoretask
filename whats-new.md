@@ -2,11 +2,10 @@
 
 ## 2026-10-27
 
-- The Merge button now adds a task's work into your project by itself, in a second, without waking Claude. Claude only steps in when something is in the way.
+- The Merge button asks Claude to add the finished work to your project and clean up its copy again. If something gets in the way, Claude asks you.
 - Run app now remembers how Claude started your app the first time, and starts it again by itself after that.
 - The check that asks "is this card for another project?" now only runs when the card seems to talk about another project, so most cards are sent sooner.
 - A new card's name and tags now show up faster: the board keeps Claude ready to go. If Claude is still quiet after 8 seconds, the board asks again and takes the first answer.
-- After a task's own copy is added back into your project, the board now throws that copy away by itself, right away. If anything else is left in it, even something that looks like yours, it keeps it and tells you on the card what is left. It also does this when Claude asked you something along the way, and it waits while a program still runs from that copy.
 
 ## 2026-10-26
 

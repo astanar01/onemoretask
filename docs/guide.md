@@ -288,20 +288,11 @@ A finished card in Review then has two more buttons:
   on the card; a demo's output goes on the card. Pressing it again restarts the app; merging or deleting the
   worktree stops it. If the saved way fails (it exits, or the URL never answers), the board stops it and asks
   Claude, with the end of its output, to run the app and fix the saved file.
-- **Merge worktree to *branch*** (e.g. "Merge worktree to dev"): the board merges the task's branch into the
-  branch your checkout was on when you sent the task by itself, without Claude, then removes the worktree as
-  below and says both on the card. It hands the merge to Claude, telling it why, when the worktree holds
-  changes not committed yet, your checkout is on another branch, or the merge stops (a conflict, your own
-  changes in the way, a hook); it undoes its own try first. A changelog file marked `merge=union` in
-  `.gitattributes` (this repo's `whats-new.md`) keeps both sides' lines, so it is no conflict. Claude commits
-  what is left, merges, and if anything goes wrong it undoes the merge and asks you on the card. Neither ever pushes.
-  Once Claude reports the merge done, the board itself removes the worktree and the branch, but only when
-  nothing would be lost: every commit is in your checkout, the worktree holds nothing but its commits and rebuilt
-  caches (`__pycache__`, `node_modules`, `.godot`, …), no submodule was filled in inside it, and no program still
-  runs from it (the board must be able to check). It never compares leftovers with your files: any extra file, even
-  one identical to yours, keeps the worktree. Answering Claude's questions during the merge is fine.
-  Otherwise it keeps them and says
-  on the card what is left; **Delete worktree** then throws them away.
+- **Merge worktree to *branch*** (e.g. "Merge worktree to dev"): asks Claude to merge the task's work into
+  its base branch, then remove the finished worktree and branch. Claude commits remaining work first. If the merge
+  fails, it undoes the merge and asks you on the card. After success, it stops programs running from the worktree
+  and removes it without forcing deletion. If cleanup refuses, Claude keeps what remains and asks you.
+  It never pushes. The board does not merge or clean up finished worktrees by itself, including after a restart.
 
 A project with no git repo (or one with no commit yet) shows a window offering to make one: it runs
 `git init` and commits everything as "Initial commit", except the board folder and `.env` files (`.env`, `.env.*`; `.env.example`,
