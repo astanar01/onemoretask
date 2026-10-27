@@ -173,6 +173,31 @@ finally:
     proc.wait()
 check("program gone: removed", (server.tidy_merged(p, t6), os.path.isdir(busy["path"])), ("", False))
 
+# A repo that hides untracked files from `git status` must not hide them from the tidy check.
+hidden = add_task("t8", "merged, untracked hidden by config")
+git(proj, "config", "status.showUntrackedFiles", "no")
+write(os.path.join(hidden["path"], "notes", "idea.txt"), "only here\n")
+t8 = tasks["tasks"][-1]
+try:
+    check("untracked hidden by config: kept", (server.tidy_merged(p, t8), os.path.isdir(hidden["path"])),
+          ("it still holds changes that are not in the main copy: notes/. Delete worktree "
+           "throws them away.", True))
+finally:
+    git(proj, "config", "--unset", "status.showUntrackedFiles")
+
+# A symlink to a folder inside a new folder is work too, unless the main checkout has the same link.
+linked = add_task("t9", "merged, nested folder link")
+os.makedirs(os.path.join(linked["path"], "media"))
+os.symlink(TMP, os.path.join(linked["path"], "media", "shots"))
+t9 = tasks["tasks"][-1]
+check("nested folder link only here: kept", (server.tidy_merged(p, t9), os.path.isdir(linked["path"])),
+      ("it still holds changes that are not in the main copy: media/. Delete worktree throws them away.", True))
+os.makedirs(os.path.join(proj, "media"))
+os.symlink(TMP, os.path.join(proj, "media", "shots"))
+check("same link in the main checkout: removed", (server.tidy_merged(p, t9), os.path.isdir(linked["path"])),
+      ("", False))
+check("the link's target survives", os.path.isdir(TMP), True)
+
 # A submodule commit made only inside the worktree lives in the worktree's own git dir: keep it.
 lib = os.path.join(TMP, "lib")
 git(TMP, "init", "-q", "-b", "main", lib)

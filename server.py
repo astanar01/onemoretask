@@ -3151,7 +3151,8 @@ def delete_worktree(p, task_id, force=False):
     ref = f"refs/heads/{branch}"
     has_branch = git_try(p.path, "rev-parse", "--verify", "--quiet", ref) is not None
     # --ignored: `worktree remove` deletes ignored files too (a .env, local data), so they count as work to lose.
-    changes = [x for x in git_run(wt["path"], "status", "--porcelain", "--ignored").splitlines() if x.strip()]
+    changes = [x for x in git_run(wt["path"], "status", "--porcelain", "--ignored", *FULL_STATUS).splitlines()
+               if x.strip()]
     # The worktree's own HEAD too: it may be detached or mid-rebase, holding commits the branch does not have.
     # --exclude takes the name without refs/heads/ when it filters --branches.
     commits = int(git_run(wt["path"], "rev-list", "--count", *([ref] if has_branch else []), "HEAD",
@@ -3167,22 +3168,28 @@ def delete_worktree(p, task_id, force=False):
 REBUILT = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".godot", ".DS_Store"}
 MERGE_TIDIED = "The board removed the worktree and its branch: everything in it is in the main copy."
 MERGE_KEPT = "The board kept the worktree after the merge: "
+# A repo's status.showUntrackedFiles=no or submodule ignore settings would hide work that removing the worktree loses.
+FULL_STATUS = ("--untracked-files=normal", "--ignore-submodules=none")
 
 
 def _in_main(main, wt_path, rel):
     """True when `rel` (a file or folder in the worktree) holds nothing the main checkout `main` lacks: rebuilt
-    caches, or files byte-identical to the main checkout's at the same path."""
+    caches, files byte-identical to the main checkout's at the same path, or symlinks it has with the same target."""
     def same(r):
         if REBUILT & set(r.split("/")) or r.endswith((".pyc", ".pyo")):
             return True
         a, b = os.path.join(wt_path, r), os.path.join(main, r)
+        if os.path.islink(a):
+            return os.path.islink(b) and os.readlink(a) == os.readlink(b)
         return os.path.isfile(a) and os.path.isfile(b) and filecmp.cmp(a, b, shallow=False)
     top = os.path.join(wt_path, rel)
     if REBUILT & set(rel.split("/")) or not os.path.isdir(top) or os.path.islink(top):
         return same(rel)
     for d, dirs, files in os.walk(top):
         dirs[:] = [x for x in dirs if x not in REBUILT]
-        if not all(same(os.path.relpath(os.path.join(d, f), wt_path).replace(os.sep, "/")) for f in files):
+        # os.walk lists a symlink to a folder under dirs and does not follow it: check the link itself.
+        links = [x for x in dirs if os.path.islink(os.path.join(d, x))]
+        if not all(same(os.path.relpath(os.path.join(d, f), wt_path).replace(os.sep, "/")) for f in files + links):
             return False
     return True
 
@@ -3191,7 +3198,7 @@ def merge_leftovers(p, wt):
     """`git status` entries of a merged worktree that would be lost with it: all of them (ignored files too, which
     `worktree remove --force` deletes) but rebuilt caches and files identical to the main checkout's."""
     main = git_run(p.path, "rev-parse", "--show-toplevel")
-    out = git_run(wt["path"], "status", "--porcelain", "-z", "--ignored").split("\0")
+    out = git_run(wt["path"], "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
     left, i = [], 0
     while i < len(out):
         e, i = out[i], i + 1
