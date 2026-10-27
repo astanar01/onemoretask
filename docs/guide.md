@@ -296,9 +296,10 @@ A finished card in Review then has two more buttons:
   `.gitattributes` (this repo's `whats-new.md`) keeps both sides' lines, so it is no conflict. Claude commits
   what is left, merges, and if anything goes wrong it undoes the merge and asks you on the card. Neither ever pushes.
   Once Claude reports the merge done, the board itself removes the worktree and the branch, but only when
-  nothing would be lost: every commit is in your checkout (also the commits of any submodule filled in inside the
-  worktree), the worktree holds nothing but rebuilt caches (`__pycache__`, `node_modules`, `.godot`, …) or files
-  identical to yours, and no program still runs from it. Answering Claude's questions during the merge is fine.
+  nothing would be lost: every commit is in your checkout, the worktree holds nothing but its commits and rebuilt
+  caches (`__pycache__`, `node_modules`, `.godot`, …), no submodule was filled in inside it, and no program still
+  runs from it (the board must be able to check). It never compares leftovers with your files: any extra file, even
+  one identical to yours, keeps the worktree. Answering Claude's questions during the merge is fine.
   Otherwise it keeps them and says
   on the card what is left; **Delete worktree** then throws them away.
 

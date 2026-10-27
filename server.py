@@ -52,8 +52,8 @@ worktree (start_saved_run); with none saved, or when it fails, a canned reply ha
 Board messages (`from: "board"`) are skipped by phase_of and spoken(), so a card's phase and archive stay Claude's.
 Once the session reports that merge
 done, the watcher removes the worktree and branch itself (tidy_merged), only when every commit is in the main
-checkout's HEAD (submodule commits too), nothing but rebuilt caches or copies of the main checkout's files is left, and
-no process has its cwd there; else it says why on the card.
+checkout's HEAD, nothing but rebuilt caches is left (no comparing with the main checkout's files), no submodule was
+filled in, and no process has its cwd there; else it says why on the card.
 "Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
 server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
 `force` once the user confirms. A reply after the worktree was deleted or merged makes a fresh one (renew_worktree).
@@ -131,7 +131,6 @@ takes a model (GET /api/codex-models lists the OpenAI ones), so a Codex reviewer
 """
 import argparse
 import base64
-import filecmp
 import hashlib
 import importlib.util
 import json
@@ -3290,61 +3289,13 @@ MERGE_KEPT = "The board kept the worktree after the merge: "
 FULL_STATUS = ("--untracked-files=normal", "--ignore-submodules=none")
 
 
-def _into(path, root):
-    """True when `path`, with every symlink on the way resolved, is `root` or inside it."""
-    real, top = os.path.realpath(path), os.path.realpath(root)
-    return real == top or real.startswith(top + os.sep)
-
-
-def _in_main(main, wt_path, rel):
-    """True when `rel` (a file or folder in the worktree) holds nothing the main checkout `main` lacks: rebuilt
-    caches, files byte-identical to the main checkout's at the same path, or symlinks it has with the same target."""
-    def same(r):
-        if REBUILT & set(r.split("/")) or r.endswith((".pyc", ".pyo")):
-            return True
-        a, b = os.path.join(wt_path, r), os.path.join(main, r)
-        if _into(b, wt_path):
-            return False  # the main checkout's copy is a link into the worktree: it goes with it
-        if os.path.islink(a):
-            return os.path.islink(b) and os.readlink(a) == os.readlink(b)
-        return os.path.isfile(a) and os.path.isfile(b) and filecmp.cmp(a, b, shallow=False)
-    top = os.path.join(wt_path, rel)
-    if REBUILT & set(rel.split("/")) or not os.path.isdir(top) or os.path.islink(top):
-        return same(rel)
-    for d, dirs, files in os.walk(top):
-        dirs[:] = [x for x in dirs if x not in REBUILT]
-        # os.walk lists a symlink to a folder under dirs and does not follow it: check the link itself.
-        links = [x for x in dirs if os.path.islink(os.path.join(d, x))]
-        if not all(same(os.path.relpath(os.path.join(d, f), wt_path).replace(os.sep, "/")) for f in files + links):
-            return False
-    return True
-
-
 def merge_leftovers(p, wt):
-    """`git status` entries of a merged worktree that would be lost with it: all of them (ignored files too, which
-    `worktree remove --force` deletes) but rebuilt caches and files identical to the main checkout's."""
-    return _leftovers(git_run(p.path, "rev-parse", "--show-toplevel"), wt["path"])
-
-
-def _staged_in_main(main, wt_path, rel):
-    """True when the worktree's staged version of `rel` is what the main checkout has at `rel` (its HEAD or its
-    file): a staged draft is otherwise lost with the worktree, even when the file on disk matches."""
-    staged = git_try(wt_path, "rev-parse", "--verify", "--quiet", f":{rel}")
-    if staged is None:
-        return False
-    if staged == git_try(main, "rev-parse", "--verify", "--quiet", f"HEAD:{rel}"):
-        return True
-    there = os.path.join(main, rel)
-    return (os.path.isfile(there) and not _into(there, wt_path)
-            and staged == git_try(main, "hash-object", "--", rel))
-
-
-def _leftovers(main, wt_path):
-    """merge_leftovers for the repo checked out at `wt_path` against `main`, its submodules included (each against
-    the main checkout's copy of it: their ignored and uncommitted files go with the worktree too)."""
-    subs = set(filter(None, (git_try(wt_path, "submodule", "foreach", "--quiet", 'echo "$sm_path"', timeout=60)
-                             or "").splitlines()))
-    out = git_run(wt_path, "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
+    """What a merged worktree holds beyond its commits, which removing it would lose. Nothing is compared with the
+    main checkout (each such comparison had a way to be fooled): anything extra keeps the worktree, but rebuilt
+    caches. That is every `git status` entry (staged, unstaged, untracked, ignored: `worktree remove --force` deletes
+    them all), and every file marked assume-unchanged or skip-worktree that is on disk, since status never shows
+    their edits (a sparse checkout's skip-worktree files are not on disk and hold nothing)."""
+    out = git_run(wt["path"], "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
     left, i = [], 0
     while i < len(out):
         e, i = out[i], i + 1
@@ -3352,29 +3303,19 @@ def _leftovers(main, wt_path):
             continue
         if e[0] in "RC":
             i += 1  # with -z a rename's old path comes next
-        rel = e[3:].rstrip("/")
-        if rel in subs:
-            continue  # checked inside below; its .git file always differs from the main checkout's
-        if (not _in_main(main, wt_path, rel)
-                or e[0] not in " ?!D" and not _staged_in_main(main, wt_path, rel)):
+        if not (REBUILT & set(e[3:].rstrip("/").split("/")) or e.endswith((".pyc", ".pyo"))):
             left.append(e[3:])
-    # status never reports edits to files marked assume-unchanged (lower-case tag) or skip-worktree (S): compare those
-    # directly. A skip-worktree file left out by a sparse checkout is not on disk and holds nothing.
-    for e in git_run(wt_path, "ls-files", "-v", "-z").split("\0"):
-        rel = e[2:]
-        if (e[:1].islower() or e[:1] == "S") and rel not in left and os.path.lexists(os.path.join(wt_path, rel)) \
-                and not _in_main(main, wt_path, rel):
-            left.append(rel)
-    for s in sorted(subs):
-        left += [f"{s}/{x}" for x in _leftovers(os.path.join(main, s), os.path.join(wt_path, s))]
+    for e in git_run(wt["path"], "ls-files", "-v", "-z").split("\0"):
+        if (e[:1].islower() or e[:1] == "S") and e[2:] not in left and os.path.lexists(os.path.join(wt["path"], e[2:])):
+            left.append(e[2:])
     return left
 
 
 def tidy_merged(p, t):
     """After the merge the card asked for, remove the task's worktree and its branch, so a merged copy never stays
     behind. Only when nothing is lost: the worktree's HEAD and its branch are both in the main checkout's HEAD,
-    merge_leftovers and inner_leftovers find nothing, and no process works in it. Returns None when there is no
-    worktree, "" once removed, else why it was kept."""
+    merge_leftovers finds nothing, no submodule was filled in, and no process works in it. Returns None when there is
+    no worktree, "" once removed, else why it was kept."""
     wt = live_worktree(t)
     if not wt:
         return None
@@ -3389,39 +3330,35 @@ def tidy_merged(p, t):
         return f"some of its commits are not in the main copy ({os.path.basename(p.path)}) yet."
     left = merge_leftovers(p, wt)
     if left:
-        return ("it still holds changes that are not in the main copy: " + ", ".join(left[:5])
+        return ("it still holds more than its saved work: " + ", ".join(left[:5])
                 + (f" and {len(left) - 5} more" if len(left) > 5 else "") + ". Delete worktree throws them away.")
-    inner = inner_leftovers(git_run(p.path, "rev-parse", "--show-toplevel"), wt["path"])
+    inner = inner_projects(wt["path"])
     if inner:
-        return ("a project inside it holds commits the main copy's does not have: " + ", ".join(inner[:5])
-                + ". Delete worktree throws them away.")
+        return ("a project inside it was filled in, and its own copy goes with it: " + ", ".join(inner[:5])
+                + ". Delete worktree throws it away.")
     users = users_of(wt["path"])
     if users is None:
         return "the board could not check whether a program still runs from it. Use Delete worktree once none does."
     if users:
         return "a program still runs from it. Stop it, then use Delete worktree."
-    git_run(p.path, "worktree", "remove", "--force", wt["path"])  # --force: only caches and copies are left
+    git_run(p.path, "worktree", "remove", "--force", wt["path"])  # --force: only rebuilt caches are left
     if has_branch:
         git_run(p.path, "branch", "-d", branch)  # in HEAD, so -d agrees
     return ""
 
 
-def inner_leftovers(main, wt_path):
-    """Submodules filled in inside the worktree whose commits (HEAD, branches, stash) the main checkout's copy of
-    that submodule lacks. Their git data lives in the worktree's own git dir, so removing the worktree loses them."""
-    out = git_try(wt_path, "submodule", "foreach", "--quiet", "--recursive", 'echo "$displaypath"', timeout=60)
-    if out is None:
+def inner_projects(wt_path):
+    """Submodules ever filled in inside the worktree. Their git data (commits, ignored and local files' history)
+    lives under the worktree's own git dir, even after a deinit, so removing the worktree loses it."""
+    gd = git_try(wt_path, "rev-parse", "--absolute-git-dir")
+    if gd is None:
         return ["(its inner projects could not be read)"]
-    left = []
-    for rel in filter(None, out.splitlines()):
-        sub, there = os.path.join(wt_path, rel), os.path.join(main, rel)
-        tips = (git_try(sub, "for-each-ref", "--format=%(objectname)", "refs/heads", "refs/stash") or "").split()
-        tips.append(git_try(sub, "rev-parse", "--verify", "--quiet", "HEAD"))
-        # No .git there: git -C would walk up to the outer repo and answer for it.
-        if (None in tips or not os.path.exists(os.path.join(there, ".git"))
-                or any(git_try(there, "cat-file", "-e", f"{x}^{{commit}}") is None for x in tips)):
-            left.append(rel)
-    return left
+    try:
+        return sorted(os.listdir(os.path.join(gd, "modules")))
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return ["(its inner projects could not be read)"]
 
 
 def users_of(path):

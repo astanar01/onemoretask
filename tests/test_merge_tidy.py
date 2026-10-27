@@ -81,8 +81,6 @@ def add_task(tid, title, merge=True, ask=True, done=True):
 clean = add_task("t1", "merged clean")
 os.makedirs(os.path.join(clean["path"], "__pycache__"))
 write(os.path.join(clean["path"], "__pycache__", "app.cpython-312.pyc"), "bytecode")
-write(os.path.join(clean["path"], "app.py.copy"), "x")  # an untracked file...
-write(os.path.join(proj, "app.py.copy"), "x")  # ...identical to the main checkout's
 unmerged = add_task("t2", "not merged", merge=False)
 leftover = add_task("t3", "merged with env")
 write(os.path.join(leftover["path"], ".env"), "SECRET=1\n")  # ignored, but only here: work to lose
@@ -116,7 +114,7 @@ def has_branch(wt):
 
 W.poll()
 settle()
-check("merged, only caches and copies left: folder removed", os.path.isdir(clean["path"]), False)
+check("merged, only caches left: folder removed", os.path.isdir(clean["path"]), False)
 check("merged: branch removed", has_branch(clean), False)
 check("merged: card says so", last("t1"), server.MERGE_TIDIED)
 check("merged: still finished", W.snapshot(p.id)["t1"]["phase"], "finished")
@@ -124,8 +122,8 @@ check("not merged: folder kept", os.path.isdir(unmerged["path"]), True)
 check("not merged: branch kept", has_branch(unmerged), True)
 check("not merged: card says why", last("t2").startswith(server.MERGE_KEPT + "some of its commits"), True)
 check("ignored file only in the worktree: kept", os.path.isdir(leftover["path"]), True)
-check("ignored file: card names it", last("t3"), server.MERGE_KEPT + "it still holds changes that are not in the "
-      "main copy: .env. Delete worktree throws them away.")
+check("ignored file: card names it", last("t3"), server.MERGE_KEPT + "it still holds more than its saved work: .env. "
+      "Delete worktree throws them away.")
 check("no merge asked: kept", os.path.isdir(noask["path"]), True)
 check("no merge asked: no message", last("t4"), "Work done.")
 check("merge asked, no done yet: kept", os.path.isdir(asked_only["path"]), True)
@@ -180,23 +178,26 @@ write(os.path.join(hidden["path"], "notes", "idea.txt"), "only here\n")
 t8 = tasks["tasks"][-1]
 try:
     check("untracked hidden by config: kept", (server.tidy_merged(p, t8), os.path.isdir(hidden["path"])),
-          ("it still holds changes that are not in the main copy: notes/. Delete worktree "
-           "throws them away.", True))
+          ("it still holds more than its saved work: notes/. Delete worktree throws them away.", True))
 finally:
     git(proj, "config", "--unset", "status.showUntrackedFiles")
 
-# A symlink to a folder inside a new folder is work too, unless the main checkout has the same link.
+# Nothing is compared with the main checkout: an extra file or link keeps the worktree even when the main checkout
+# has the same one.
 linked = add_task("t9", "merged, nested folder link")
 os.makedirs(os.path.join(linked["path"], "media"))
 os.symlink(TMP, os.path.join(linked["path"], "media", "shots"))
-t9 = tasks["tasks"][-1]
-check("nested folder link only here: kept", (server.tidy_merged(p, t9), os.path.isdir(linked["path"])),
-      ("it still holds changes that are not in the main copy: media/. Delete worktree throws them away.", True))
 os.makedirs(os.path.join(proj, "media"))
 os.symlink(TMP, os.path.join(proj, "media", "shots"))
-check("same link in the main checkout: removed", (server.tidy_merged(p, t9), os.path.isdir(linked["path"])),
-      ("", False))
-check("the link's target survives", os.path.isdir(TMP), True)
+check("folder link, same one in the main checkout: kept",
+      (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(linked["path"])),
+      ("it still holds more than its saved work: media/. Delete worktree throws them away.", True))
+copied = add_task("t17", "merged, copy of a main file")
+write(os.path.join(copied["path"], "app.py.copy"), "x")
+write(os.path.join(proj, "app.py.copy"), "x")
+check("file identical to the main checkout's: kept",
+      (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(copied["path"])),
+      ("it still holds more than its saved work: app.py.copy. Delete worktree throws them away.", True))
 
 # git status never shows edits to a file marked assume-unchanged or skip-worktree: they are work too.
 for tid, flag in (("t10", "--assume-unchanged"), ("t11", "--skip-worktree")):
@@ -204,9 +205,13 @@ for tid, flag in (("t10", "--assume-unchanged"), ("t11", "--skip-worktree")):
     git(marked["path"], "update-index", flag, "app.py")
     write(os.path.join(marked["path"], "app.py"), "print('only here')\n")
     check(f"edit hidden by {flag}: kept", (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])),
-          ("it still holds changes that are not in the main copy: app.py. Delete worktree throws them away.", True))
+          ("it still holds more than its saved work: app.py. Delete worktree throws them away.", True))
     write(os.path.join(marked["path"], "app.py"), "print('hi')\n")
-    check(f"{flag} file back to the main copy's text: removed",
+    check(f"{flag} file back to its saved text: still kept",
+          (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])),
+          ("it still holds more than its saved work: app.py. Delete worktree throws them away.", True))
+    git(marked["path"], "update-index", flag.replace("--", "--no-"), "app.py")
+    check(f"{flag} mark taken off: removed",
           (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])), ("", False))
 
 # A staged draft is work even when the file on disk is back to the main copy's text.
@@ -216,7 +221,7 @@ git(draft["path"], "add", "app.py")
 write(os.path.join(draft["path"], "app.py"), "print('hi')\n")
 t13 = tasks["tasks"][-1]
 check("staged draft only in the worktree: kept", (server.tidy_merged(p, t13), os.path.isdir(draft["path"])),
-      ("it still holds changes that are not in the main copy: app.py. Delete worktree throws them away.", True))
+      ("it still holds more than its saved work: app.py. Delete worktree throws them away.", True))
 git(draft["path"], "add", "app.py")
 check("draft unstaged back to the main copy's text: removed",
       (server.tidy_merged(p, t13), os.path.isdir(draft["path"])), ("", False))
@@ -232,7 +237,7 @@ for tid, where in (("t15", "file"), ("t16", "parent folder")):
         os.symlink(os.path.join(back["path"], "notes"), os.path.join(proj, "notes"))
     check(f"main links back into it by {where}: kept",
           (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(back["path"])),
-          ("it still holds changes that are not in the main copy: notes/. Delete worktree throws them away.", True))
+          ("it still holds more than its saved work: notes/. Delete worktree throws them away.", True))
     if where == "file":
         os.remove(os.path.join(proj, "notes", "n.txt"))
         os.rmdir(os.path.join(proj, "notes"))
@@ -273,12 +278,12 @@ sub_exclude = git(os.path.join(private["path"], "lib"), "rev-parse", "--path-for
 write(sub_exclude, ".env\n")
 write(os.path.join(private["path"], "lib", ".env"), "SECRET=1\n")
 t14 = tasks["tasks"][-1]
+INNER = "a project inside it was filled in, and its own copy goes with it: lib. Delete worktree throws it away."
 check("ignored file in a submodule: kept", (server.tidy_merged(p, t14), os.path.isdir(private["path"])),
-      ("it still holds changes that are not in the main copy: lib/.env. Delete worktree throws them away.", True))
-write(os.path.join(proj, "lib", ".env"), "SECRET=1\n")
-check("same file in the main copy's submodule: removed",
-      (server.tidy_merged(p, t14), os.path.isdir(private["path"])), ("", False))
-os.remove(os.path.join(proj, "lib", ".env"))
+      (INNER, True))
+git(private["path"], "submodule", "deinit", "-q", "-f", "lib")
+check("submodule emptied again: still kept (its git data stays in the worktree's git dir)",
+      (server.tidy_merged(p, t14), os.path.isdir(private["path"])), (INNER, True))
 inner = add_task("t7", "merged, inner commit")
 git(inner["path"], "submodule", "update", "--init", "-q")
 write(os.path.join(inner["path"], "lib", "b"), "only here\n")
@@ -288,10 +293,7 @@ git(inner["path"], "commit", "-q", "-am", "bump lib")
 git(proj, "merge", "-q", "--no-ff", "-m", "merge bump", inner["branch"])
 t7 = tasks["tasks"][-1]
 check("inner commit only in the worktree: kept", (server.tidy_merged(p, t7), os.path.isdir(inner["path"])),
-      ("a project inside it holds commits the main copy's does not have: lib. Delete worktree throws them away.", True))
-git(os.path.join(proj, "lib"), "fetch", "-q", os.path.join(inner["path"], "lib"), "HEAD")
-check("inner commit fetched into the main copy's lib: removed",
-      (server.tidy_merged(p, t7), os.path.isdir(inner["path"])), ("", False))
+      (INNER, True))
 
 # The merge steps no longer tell Claude to remove the worktree.
 steps = "\n".join(server.worktree_steps(p, "t2", unmerged, "merge"))
