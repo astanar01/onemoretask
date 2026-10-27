@@ -8,7 +8,8 @@
 
 A message of `-` is read from stdin, for every status. `--file <path>` in place of the message reads it
 from that file: the form an answer-only card's sandbox lets through when the text holds a backtick, `$(`,
-a `<` or a heredoc.
+a `<` or a heredoc. Either form leaves the sandbox only as the whole shell command: anything chained to it
+(`; echo "exit=$?"`, `&& ...`) runs the lot inside, and the write is refused.
 
 A decision is a choice between options; the card draws all of a task's decisions as one horizontal
 tree, each hanging off the option chosen before it, and redraws it as new ones arrive. Its JSON:
@@ -116,9 +117,10 @@ def refused(e):
     --file above), so say how to post the same text instead of a traceback."""
     retry = " ".join(shlex.quote(a) for a in ("python3", os.path.abspath(__file__), "--board", board, task_id, asked))
     sys.exit(f"Not posted: the board refused the write ({e}). This shell runs in a sandbox where the project is "
-             "read-only. The report command only runs outside it when its text has no backtick, no `$(`, no `<` "
-             "and no heredoc. Write the message to a file outside the project with the Write tool, then post it "
-             f"with: {retry} --file <that file>")
+             "read-only. The report command only runs outside it when it is the whole shell command (nothing "
+             "chained before or after it: no `;`, `&&`, `||` or `|`, not even `echo $?`) and its text has no "
+             "backtick, no `$(`, no `<` and no heredoc. Write the message to a file outside the project with the "
+             f"Write tool, then post it with exactly this, alone: {retry} --file <that file>")
 
 
 images = []

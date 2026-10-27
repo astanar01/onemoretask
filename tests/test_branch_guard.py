@@ -203,6 +203,8 @@ check("answer-only prompt: observer log files go through the edit tools",
       "new-observation.sh" in " ".join(server.answer_only_lines("report")))
 check("answer-only prompt: a message with a backtick goes through --file",
       "report done --file <that file>" in " ".join(server.answer_only_lines("report")))
+check("answer-only prompt: the report command runs on its own, nothing chained",
+      "Anything chained to it" in " ".join(server.answer_only_lines("report")))
 check("answer-only reply restates the rule", "no reply lifts" in server.ANSWER_ONLY_WORK)
 
 print(f"\n{len(fails)} failed" if fails else "\nall passed")
