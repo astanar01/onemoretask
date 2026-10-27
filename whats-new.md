@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-27
+
+- After a task's own copy is added back into your project, the board now throws that copy away by itself, right away. If something in it would be lost, it keeps it and tells you on the card what is left.
+
 ## 2026-10-26
 
 - A task that works in its own copy of a project now shares Claude's main code map instead of making a big new one, so your disk stops filling up. When the task's work is added back to the project, the main map picks it up.
