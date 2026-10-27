@@ -261,6 +261,10 @@ body.view-plan #search { visibility: hidden; }
 .pl-chip { font-size: calc(11px * var(--ts)); color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
 .pl-chip.is-done { color: var(--ok); border-color: var(--ok); }
 .pl-chip.gone { color: var(--wait); border-color: var(--wait); }
+.pl-meta { display: flex; align-items: center; gap: 6px; }
+.pl-subn { font-size: calc(12px * var(--ts)); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pl-subn.is-done { color: var(--ok); }
+.pl-pct { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .pl-add { border: 1px dashed var(--line); border-radius: 8px; background: transparent; padding: 8px 10px; width: 100%; }
 .pl-row.pl-subrow { margin-left: 34px; padding: 4px 10px; }
 .pl-sub-add { margin-left: 34px; width: calc(100% - 34px); border: 1px dashed var(--line); border-radius: 8px; background: transparent; padding: 5px 10px; }
@@ -1651,18 +1655,27 @@ function planPick(m, want) {
   }
   return rows.filter((r) => pick.has(r.d));
 }
+const planItemDone = (x) => { const c = planCard(x); return !!c && isDone(c); };
 function planCount(m) {
   const cards = m.tasks.map(planCard).filter(Boolean);
   // A task counts as done only once its subtasks are done too.
-  const doneHere = (x) => { const c = planCard(x); return !!c && isDone(c); };
-  const done = m.tasks.filter((d) => doneHere(d) && planSubs(d).every(doneHere)).length;
-  return { total: m.tasks.length, done, onBoard: cards.length };
+  const done = m.tasks.filter((d) => planItemDone(d) && planSubs(d).every(planItemDone)).length;
+  // The percent counts every task and every subtask as one piece.
+  const items = planRows(m).map((r) => r.d), pct = items.length ? Math.floor(100 * items.filter(planItemDone).length / items.length) : 0;
+  return { total: m.tasks.length, done, onBoard: cards.length, pct };
 }
 const planDone = (m) => { const c = planCount(m); return c.total > 0 && c.done === c.total; };
 function planProgress(m) {
   const c = planCount(m);
   if (!c.total) return `<span class="progress">${t("No tasks yet")}</span>`;
-  return `<span class="progress" title="${esc(t("{n} on the board", { n: c.onBoard }))}"><span class="bar"><i style="width:${(100 * c.done / c.total).toFixed(0)}%"></i></span>${esc(t("{done} of {total} done", c))}</span>`;
+  return `<span class="progress" title="${esc(t("{n} on the board", { n: c.onBoard }))}"><span class="bar"><i style="width:${c.pct}%"></i></span>${esc(t("{done} of {total} done", c))}<b class="pl-pct">${esc(t("{n}%", { n: c.pct }))}</b></span>`;
+}
+// "2/9" on a task that has subtasks: how many of them are done.
+function planSubCount(d) {
+  const subs = planSubs(d);
+  if (!subs.length) return "";
+  const done = subs.filter(planItemDone).length;
+  return `<span class="pl-subn${done === subs.length ? " is-done" : ""}" title="${esc(t("{done} of {total} subtasks done", { done, total: subs.length }))}">${done}/${subs.length}</span>`;
 }
 function planChip(d) {
   const c = planCard(d);
@@ -1679,7 +1692,7 @@ function planRowHtml({ d, up }) {
   const tools = sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`);
   return `<div class="pl-row${up ? " pl-subrow" : ""}${d.suggested && !d.card ? " sug" : ""}" data-d="${esc(d.id)}" data-up="${up ? esc(up.id) : ""}" draggable="true">
     <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${!c && planTick.has(d.id) ? " checked" : ""} title="${esc(c ? t("Already on the board") : t("Tick to send"))}">
-    ${name}<span>${planChip(d)}</span><span>${tools}</span>
+    ${name}<span class="pl-meta">${up ? "" : planSubCount(d)}${planChip(d)}</span><span>${tools}</span>
     ${open ? `<textarea data-f="notes" placeholder="${esc(t("Notes for Claude"))}">${esc(d.notes || "")}</textarea>` : ""}</div>`;
 }
 // A task's row, its subtasks' rows, then its "add a subtask" box when open.

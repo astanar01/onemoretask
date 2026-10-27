@@ -2,6 +2,7 @@
 
 ## 2026-10-27
 
+- On the Plan page, a task with smaller tasks under it shows how many of them are done, like 2/9. Each plan also shows how far along it is, like 40%.
 - Pressing Plan while a task is open now shows the Plan page. Before, the open task covered it.
 - The Merge button asks Claude to add the finished work to your project and clean up its copy again. If something gets in the way, Claude asks you.
 - Run app now remembers how Claude started your app the first time, and starts it again by itself after that.

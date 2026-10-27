@@ -607,6 +607,7 @@ const I18N = {
     "No tasks yet": "Pas encore de tâches",
     "{n} on the board": "{n} sur le tableau",
     "{done} of {total} done": "{done} sur {total} faites",
+    "{n}%": "{n} %",
     "Suggested": "Suggérée",
     "Its card was deleted. Tick it to send it again.": "Sa carte a été supprimée. Cochez-la pour l’envoyer à nouveau.",
     "Not on the board": "Pas sur le tableau",

@@ -137,6 +137,8 @@ window.__srows = () => [...document.querySelectorAll('.pl-row')].map((r) => [(r.
 window.__rowEl = (title) => [...document.querySelectorAll('.pl-row')].find((r) => ((r.querySelector('input[type=text]') || {}).value ?? r.querySelector('.sent').textContent) === title);
 window.__ms = () => state.milestones[0];
 window.__big = () => state.tasks.filter((x) => x.milestone);
+window.__prog = (s) => { const p = document.querySelector(s).cloneNode(true), b = p.querySelector('.pl-pct'), pct = b ? b.textContent : null; b?.remove(); return [p.textContent.trim(), pct, p.querySelector('.bar i')?.style.width]; };
+window.__subn = (title) => { const n = __rowEl(title)?.querySelector('.pl-subn'); return n ? [n.textContent, n.classList.contains('is-done'), n.title] : null; };
 true`;
 await ev(HELPERS);
 
@@ -173,12 +175,12 @@ const big = __big();
 await shot('plan-ticked-sent');
 out.all = await ev(`document.querySelector('.pl-send-all').click();
 const big = __big();
-({ bigCount: big.length, kids: children(big[0].id).map((k) => k.title), rows: __rows(), progress: document.querySelector('.pl-head .progress').textContent.trim(),
+({ bigCount: big.length, kids: children(big[0].id).map((k) => k.title), rows: __rows(), progress: __prog('.pl-head .progress'),
    sendAllOff: document.querySelector('.pl-send-all').disabled })`);
 // A card moved to Done counts; a deleted card can be sent again under the same milestone card.
 out.done = await ev(`const big = __big()[0]; const kids = children(big.id);
 kids[0].column = 'c4'; render();
-const p1 = document.querySelector('.pl-head .progress').textContent.trim(), side = document.querySelector('.pl-item .progress').textContent.trim();
+const p1 = __prog('.pl-head .progress'), side = __prog('.pl-item .progress');
 state.tasks = state.tasks.filter((x) => x.id !== kids[1].id); render();
 const rows = __rows(), sendAll = document.querySelector('.pl-send-all').textContent;
 document.querySelector('.pl-send-all').click();
@@ -307,11 +309,16 @@ await press('.pl-send-all');
 out.subMouse = await ev(`const ms = ${subMs}, b = ms.tasks.find((d) => d.title === 'Parent B'); children(b.card).map((k) => k.title)`);
 await shot('plan-subtasks-sent');
 // A task in Done with a subtask still open does not count as done.
-out.subDone = await ev(`const ms = ${subMs}, dc = state.columns.find((c) => c.done).id;
-ms.tasks.forEach((d) => (task(d.card).column = dc));
-const before = planCount(ms).done;
-ms.tasks.forEach((d) => planSubs(d).forEach((s) => (task(s.card).column = dc)));
-({ before, after: planCount(ms).done })`);
+await ev(`const ms = ${subMs}, dc = state.columns.find((c) => c.done).id;
+const start = { a: __subn('Parent A'), b: __subn('Parent B'), a1: __subn('A1'), prog: __prog('.pl-head .progress') };
+ms.tasks.forEach((d) => (task(d.card).column = dc)); render(true);
+const before = planCount(ms).done, mid = { a: __subn('Parent A'), prog: __prog('.pl-head .progress') };
+const a = ms.tasks.find((d) => d.title === 'Parent A'); task(planSubs(a).find((s) => s.title === 'A1').card).column = dc; render(true);
+window.__sd = { before, start, mid, one: { a: __subn('Parent A'), prog: __prog('.pl-head .progress') } }; true`);
+await shot('plan-progress');
+out.subDone = await ev(`const ms = ${subMs}, dc = state.columns.find((c) => c.done).id, { before, start, mid, one } = __sd;
+ms.tasks.forEach((d) => planSubs(d).forEach((s) => (task(s.card).column = dc))); render(true);
+({ before, after: planCount(ms).done, start, mid, one, end: { a: __subn('Parent A'), b: __subn('Parent B'), prog: __prog('.pl-head .progress') } })`);
 // Plan pressed with a task open, from the board and from the list: the Plan page shows, not the task on top of it.
 for (const lay of ['board', 'list']) {
   await ev(`if (view === 'plan') ${planBtn}.click(); ${sel}.value = '${lay}'; ${sel}.dispatchEvent(new Event('change')); openDetail('t0'); true`);
@@ -407,10 +414,11 @@ def main():
     check("Send all reuses the same milestone card", a["bigCount"], 1)
     check("all five tasks are its subtasks, in plan order", a["kids"],
           ["Make the users table", "Idea one", "Add a login form", "Check the password", "Idea two"])
-    check("done count with nothing done", a["progress"], "0 of 5 done")
+    check("done count and percent with nothing done", a["progress"], ["0 of 5 done", "0%", "0%"])
     check("Send all is off when everything is on the board", a["sendAllOff"])
     d = res["done"]
-    check("a card in Done moves the count", (d["p1"], d["side"]), ("1 of 5 done", "1 of 5 done"))
+    check("a card in Done moves the count and the percent, here and in the left list", (d["p1"], d["side"]),
+          (["1 of 5 done", "20%", "20%"], ["1 of 5 done", "20%", "20%"]))
     check("a deleted card shows Not on the board", d["gone"].count("Not on the board"), 1)
     check("its tick box opens again", d["goneTick"].count(False), 1)
     check("Send all offers it again", d["sendAll"], "Send all (1)")
@@ -458,7 +466,15 @@ def main():
     check("removing a task removes its subtasks", (res["subDel"]["had"], res["subDel"]["rows"]),
           (True, ["Parent A", "A3", "A1", "A2", "Parent B"]))
     check("a subtask left in its box is sent by a real click on Send all", res["subMouse"], ["B1"])
-    check("a task counts as done only once its subtasks are done", res["subDone"], {"before": 0, "after": 2})
+    s = res["subDone"]
+    check("a task counts as done only once its subtasks are done", (s["before"], s["after"]), (0, 2))
+    check("a task with subtasks shows how many are done; one without, and a subtask, show nothing",
+          (s["start"]["a"], s["start"]["b"], s["start"]["a1"]), (["0/3", False, "0 of 3 subtasks done"], ["0/1", False, "0 of 1 subtasks done"], None))
+    check("the plan percent counts every task and subtask: nothing done", s["start"]["prog"], ["0 of 2 done", "0%", "0%"])
+    check("both tasks in Done, subtasks open: 0 of 2 done but 2 of 6 pieces", (s["mid"]["a"][0], s["mid"]["prog"]), ("0/3", ["0 of 2 done", "33%", "33%"]))
+    check("one subtask done moves its task's count and the percent", (s["one"]["a"][0], s["one"]["prog"]), ("1/3", ["0 of 2 done", "50%", "50%"]))
+    check("all done: counts turn green and the plan shows 100%", (s["end"]["a"][:2], s["end"]["b"][:2], s["end"]["prog"]),
+          (["3/3", True], ["1/1", True], ["2 of 2 done", "100%", "100%"]))
     for lay in ("board", "list"):
         o = res["openTask_" + lay]
         check(f"Plan pressed with a task open in the {lay} shows the Plan page, task closed",
