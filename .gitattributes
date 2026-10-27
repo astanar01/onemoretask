@@ -3,3 +3,5 @@
 *.ps1 text eol=crlf
 *.sh text eol=lf
 bin/onemoretask text eol=lf
+# Two branches adding changelog lines under the same day keep both sides' lines, so a merge needs no hand fix.
+whats-new.md merge=union

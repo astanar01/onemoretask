@@ -2539,7 +2539,7 @@ function renderAgent(t) {
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   logShown = shown;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
@@ -2548,7 +2548,7 @@ function renderAgent(t) {
   $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
   // from the CLI's record) or on something only `claude attach` can show.
-  const said = log.filter((e) => e.status !== "note").pop();
+  const said = log.filter((e) => e.status !== "note" && e.from !== "board").pop();
   if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
@@ -2667,8 +2667,8 @@ function nextAction(t, ag, g) {
   const handBack = () => ag && ag.handback && claudeReviewed(ag) && replyOpen(t) ? [act(window.t("Send findings to {who}", { who: ag.handback }), "primary", () => sendFindingsBack(t), { icon: "back", title: window.t("The {who} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with", { who: ag.handback }) })] : [];
   // Review code is always on offer next to merge; it never gates the merge.
   const review = (cls = "sec") => canReview(t) ? [askReview(cls)] : [];
-  const runApp = () => act(window.t("Run app"), "sec", () => worktreeAction(t, "run"), { icon: "play", title: window.t("Claude starts the app from this task's worktree so you can try the changes") });
-  const merge = (cls = "primary") => act(worktreeLabel(t, "merge", true), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("Claude merges this task's branch into the branch it came from, and tells you here if anything is in the way") });
+  const runApp = () => act(window.t("Run app"), "sec", () => worktreeAction(t, "run"), { icon: "play", title: window.t("Starts the app from this task's worktree so you can try the changes. Claude works out how the first time; after that the board does it alone") });
+  const merge = (cls = "primary") => act(worktreeLabel(t, "merge", true), cls, () => worktreeAction(t, "merge"), { icon: "merge", title: window.t("The board merges this task's branch into the branch it came from by itself. If anything is in the way, Claude takes over and tells you here") });
   const toReply = () => act(window.t("Reply in Conversation"), "primary", () => { showTab("conversation"); $("#d-reply").focus(); });
   const nm = who(t);
   if (!t.agent) return (pending[t.id] || []).length ? { title: window.t("Starting…"), text: window.t("Claude is being started on this task."), actions: [], busy: true }
@@ -2699,7 +2699,7 @@ function nextAction(t, ag, g) {
           answer(window.t("Deny"), "deny", "ghost", window.t("Do not let it run this"))], busy: !!answering[t.id] };
     }
     // Only an unanswered question counts: a reply after it means Claude stopped on something else.
-    const said = ((ag && ag.log) || []).filter((e) => e.status !== "note").pop();
+    const said = ((ag && ag.log) || []).filter((e) => e.status !== "note" && e.from !== "board").pop();
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
     return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
@@ -3378,15 +3378,18 @@ function worktreeLabel(t, action, tr) {
   if (!base || /^[0-9a-f]{7,40}$/.test(base)) return tr ? window.t("Merge worktree") : "Merge worktree";
   return tr ? window.t("Merge worktree to {base}", { base }) : `Merge worktree to ${base}`;
 }
-// The server types a canned message into the card's session; its logged reply clears the pending bubble.
+// The server merges, or starts the app the way Claude saved, by itself; only when that fails does it type a canned
+// message into the card's session, whose logged reply clears the pending bubble.
 async function worktreeAction(t, action) {
   const label = worktreeLabel(t, action), pm = addPending(t, "reply", label, []);
-  setStatus(action === "run" ? window.t("Asking Claude to run the app…") : window.t("Asking Claude to merge…"));
+  setStatus(action === "run" ? window.t("Starting the app…") : window.t("Merging…"));
   refreshAgent(t); render();
   try {
-    await post("/api/agent/worktree", { p: P, taskId: t.id, action });
-    pm.state = "sent";
-    setStatus(action === "run" ? window.t("Asked Claude to run the app from the worktree") : window.t("Asked Claude to merge the worktree"));
+    const r = await post("/api/agent/worktree", { p: P, taskId: t.id, action }) || {};
+    if (r.merged || r.started) dropPending(t, pm);
+    else pm.state = "sent";
+    setStatus(r.merged ? window.t("Merged by the board, without Claude") : r.started ? window.t("Starting the app from the worktree; the card says when it runs")
+      : action === "run" ? window.t("Asked Claude to run the app from the worktree") : window.t("Asked Claude to merge the worktree"));
     if (action === "merge") { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
   } catch (e) {
     dropPending(t, pm);

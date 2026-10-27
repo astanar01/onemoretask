@@ -120,7 +120,9 @@ same.
 
 A task with no title or no tags gets them from Haiku, which reads your notes and reuses the tags you
 already have. If the task looks like it belongs to another of your projects, the board asks first: move
-it there and send, or keep it here.
+it there and send, or keep it here. Haiku only makes that check when the card hints at another project: it
+names one, or it uses more words that only that project's board uses (its README start and card titles) than
+words only this board uses. Other cards are sent without the check.
 
 Tick **Divide in subtasks / use subagents** to let Claude split the work. It picks the skills each part
 needs and tells that subagent to load them first. The card then lists each subagent (running, finished
@@ -279,10 +281,20 @@ worktrees are left alone.
 
 A finished card in Review then has two more buttons:
 
-- **Run app from worktree**: Claude starts the app from the worktree (a dev server on a spare port,
-  the game, a demo) and says on the card how to reach it and how to stop it.
-- **Merge worktree to *branch*** (e.g. "Merge worktree to dev"): Claude commits what is left, merges the
-  task's branch into the branch your checkout was on when you sent the task. If anything goes wrong (a conflict, your own changes in the way) it undoes the merge and asks you on the card. It never pushes.
+- **Run app from worktree**: the first time in a project, Claude starts the app from the worktree (a dev
+  server on a spare port, the game, a demo), says on the card how to reach it and how to stop it, and saves
+  how it did it in the board folder (`run_app.json`: a command and a URL, both with `{port}` for a free port).
+  After that the board runs that command itself from the worktree, opens the URL once it answers and says so
+  on the card; a demo's output goes on the card. Pressing it again restarts the app; merging or deleting the
+  worktree stops it. If the saved way fails (it exits, or the URL never answers), the board stops it and asks
+  Claude, with the end of its output, to run the app and fix the saved file.
+- **Merge worktree to *branch*** (e.g. "Merge worktree to dev"): the board merges the task's branch into the
+  branch your checkout was on when you sent the task by itself, without Claude, then removes the worktree as
+  below and says both on the card. It hands the merge to Claude, telling it why, when the worktree holds
+  changes not committed yet, your checkout is on another branch, or the merge stops (a conflict, your own
+  changes in the way, a hook); it undoes its own try first. A changelog file marked `merge=union` in
+  `.gitattributes` (this repo's `whats-new.md`) keeps both sides' lines, so it is no conflict. Claude commits
+  what is left, merges, and if anything goes wrong it undoes the merge and asks you on the card. Neither ever pushes.
   Once Claude reports the merge done, the board itself removes the worktree and the branch, but only when
   nothing would be lost: every commit is in your checkout (also the commits of any submodule filled in inside the
   worktree), the worktree holds nothing but rebuilt caches (`__pycache__`, `node_modules`, `.godot`, …) or files

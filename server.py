@@ -44,8 +44,13 @@ only") gets its own git worktree at launch: launch makes
 session, which still starts in the project folder, to switch into it and do all work and commits there. A folder with no
 repo or no commit answers 409 `norepo`; POST /api/git/init makes one with an "Initial commit". While the worktree
 exists, the task's commits are looked up on its branch, and a card in Review offers "Run app from worktree" and "Merge
-worktree to main" (POST /api/agent/worktree): canned replies that have the session run the app from the worktree, or
-merge the branch into the base branch (anything going wrong: abort, ask on the card). Once the session reports that merge
+worktree to main" (POST /api/agent/worktree). Merge: the server merges the branch into the base branch itself
+(merge_here, merged_here: no Claude, a board message on the card); when it cannot (uncommitted work in the worktree,
+the main checkout on another branch, a conflict, which it undoes) a canned reply has the session do it (anything going
+wrong: abort, ask on the card). Run app: the server runs the command Claude saved in <board>/run_app.json from the
+worktree (start_saved_run); with none saved, or when it fails, a canned reply has the session run it and save it.
+Board messages (`from: "board"`) are skipped by phase_of and spoken(), so a card's phase and archive stay Claude's.
+Once the session reports that merge
 done, the watcher removes the worktree and branch itself (tidy_merged), only when every commit is in the main
 checkout's HEAD (submodule commits too), nothing but rebuilt caches or copies of the main checkout's files is left, and
 no process has its cwd there; else it says why on the card.
@@ -135,6 +140,7 @@ import queue
 import re
 import select
 import shlex
+import signal
 import socket
 import shutil
 import subprocess
@@ -142,8 +148,10 @@ import sys
 import tempfile
 import threading
 import time
+import webbrowser
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import urlopen
 
@@ -1685,6 +1693,7 @@ def phase_of(session, log, launched_at, delivered=""):
     # A note sent after the done report, handed to Claude, that it has since picked up (it posted again), starts new
     # work: the old done no longer ends the turn. A note not handed over yet can't be what Claude posts about: that
     # line is a quick fix-up of the done.
+    log = [e for e in log if e.get("from") != BOARD]  # the board's own messages (a merge it did) end no turn
     rep = next((i for i in range(len(log) - 1, -1, -1)
                 if log[i].get("from") == "claude" and log[i].get("status") in ("done", "answer")), None)
     if rep is not None:
@@ -2441,14 +2450,14 @@ class Watcher:
             s = sessions.get(aid)
             delivered = reports.delivered(p.board, t["id"])
             phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
-            said = [e for e in log if e.get("status") != "note"]
+            said = spoken(log)
             asked, parts = ("", []) if is_codex(s) else popup_questions(s)
             if parts and not (said and said[-1].get("status") == "question" and said[-1].get("parts") == parts):
                 # It asked in an AskUserQuestion pop-up (a session started before the board turned that tool off):
                 # only an attach shows it. Put it on the card; a reply resumes the session with the answer.
                 reports.append(p.board, t["id"], "question", asked, "claude", parts=parts)
                 log = reports.read(p.board, t["id"])
-                said = [e for e in log if e.get("status") != "note"]
+                said = spoken(log)
                 phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
             if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
                 # It stopped after a card reply without calling report.py: its answer is only in the chat, which
@@ -2732,7 +2741,7 @@ def reply(p, task_id, text, images=(), extra=""):
         return True
     if not info.get("archived"):
         # The snapshot can predate a close that just finished: resuming its removed session would fail.
-        said = [e for e in reports.read(p.board, task_id) if e.get("status") != "note"]
+        said = spoken(reports.read(p.board, task_id))
         if said and said[-1].get("status") == "recap" and not any(
                 s["id"] == info["id"] for s in all_sessions(p)):
             info = dict(info, archived=True)
@@ -2850,7 +2859,14 @@ def worktree_steps(p, task_id, wt, action):
                 "- Leave it running for the user: start it in the background so your turn can end.",
                 f'- Then post on the card with `{rep} done "..."`: how to reach it (URL, window, command) and how to '
                 "stop it.",
-                "- If it cannot be run, say exactly why on the card (the error, what is missing)."]
+                "- If it cannot be run, say exactly why on the card (the error, what is missing).",
+                f"- Once it runs, save how you started it, so the Run app button can do it without you next time: write "
+                f"{shell_path(run_recipe_path(p))} as JSON " + '{"command": "...", "url": "..."}. `command` is one '
+                f"shell line run from {shell_path(wt['dir'])} that starts the app the way you did and stays in the "
+                "foreground (no `&`, no nohup), including the installs a fresh worktree needs (e.g. `npm install && "
+                "npm run dev -- --port {port}`); write {port} where the port goes: the board picks a free one and also "
+                "sets PORT. `url` is the address to open, with {port}, or \"\" when there is nothing to open (a game, "
+                "a desktop app, a command-line demo). If the board said the saved way failed, fix that file."]
     if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{base}") is None:
         # Sent from a detached HEAD (base is a sha), or the base branch is gone: there is no branch to merge into.
         return [f"The user wants this task's branch `{branch}` (worktree {path}) merged, but it was made from "
@@ -2895,7 +2911,217 @@ def worktree_action(p, task_id, action):
         raise PermissionError("Claude is still working — wait until it stops")
     if action == "merge" and board_runs_from(wt["path"]):
         raise PermissionError(STILL_RUNNING_HERE)
-    reply(p, task_id, worktree_label(action, wt["base"]), extra="\n\n" + "\n".join(worktree_steps(p, task_id, wt, action)))
+    # Both buttons first try without Claude; the session gets the job (and why the board stopped) only when that fails.
+    if action == "merge":
+        sha, why = merge_here(p, wt)
+        if sha:
+            merged_here(p, t, wt, sha)
+            return {"merged": sha}
+    else:
+        why = start_saved_run(p, t, wt)
+        if why is None:
+            return {"started": True}
+    tried = [f"(The board tried to do this by itself first and stopped: {why}.)", ""] if why else []
+    reply(p, task_id, worktree_label(action, wt["base"]),
+          extra="\n\n" + "\n".join(tried + worktree_steps(p, task_id, wt, action)))
+    return {}
+
+
+BOARD = "board"  # the `from` of a card message the board writes itself; phase and session logic skip them
+MERGED_HERE = "The board added this task's work into {base} by itself, without Claude (commit {sha})."
+
+
+def spoken(log):
+    """The card's messages between you and Claude: no queued notes, no board messages."""
+    return [e for e in log if e.get("status") != "note" and e.get("from") != BOARD]
+
+
+def merge_here(p, wt):
+    """The Merge button without Claude: merge the task's branch into its base branch in the main checkout. Returns
+    (merge commit sha, "") on success, else (None, why it was left to Claude) with the main checkout as it was:
+    uncommitted work in the worktree, the main checkout on another branch or mid-merge, or the merge itself failing
+    (conflicts, local changes in the way, a hook) are Claude's to sort out with the user."""
+    branch, base = wt["branch"], wt["base"]
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{base}") is None:
+        return None, f"`{base}` is not a branch of this repo"
+    dirty = git_try(wt["path"], "status", "--porcelain")
+    if dirty is None or dirty:
+        return None, "the worktree has changes that are not committed"
+    on = git_try(p.path, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if on != base:
+        return None, f"the main checkout is on `{on or 'a detached HEAD'}`, not `{base}`"
+    if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
+        return None, "the main checkout is in the middle of another merge"
+    try:
+        git_run(p.path, "merge", "--no-edit", branch, timeout=120)
+    except RuntimeError as e:
+        files = (git_try(p.path, "diff", "--name-only", "--diff-filter=U") or "").splitlines()
+        if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
+            git_try(p.path, "merge", "--abort", timeout=60)
+            if git_try(p.path, "rev-parse", "--verify", "--quiet", "MERGE_HEAD") is not None:
+                return None, f"the merge failed ({e}) and `git merge --abort` did not undo it: the main checkout is mid-merge"
+        return None, (f"the merge hit conflicts in {', '.join(files[:5])} and was undone" if files
+                      else f"the merge failed and nothing changed: {e}")
+    return git_run(p.path, "rev-parse", "--short", "HEAD"), ""
+
+
+def merged_here(p, t, wt, sha):
+    """After merge_here: stop the app the board ran from the worktree, remove the worktree and branch (tidy_merged),
+    and say both on the card in one board message."""
+    stop_run(p, t["id"])
+    key = (p.id, t["id"])
+    with WATCH.lock:
+        WATCH.tidying.add(key)  # the watcher's own tidy pass must not run beside this one
+    try:
+        try:
+            why = tidy_merged(p, t)
+        except Exception as e:  # noqa: BLE001 — the card says why; Delete worktree still works
+            why = f"{e}"
+        tidied = MERGE_TIDIED if why == "" else MERGE_KEPT + why if why else ""
+        reports.append(p.board, t["id"], "merged", MERGED_HERE.format(base=wt["base"], sha=sha) + " " + tidied, BOARD)
+    finally:
+        with WATCH.lock:
+            WATCH.tidying.discard(key)
+    WATCH.wake.set()
+
+
+# Run app from worktree without Claude: Claude saves how it started the app once per project (run_recipe_path), then
+# the board starts that itself. RUNS holds what the board started, so a rerun, merge or delete stops it.
+RUNS = {}  # (project id, task id) -> Popen
+RUNS_LOCK = threading.Lock()
+RUN_WAIT = 120  # seconds a web app gets to answer on its URL
+RUN_SETTLE = 3  # seconds before an app with no URL counts as started (or finished, for a demo)
+RAN_HERE = "The app is running from this task's copy{at}. Press Run app again to restart it; it stops when the work is merged or the copy is deleted."
+DEMO_HERE = "The board ran the app from this task's copy. It printed:\n\n```\n{out}\n```"
+
+
+def run_recipe_path(p):
+    return os.path.join(p.board, "run_app.json")
+
+
+def run_recipe(p):
+    """{"command", "url"} Claude saved for this project, or None. Both may hold {port}."""
+    try:
+        with open(run_recipe_path(p), encoding="utf-8") as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(r, dict) or not isinstance(r.get("command"), str) or not r["command"].strip():
+        return None
+    return {"command": r["command"].strip(), "url": r.get("url") if isinstance(r.get("url"), str) else ""}
+
+
+def stop_run(p, task_id):
+    with RUNS_LOCK:
+        proc = RUNS.pop((p.id, task_id), None)
+    _kill(proc)
+
+
+def _kill(proc):
+    """End `proc` and everything it started (its own process group, which can outlive the shell that made it)."""
+    if not proc:
+        return
+    try:
+        if sys.platform == "win32":
+            if proc.poll() is None:
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
+        else:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # the group is already gone
+        proc.wait(timeout=10)
+    except (OSError, subprocess.SubprocessError) as e:
+        print("stop run:", e)
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def start_saved_run(p, t, wt):
+    """Start the app from the worktree the saved way. None when it started (a thread watches it and says on the card
+    when it runs, or hands the job to Claude if it fails), else why Claude has to do it ("" when nothing is saved)."""
+    recipe = run_recipe(p)
+    if not recipe:
+        return ""
+    stop_run(p, t["id"])
+    port = str(free_port())
+    cmd, url = recipe["command"].replace("{port}", port), recipe["url"].replace("{port}", port)
+    log_path = os.path.join(p.board, "runs", f"{t['id']}.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32" else {"start_new_session": True}
+    try:
+        with open(log_path, "wb") as log:
+            proc = subprocess.Popen(cmd, shell=True, cwd=wt["dir"], stdout=log, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, env={**os.environ, "PORT": port}, **flags)
+    except OSError as e:
+        return f"the saved way to start it ({run_recipe_path(p)}) could not start: {e}"
+    with RUNS_LOCK:
+        RUNS[(p.id, t["id"])] = proc
+    threading.Thread(target=_watch_run, args=(p, t, wt, proc, url, log_path), daemon=True).start()
+    return None
+
+
+def _log_tail(path, n=40):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return "\n".join(f.read().splitlines()[-n:]).strip()
+    except OSError:
+        return ""
+
+
+def _answers(url):
+    try:
+        urlopen(url, timeout=2).close()
+        return True
+    except HTTPError:
+        return True  # any HTTP answer means the server is up
+    except (OSError, ValueError):
+        return False
+
+
+def _watch_run(p, t, wt, proc, url, log_path):
+    """Wait until the started app answers on its URL (or, with no URL, keeps running or ends well), then post it on
+    the card; if it dies or never answers, stop it and hand the job to Claude with the end of its output."""
+    end = time.time() + (RUN_WAIT if url else RUN_SETTLE)
+    ok = False
+    while time.time() < end:
+        if proc.poll() is not None:
+            ok = not url and proc.returncode == 0
+            break
+        if url and _answers(url):
+            ok = True
+            break
+        time.sleep(0.5)
+    else:
+        ok = not url  # no URL and still running after RUN_SETTLE: a game or desktop app that started
+    if ok:
+        if proc.poll() is None:
+            if url:
+                webbrowser.open(url)
+            msg = RAN_HERE.format(at=f" at {url}" if url else "")
+        else:
+            msg = DEMO_HERE.format(out=_log_tail(log_path) or "(nothing)")
+        reports.append(p.board, t["id"], "ran", msg, BOARD)
+        return
+    hung = proc.poll() is None
+    with RUNS_LOCK:
+        if RUNS.get((p.id, t["id"])) is proc:  # a newer Run app click owns the slot otherwise
+            del RUNS[(p.id, t["id"])]
+    _kill(proc)
+    why = (f"the saved way to start it ({run_recipe_path(p)}) "
+           + (f"did not answer on {url} in {RUN_WAIT} s" if hung else f"exited with code {proc.returncode}")
+           + (f". The end of its output:\n\n{_log_tail(log_path)}\n\n" if _log_tail(log_path) else "")
+           + "Fix the saved file as you go")
+    try:
+        reply(p, t["id"], worktree_label("run", wt["base"]),
+              extra="\n\n" + "\n".join([f"(The board tried to do this by itself first and stopped: {why}.)", ""]
+                                       + worktree_steps(p, t["id"], wt, "run")))
+    except (LookupError, RuntimeError, OSError) as e:
+        reports.append(p.board, t["id"], "ran", f"The board could not start the app, and could not ask Claude: {e}", BOARD)
 
 
 STILL_RUNNING_HERE = "The board itself runs from this worktree — switch it back to main (the box at the top) first"
@@ -2918,6 +3144,7 @@ def delete_worktree(p, task_id, force=False):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
+    stop_run(p, task_id)
     if board_runs_from(wt["path"]):
         raise PermissionError(STILL_RUNNING_HERE)
     branch = wt["branch"]
@@ -3276,9 +3503,8 @@ PROFILE_TITLES = 15  # most recently updated card titles that describe a project
 PROFILE_README = 600
 
 
-def project_profile(p, skip=None):
-    """A few lines that say what a project is: its README's start and its newest card titles (not `skip`'s)."""
-    lines = [f"Folder: {p.path.replace(os.path.expanduser('~'), '~', 1)}"]
+def readme_start(p):
+    """(file name, its first PROFILE_README characters on one line) of the project's README, or ("", "")."""
     for name in ("README.md", "README", "readme.md", "CLAUDE.md"):
         try:
             with open(os.path.join(p.path, name), encoding="utf-8", errors="replace") as f:
@@ -3286,23 +3512,71 @@ def project_profile(p, skip=None):
         except OSError:
             continue
         if text:
-            lines.append(f"{name}: {text}")
-            break
+            return name, text
+    return "", ""
+
+
+def titled_cards(p, skip=None):
     try:
-        tasks = [t for t in load_tasks(p)["tasks"] if isinstance(t, dict) and t.get("id") != skip and t.get("title")]
+        return [t for t in load_tasks(p)["tasks"] if isinstance(t, dict) and t.get("id") != skip and t.get("title")]
     except (OSError, ValueError, KeyError, TypeError):
-        tasks = []
+        return []
+
+
+def project_profile(p, skip=None):
+    """A few lines that say what a project is: its README's start and its newest card titles (not `skip`'s)."""
+    lines = [f"Folder: {p.path.replace(os.path.expanduser('~'), '~', 1)}"]
+    name, text = readme_start(p)
+    if text:
+        lines.append(f"{name}: {text}")
+    tasks = titled_cards(p, skip)
     tasks.sort(key=lambda t: t.get("updated") or t.get("created") or "", reverse=True)
     if tasks:
         lines.append("Cards on its board: " + "; ".join(t["title"][:80] for t in tasks[:PROFILE_TITLES]))
     return "\n".join(lines)
 
 
+# Words too common in card text to tell projects apart.
+HINT_STOP = frozenset("""about added adds after also back before both button card cards change changes click code
+could does done each file files first from have here into just last like made make more most need next only other
+over same should show shows some still sure task tasks text than that their them then there they this under used
+user users using very want what when where which while will with work working would your""".split())
+
+
+def hint_words(text):
+    return {w for w in re.findall(r"[^\W\d_][^\W_]{3,}", text.lower()) if w not in HINT_STOP}
+
+
+def project_words(p, skip=None):
+    """The words that describe a project: its README's start and every card title on its board (not `skip`'s)."""
+    return hint_words(" ".join([readme_start(p)[1]] + [t["title"] for t in titled_cards(p, skip)]))
+
+
+def project_hint(p, others, title, notes, skip=None):
+    """True when a card on `p`'s board may belong to one of `others`: it names one (by name or folder), or it uses
+    more of the words only that project's board uses than words only `p`'s uses. No hint, no Claude call: measured on
+    9 real boards (608 cards), Claude was then asked for 28% of the cards instead of all, and a card put on the wrong
+    board still drew the check 89% of the time."""
+    text = f"{title}\n{notes}".lower()
+    for o in others:
+        for name in {o.name.lower(), os.path.basename(o.path).lower()}:
+            if len(name) >= 4 and re.search(rf"(?<![^\W_]){re.escape(name)}(?![^\W_])", text):
+                return True
+    words = hint_words(text)
+    here = project_words(p, skip) & words
+    for o in others:
+        there = project_words(o, skip) & words
+        only_there, only_here = len(there - here), len(here - there)
+        if only_there and only_there > only_here:
+            return True
+    return False
+
+
 def which_project(p, title, notes, skip=None):
     """Ask Claude whether a card written on `p`'s board is really for another of the remembered projects.
     Returns {"project": <info of that project>, "why": ...} when it surely is, else {} (also with one project)."""
     others = [x for x in projects() if x.id != p.id]
-    if not others or not (title.strip() or notes.strip()):
+    if not others or not (title.strip() or notes.strip()) or not project_hint(p, others, title, notes, skip):
         return {}
     listed = [p] + others
     blocks = [f"## Project {i + 1}: {x.name}\n{project_profile(x, skip)}" for i, x in enumerate(listed)]
@@ -4182,8 +4456,7 @@ class Handler(SimpleHTTPRequestHandler):
                 r = answer_permission(project(body["p"]), body["taskId"], body.get("choice"), body.get("ask") or "")
                 self._json(200, {"ok": True, **r})
             elif path == "/api/agent/worktree":
-                worktree_action(project(body["p"]), body["taskId"], body.get("action"))
-                self._json(200, {"ok": True})
+                self._json(200, {"ok": True, **worktree_action(project(body["p"]), body["taskId"], body.get("action"))})
             elif path == "/api/agent/worktree/delete":
                 delete_worktree(project(body["p"]), body["taskId"], bool(body.get("force")))
                 self._json(200, {"ok": True})

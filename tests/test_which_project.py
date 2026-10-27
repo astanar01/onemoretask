@@ -84,14 +84,22 @@ check("current project is project 1", "## Project 1: fablecraft" in given, True)
 
 for answer, why in [('{"project": 2, "sure": false}', "not sure"), ('{"project": 1, "sure": true}', "fits here"),
                     ('{"project": 9, "sure": true}', "out of range")]:
-    fake_claude(answer)
-    check(f"no warning when {why}", server.which_project(board, "t", "n"), {})
+    asks = fake_claude(answer)
+    check(f"no warning when {why}", (server.which_project(board, "t", "about onemoretask"), len(asks)), ({}, 1))
 fake_claude("I think the second one")
 try:
-    server.which_project(board, "t", "n")
+    server.which_project(board, "t", "about onemoretask")
     check("no JSON raises", "returned", "raised")
 except RuntimeError:
     check("no JSON raises", "raised", "raised")
+
+# No hint of another project in the card: no Claude call at all. A hint: its name, or words only its board uses.
+asks = fake_claude('{"project": 2, "sure": true, "why": "x"}')
+check("no hint: no call", (server.which_project(board, "More dragon sprites", "Bigger wings for the dragon."), len(asks)), ({}, 0))
+check("the other project's name is a hint", server.project_hint(board, [other], "Fix it", "The OneMoreTask list"), True)
+check("a longer word holding the name is not", server.project_hint(board, [other], "Fix", "onemoretasks2 thing"), False)
+check("words only the other board uses are a hint", server.project_hint(board, [other], "Changelog", "for Claude"), True)
+check("words of both boards: no hint", server.project_hint(board, [other], "Story writing", "the changelog"), False)
 
 # Move: the card, its subtasks and picture go to the top of the other board's first column; a done subtask to done.
 os.makedirs(server.reports.task_images(board.board), exist_ok=True)
