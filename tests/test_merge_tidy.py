@@ -209,6 +209,18 @@ for tid, flag in (("t10", "--assume-unchanged"), ("t11", "--skip-worktree")):
     check(f"{flag} file back to the main copy's text: removed",
           (server.tidy_merged(p, tasks["tasks"][-1]), os.path.isdir(marked["path"])), ("", False))
 
+# A staged draft is work even when the file on disk is back to the main copy's text.
+draft = add_task("t13", "merged, staged draft")
+write(os.path.join(draft["path"], "app.py"), "print('draft')\n")
+git(draft["path"], "add", "app.py")
+write(os.path.join(draft["path"], "app.py"), "print('hi')\n")
+t13 = tasks["tasks"][-1]
+check("staged draft only in the worktree: kept", (server.tidy_merged(p, t13), os.path.isdir(draft["path"])),
+      ("it still holds changes that are not in the main copy: app.py. Delete worktree throws them away.", True))
+git(draft["path"], "add", "app.py")
+check("draft unstaged back to the main copy's text: removed",
+      (server.tidy_merged(p, t13), os.path.isdir(draft["path"])), ("", False))
+
 # When the process check cannot run, keep the worktree.
 nolsof = add_task("t12", "merged, no lsof")
 real_run = server.subprocess.run
@@ -235,6 +247,20 @@ git(lib, "add", ".")
 git(lib, "commit", "-q", "-m", "lib")
 git(proj, "submodule", "add", "-q", lib, "lib")
 git(proj, "commit", "-q", "-m", "add lib")
+# An ignored file inside a submodule goes with the worktree too: the outer status does not list it.
+private = add_task("t14", "merged, ignored file in a submodule")
+git(private["path"], "submodule", "update", "--init", "-q")
+sub_exclude = git(os.path.join(private["path"], "lib"), "rev-parse", "--path-format=absolute", "--git-path",
+                  "info/exclude")
+write(sub_exclude, ".env\n")
+write(os.path.join(private["path"], "lib", ".env"), "SECRET=1\n")
+t14 = tasks["tasks"][-1]
+check("ignored file in a submodule: kept", (server.tidy_merged(p, t14), os.path.isdir(private["path"])),
+      ("it still holds changes that are not in the main copy: lib/.env. Delete worktree throws them away.", True))
+write(os.path.join(proj, "lib", ".env"), "SECRET=1\n")
+check("same file in the main copy's submodule: removed",
+      (server.tidy_merged(p, t14), os.path.isdir(private["path"])), ("", False))
+os.remove(os.path.join(proj, "lib", ".env"))
 inner = add_task("t7", "merged, inner commit")
 git(inner["path"], "submodule", "update", "--init", "-q")
 write(os.path.join(inner["path"], "lib", "b"), "only here\n")

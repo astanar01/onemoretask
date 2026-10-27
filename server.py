@@ -3315,8 +3315,26 @@ def _in_main(main, wt_path, rel):
 def merge_leftovers(p, wt):
     """`git status` entries of a merged worktree that would be lost with it: all of them (ignored files too, which
     `worktree remove --force` deletes) but rebuilt caches and files identical to the main checkout's."""
-    main = git_run(p.path, "rev-parse", "--show-toplevel")
-    out = git_run(wt["path"], "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
+    return _leftovers(git_run(p.path, "rev-parse", "--show-toplevel"), wt["path"])
+
+
+def _staged_in_main(main, wt_path, rel):
+    """True when the worktree's staged version of `rel` is what the main checkout has at `rel` (its HEAD or its
+    file): a staged draft is otherwise lost with the worktree, even when the file on disk matches."""
+    staged = git_try(wt_path, "rev-parse", "--verify", "--quiet", f":{rel}")
+    if staged is None:
+        return False
+    if staged == git_try(main, "rev-parse", "--verify", "--quiet", f"HEAD:{rel}"):
+        return True
+    return os.path.isfile(os.path.join(main, rel)) and staged == git_try(main, "hash-object", "--", rel)
+
+
+def _leftovers(main, wt_path):
+    """merge_leftovers for the repo checked out at `wt_path` against `main`, its submodules included (each against
+    the main checkout's copy of it: their ignored and uncommitted files go with the worktree too)."""
+    subs = set(filter(None, (git_try(wt_path, "submodule", "foreach", "--quiet", 'echo "$sm_path"', timeout=60)
+                             or "").splitlines()))
+    out = git_run(wt_path, "status", "--porcelain", "-z", "--ignored", *FULL_STATUS).split("\0")
     left, i = [], 0
     while i < len(out):
         e, i = out[i], i + 1
@@ -3324,15 +3342,21 @@ def merge_leftovers(p, wt):
             continue
         if e[0] in "RC":
             i += 1  # with -z a rename's old path comes next
-        if not _in_main(main, wt["path"], e[3:].rstrip("/")):
+        rel = e[3:].rstrip("/")
+        if rel in subs:
+            continue  # checked inside below; its .git file always differs from the main checkout's
+        if (not _in_main(main, wt_path, rel)
+                or e[0] not in " ?!D" and not _staged_in_main(main, wt_path, rel)):
             left.append(e[3:])
     # status never reports edits to files marked assume-unchanged (lower-case tag) or skip-worktree (S): compare those
     # directly. A skip-worktree file left out by a sparse checkout is not on disk and holds nothing.
-    for e in git_run(wt["path"], "ls-files", "-v", "-z").split("\0"):
+    for e in git_run(wt_path, "ls-files", "-v", "-z").split("\0"):
         rel = e[2:]
-        if (e[:1].islower() or e[:1] == "S") and rel not in left and os.path.lexists(os.path.join(wt["path"], rel)) \
-                and not _in_main(main, wt["path"], rel):
+        if (e[:1].islower() or e[:1] == "S") and rel not in left and os.path.lexists(os.path.join(wt_path, rel)) \
+                and not _in_main(main, wt_path, rel):
             left.append(rel)
+    for s in sorted(subs):
+        left += [f"{s}/{x}" for x in _leftovers(os.path.join(main, s), os.path.join(wt_path, s))]
     return left
 
 
