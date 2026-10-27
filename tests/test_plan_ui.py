@@ -312,6 +312,19 @@ ms.tasks.forEach((d) => (task(d.card).column = dc));
 const before = planCount(ms).done;
 ms.tasks.forEach((d) => planSubs(d).forEach((s) => (task(s.card).column = dc)));
 ({ before, after: planCount(ms).done })`);
+// Plan pressed with a task open, from the board and from the list: the Plan page shows, not the task on top of it.
+for (const lay of ['board', 'list']) {
+  await ev(`if (view === 'plan') ${planBtn}.click(); ${sel}.value = '${lay}'; ${sel}.dispatchEvent(new Event('change')); openDetail('t0'); true`);
+  await sleep(100);
+  const opened = await ev(`document.querySelector('#overlay').classList.contains('open')`);
+  await press('#plan-btn');
+  await shot('plan-over-open-task-' + lay);
+  out['openTask_' + lay] = await ev(`const m = document.querySelector('.pl-main') || document.querySelector('.plan'), b = m && m.getBoundingClientRect();
+const hit = b && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+({ opened: ${opened}, view, planSeen: !!(hit && hit.closest('.plan')), overlay: getComputedStyle(document.querySelector('#overlay')).display, openId })`);
+  await ev(`${planBtn}.click(); true`);
+  out['back_' + lay] = await ev(`({ view, overlay: getComputedStyle(document.querySelector('#overlay')).display, list: document.querySelector('#board').classList.contains('list') })`);
+}
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -446,6 +459,14 @@ def main():
           (True, ["Parent A", "A3", "A1", "A2", "Parent B"]))
     check("a subtask left in its box is sent by a real click on Send all", res["subMouse"], ["B1"])
     check("a task counts as done only once its subtasks are done", res["subDone"], {"before": 0, "after": 2})
+    for lay in ("board", "list"):
+        o = res["openTask_" + lay]
+        check(f"Plan pressed with a task open in the {lay} shows the Plan page, task closed",
+              (o["opened"], o["view"], o["planSeen"], o["overlay"], o["openId"]), (True, "plan", True, "none", None))
+    check("closing Plan goes back to the board with no task on top", res["back_board"],
+          {"view": "board", "overlay": "none", "list": False})
+    check("closing Plan goes back to the list with its empty task pane", res["back_list"],
+          {"view": "list", "overlay": "flex", "list": True})
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0

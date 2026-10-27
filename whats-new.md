@@ -2,6 +2,7 @@
 
 ## 2026-10-27
 
+- Pressing Plan while a task is open now shows the Plan page. Before, the open task covered it.
 - The Merge button asks Claude to add the finished work to your project and clean up its copy again. If something gets in the way, Claude asks you.
 - Run app now remembers how Claude started your app the first time, and starts it again by itself after that.
 - The check that asks "is this card for another project?" now only runs when the card seems to talk about another project, so most cards are sent sooner.

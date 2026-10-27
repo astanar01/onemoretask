@@ -4511,6 +4511,8 @@ $("#notify-sound").addEventListener("change", (e) => {
   if (e.target.checked) chime();   // a sample, and this click lets the page play sound from now on
 });
 function setView(v) {
+  // An open task would sit as a full-screen panel over the Plan page (in the list it was docked beside it).
+  if (v === "plan" && openId) closeDetail();
   view = v;
   if (v !== "plan") layout = v;
   try { localStorage.setItem(LS_KEY + ":view", view); localStorage.setItem(LS_KEY + ":layout", layout); } catch (_) {}
