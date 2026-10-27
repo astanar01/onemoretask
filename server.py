@@ -47,7 +47,8 @@ exists, the task's commits are looked up on its branch, and a card in Review off
 worktree to main" (POST /api/agent/worktree): canned replies that have the session run the app from the worktree, or
 merge the branch into the base branch (anything going wrong: abort, ask on the card). Once the session reports that merge
 done, the watcher removes the worktree and branch itself (tidy_merged), only when every commit is in the main
-checkout's HEAD and nothing but rebuilt caches or copies of the main checkout's files is left; else it says why on the card.
+checkout's HEAD (submodule commits too), nothing but rebuilt caches or copies of the main checkout's files is left, and
+no process has its cwd there; else it says why on the card.
 "Delete worktree" (any column; POST /api/agent/worktree/delete, delete_worktree) removes the worktree and branch in the
 server, no session; it answers 409 `unsaved` {changes, commits} when work would be lost, and the page resends with
 `force` once the user confirms. A reply after the worktree was deleted or merged makes a fresh one (renew_worktree).
@@ -2978,8 +2979,9 @@ def merge_leftovers(p, wt):
 
 def tidy_merged(p, t):
     """After the merge the card asked for, remove the task's worktree and its branch, so a merged copy never stays
-    behind. Only when nothing is lost: the worktree's HEAD and its branch are both in the main checkout's HEAD, and
-    merge_leftovers finds nothing. Returns None when there is no worktree, "" once removed, else why it was kept."""
+    behind. Only when nothing is lost: the worktree's HEAD and its branch are both in the main checkout's HEAD,
+    merge_leftovers and inner_leftovers find nothing, and no process works in it. Returns None when there is no
+    worktree, "" once removed, else why it was kept."""
     wt = live_worktree(t)
     if not wt:
         return None
@@ -2996,18 +2998,67 @@ def tidy_merged(p, t):
     if left:
         return ("it still holds changes that are not in the main copy: " + ", ".join(left[:5])
                 + (f" and {len(left) - 5} more" if len(left) > 5 else "") + ". Delete worktree throws them away.")
+    inner = inner_leftovers(git_run(p.path, "rev-parse", "--show-toplevel"), wt["path"])
+    if inner:
+        return ("a project inside it holds commits the main copy's does not have: " + ", ".join(inner[:5])
+                + ". Delete worktree throws them away.")
+    if users_of(wt["path"]):
+        return "a program still runs from it. Stop it, then use Delete worktree."
     git_run(p.path, "worktree", "remove", "--force", wt["path"])  # --force: only caches and copies are left
     if has_branch:
         git_run(p.path, "branch", "-d", branch)  # in HEAD, so -d agrees
     return ""
 
 
+def inner_leftovers(main, wt_path):
+    """Submodules filled in inside the worktree whose commits (HEAD, branches, stash) the main checkout's copy of
+    that submodule lacks. Their git data lives in the worktree's own git dir, so removing the worktree loses them."""
+    out = git_try(wt_path, "submodule", "foreach", "--quiet", "--recursive", 'echo "$displaypath"', timeout=60)
+    if out is None:
+        return ["(its inner projects could not be read)"]
+    left = []
+    for rel in filter(None, out.splitlines()):
+        sub, there = os.path.join(wt_path, rel), os.path.join(main, rel)
+        tips = (git_try(sub, "for-each-ref", "--format=%(objectname)", "refs/heads", "refs/stash") or "").split()
+        tips.append(git_try(sub, "rev-parse", "--verify", "--quiet", "HEAD"))
+        # No .git there: git -C would walk up to the outer repo and answer for it.
+        if (None in tips or not os.path.exists(os.path.join(there, ".git"))
+                or any(git_try(there, "cat-file", "-e", f"{x}^{{commit}}") is None for x in tips)):
+            left.append(rel)
+    return left
+
+
+def users_of(path):
+    """Process ids whose working directory is `path` or inside it ([] when lsof is missing)."""
+    try:
+        out = subprocess.run(["lsof", "-d", "cwd", "-Fpn"], capture_output=True, timeout=20, stdin=subprocess.DEVNULL,
+                             **TEXT).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    root, pid, found = os.path.realpath(path), "", []
+    for line in out.splitlines():
+        if line[:1] == "p":
+            pid = line[1:]
+        elif line[:1] == "n" and (line[1:] == root or line[1:].startswith(root + os.sep)):
+            found.append(pid)
+    return found
+
+
 def merge_reported(log):
-    """Claude reported done after the card's last message asked for a merge, and the board has not tidied after it."""
+    """Claude reported done after the card's last message asked for a merge (answers to Claude's questions in
+    between do not count as a new ask), and the board has not tidied after it."""
     said = [e for e in log if e.get("status") != "note"]
-    ask = next((i for i in range(len(said) - 1, -1, -1) if said[i].get("from") == "you"
-                and said[i].get("status") in ("launch", "review", "reply")), None)
-    if ask is None or not said[ask].get("message", "").startswith("Merge worktree"):
+    ask = None
+    for i in range(len(said) - 1, -1, -1):
+        e = said[i]
+        if e.get("from") != "you" or e.get("status") not in ("launch", "review", "reply"):
+            continue
+        if e.get("message", "").startswith("Merge worktree"):
+            ask = i
+            break
+        if not (i and said[i - 1].get("from") == "claude" and said[i - 1].get("status") == "question"):
+            return False
+    if ask is None:
         return False
     after = said[ask + 1:]
     return (any(e.get("from") == "claude" and e.get("status") == "done" for e in after)

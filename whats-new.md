@@ -2,7 +2,7 @@
 
 ## 2026-10-27
 
-- After a task's own copy is added back into your project, the board now throws that copy away by itself, right away. If something in it would be lost, it keeps it and tells you on the card what is left.
+- After a task's own copy is added back into your project, the board now throws that copy away by itself, right away. If something in it would be lost, it keeps it and tells you on the card what is left. It also does this when Claude asked you something along the way, and it waits while a program still runs from that copy.
 
 ## 2026-10-26
 

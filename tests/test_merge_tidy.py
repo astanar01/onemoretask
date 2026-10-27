@@ -15,7 +15,9 @@ os.environ["HOME"] = os.path.join(TMP, "home")  # before importing server: it re
 os.environ.pop("CLAUDE_CONFIG_DIR", None)
 os.makedirs(os.environ["HOME"])
 for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-             "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_NOSYSTEM": "1"}.items():
+             "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_NOSYSTEM": "1",
+             # A local path as a submodule URL needs this since git 2.38.
+             "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "protocol.file.allow", "GIT_CONFIG_VALUE_0": "always"}.items():
     os.environ[k] = v
 sys.path.insert(0, os.path.dirname(HERE))
 import reports  # noqa: E402
@@ -152,6 +154,46 @@ check("merge then done", server.merge_reported(log), True)
 check("a newer reply", server.merge_reported(log + [{"from": "you", "status": "reply", "message": "fix X"},
                                                     {"from": "claude", "status": "done", "message": "ok"}]), False)
 check("a note does not end it", server.merge_reported(log + [{"from": "you", "status": "note", "message": "x"}]), True)
+asked = [{"from": "you", "status": "reply", "message": "Merge worktree to main"},
+         {"from": "claude", "status": "question", "message": "A clash in x. What now?"},
+         {"from": "you", "status": "reply", "message": "A. Keep mine"}]
+check("an answer to Claude's question keeps the ask", server.merge_reported(asked + log[1:]), True)
+check("merge pressed while a question is open", server.merge_reported(
+    [{"from": "claude", "status": "question", "message": "?"}] + log), True)
+
+# A program still working in a merged worktree keeps it.
+busy = add_task("t6", "merged, program inside")
+proc = subprocess.Popen(["sleep", "30"], cwd=busy["path"])
+try:
+    t6 = tasks["tasks"][-1]
+    check("program inside: kept", (server.tidy_merged(p, t6), os.path.isdir(busy["path"])),
+          ("a program still runs from it. Stop it, then use Delete worktree.", True))
+finally:
+    proc.kill()
+    proc.wait()
+check("program gone: removed", (server.tidy_merged(p, t6), os.path.isdir(busy["path"])), ("", False))
+
+# A submodule commit made only inside the worktree lives in the worktree's own git dir: keep it.
+lib = os.path.join(TMP, "lib")
+git(TMP, "init", "-q", "-b", "main", lib)
+write(os.path.join(lib, "a"), "1\n")
+git(lib, "add", ".")
+git(lib, "commit", "-q", "-m", "lib")
+git(proj, "submodule", "add", "-q", lib, "lib")
+git(proj, "commit", "-q", "-m", "add lib")
+inner = add_task("t7", "merged, inner commit")
+git(inner["path"], "submodule", "update", "--init", "-q")
+write(os.path.join(inner["path"], "lib", "b"), "only here\n")
+git(os.path.join(inner["path"], "lib"), "add", ".")
+git(os.path.join(inner["path"], "lib"), "commit", "-q", "-m", "inner work")
+git(inner["path"], "commit", "-q", "-am", "bump lib")
+git(proj, "merge", "-q", "--no-ff", "-m", "merge bump", inner["branch"])
+t7 = tasks["tasks"][-1]
+check("inner commit only in the worktree: kept", (server.tidy_merged(p, t7), os.path.isdir(inner["path"])),
+      ("a project inside it holds commits the main copy's does not have: lib. Delete worktree throws them away.", True))
+git(os.path.join(proj, "lib"), "fetch", "-q", os.path.join(inner["path"], "lib"), "HEAD")
+check("inner commit fetched into the main copy's lib: removed",
+      (server.tidy_merged(p, t7), os.path.isdir(inner["path"])), ("", False))
 
 # The merge steps no longer tell Claude to remove the worktree.
 steps = "\n".join(server.worktree_steps(p, "t2", unmerged, "merge"))
