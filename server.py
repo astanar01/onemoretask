@@ -4167,8 +4167,11 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:  # the page went away (closed, reloaded) before its answer; _errors must not answer 500
+            self.close_connection = True
 
     def _json(self, code, obj, headers=None):
         self._send(code, json.dumps(obj).encode(), headers=headers)

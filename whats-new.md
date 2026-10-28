@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-28
+
+- Closing or reloading the board while it checks for updates no longer fills the board's window with a long error message.
+
 ## 2026-10-27
 
 - On a "just answer me" task, Claude's answer gets onto the card more often. Before, it could get stuck and ask you to post it yourself.
