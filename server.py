@@ -2067,6 +2067,32 @@ def cache_info(session_id):
 
 
 _mcp_memo = {}  # transcript path -> ((mtime, size), info)
+_mcp_servers = {}  # transcript path -> (pending, failed) from its newest deferred_tools_delta
+
+
+def _mcp_servers_of(a):
+    pending = [mcp_label(s.get("name") if isinstance(s, dict) else s) for s in a.get("pendingMcpServers") or []]
+    failed = [{"name": mcp_label(s.get("name")), "error": str(s.get("error") or "")} if isinstance(s, dict)
+              else {"name": mcp_label(s), "error": ""} for s in a.get("failedMcpServers") or []]
+    return pending, failed
+
+
+def _last_mcp_servers(path):
+    """(pending, failed) from the newest deferred_tools_delta anywhere in the file; only lines naming the key
+    are parsed, so a long transcript costs one read."""
+    servers = ([], [])
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if '"pendingMcpServers"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            a = isinstance(e, dict) and not e.get("isSidechain") and e.get("attachment") or {}
+            if isinstance(a, dict) and a.get("type") == "deferred_tools_delta" and "pendingMcpServers" in a:
+                servers = _mcp_servers_of(a)
+    return servers
 
 
 def mcp_label(name):
@@ -2092,13 +2118,11 @@ def mcp_state(session_id):
     memo = _mcp_memo.get(path)
     if memo and memo[0] == (st.st_mtime, st.st_size):
         return memo[1]
-    pending, failed, calls = [], [], {}
+    servers, calls = None, {}
     for e in transcript_tail(path):
         a = e.get("attachment") or {}
         if a.get("type") == "deferred_tools_delta" and "pendingMcpServers" in a:
-            pending = [mcp_label(s.get("name") if isinstance(s, dict) else s) for s in a.get("pendingMcpServers") or []]
-            failed = [{"name": mcp_label(s.get("name")), "error": str(s.get("error") or "")} if isinstance(s, dict)
-                      else {"name": mcp_label(s), "error": ""} for s in a.get("failedMcpServers") or []]
+            servers = _mcp_servers_of(a)
         content = (e.get("message") or {}).get("content")
         for c in content if isinstance(content, list) else []:
             if not isinstance(c, dict):
@@ -2108,6 +2132,11 @@ def mcp_state(session_id):
                 calls[c.get("id")] = {"server": mcp_label(server), "tool": tool, "since": _ts(e["timestamp"])}
             elif c.get("type") == "tool_result":
                 calls.pop(c.get("tool_use_id"), None)
+    # No delta in the tail: the newest one sits further back (a transcript only grows, so it is still current).
+    if servers is None:
+        servers = _mcp_servers.get(path) or _last_mcp_servers(path)
+    _mcp_servers[path] = servers
+    pending, failed = servers
     info = {"connecting": [n for n in pending if n], "failed": [f for f in failed if f["name"]],
             "calls": list(calls.values())}
     info = info if any(info.values()) else None

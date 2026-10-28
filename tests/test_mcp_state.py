@@ -81,6 +81,24 @@ write(path, [result("2026-10-28T10:01:02.000Z", "u1"), result("2026-10-28T10:01:
 check(server.mcp_state("s1") is None, "nothing to show once every call has its result", server.mcp_state("s1"))
 check(server.mcp_state("no-such-session") is None, "no transcript: None")
 
+# ---- the newest delta scrolled out of the tail the board reads: it still holds, also after a board restart
+long_path = os.path.join(tdir, "s2.jsonl")
+write(long_path, [delta("2026-10-28T11:00:00.000Z", [], [{"name": "wp-debug-log", "error": "boom"}])])
+check(server.mcp_state("s2")["failed"] == [{"name": "wp-debug-log", "error": "boom"}], "failure shows (short chat)")
+chat = {"type": "assistant", "timestamp": "2026-10-28T11:01:00.000Z", "isSidechain": False,
+        "message": {"id": "m", "content": [{"type": "text", "text": "x" * 100_000}]}}
+write(long_path, [chat] * (server.TAIL_BYTES // 100_000 + 5), "a")
+st = server.mcp_state("s2")
+check(st and st["failed"] == [{"name": "wp-debug-log", "error": "boom"}],
+      "failure still shows after more chat than the tail holds", st)
+server._mcp_memo.clear()
+server._mcp_servers.clear()  # a board restart: nothing remembered
+st = server.mcp_state("s2")
+check(st and st["failed"] == [{"name": "wp-debug-log", "error": "boom"}],
+      "failure still shows after a restart with the delta out of the tail", st)
+write(long_path, [delta("2026-10-28T11:05:00.000Z", [])], "a")
+check(server.mcp_state("s2") is None, "a newer delta with no failures clears it", server.mcp_state("s2"))
+
 # ---- Codex: only calls (exec --json writes no connection events)
 log = os.path.join(TMP, "codex.jsonl")
 item = {"id": "item_3", "type": "mcp_tool_call", "server": "codebase-memory-mcp", "tool": "search_graph"}
