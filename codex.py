@@ -642,6 +642,28 @@ def context(log_path):
     return {"tokens": info["context"], "peak": info["peak"], "model": info["model"], "max": info["window"]}
 
 
+_mcp_seen = {}  # (log path, item id) -> when the board first saw the call open
+
+
+def mcp_state(log_path):
+    """The MCP calls the last turn waits on, in server.mcp_state's shape, or None. `codex exec --json` writes no
+    event while it connects to its servers, so only calls show; their events carry no time, so `since` is when
+    the board first saw the call."""
+    calls = {}
+    for e in _last_turn(log_path):
+        item = e.get("item")
+        if not isinstance(item, dict) or item.get("type") != "mcp_tool_call":
+            continue
+        key = (log_path, item.get("id"))
+        if e.get("type") == "item.started":
+            calls[key] = {"server": str(item.get("server") or ""), "tool": str(item.get("tool") or ""),
+                          "since": _mcp_seen.setdefault(key, time.time())}
+        elif e.get("type") == "item.completed":
+            calls.pop(key, None)
+            _mcp_seen.pop(key, None)
+    return {"connecting": [], "failed": [], "calls": list(calls.values())} if calls else None
+
+
 def digest(log_path):
     """The session for a recap: one 'TURN n' per turn, Codex's messages, one line per action."""
     out, turn = [], 0

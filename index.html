@@ -424,6 +424,10 @@ body.view-plan #search { visibility: hidden; }
 .pf.ok { background: var(--ok-bg); color: var(--ok); }
 .pf.ref { background: var(--col); color: var(--muted); }
 #d-log li.k-question { border-left-color: var(--wait); }
+#d-log li.k-mcp { border-left-color: var(--accent); color: var(--muted); }
+#d-log li.k-mcp .turning { color: var(--accent); vertical-align: -2px; }
+#d-log li.k-mcp.failed { border-left-color: var(--danger); }
+#d-log li.k-mcp .tech { margin-top: 4px; font-size: calc(12px * var(--ts)); }
 #d-log li.k-done, #d-log li.k-answer { border-left-color: var(--ok); }
 #d-log li.k-you { border-left-color: var(--accent); }
 #d-log li .who { font-size: calc(11px * var(--ts)); color: var(--muted); display: block; }
@@ -2566,6 +2570,7 @@ function renderAgent(t) {
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
   const nm = who(t);
+  $("#d-log").insertAdjacentHTML("beforeend", mcpLines(ag, nm));
   $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach", { who: nm })
     : window.t("Answer {who} — Cmd+Enter to send, paste images to attach", { who: nm });
   $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
@@ -2586,6 +2591,22 @@ function renderAgent(t) {
     sc.scrollTop = follow ? sc.scrollHeight : a ? sc.scrollTop + a.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchorOff : keepTop;
   }
 }
+// Live MCP state under the conversation: servers still connecting and calls in flight while the session works,
+// servers that failed while it is still around. Codex reports calls only, not its connections.
+function mcpLines(ag, nm) {
+  const m = ag && ag.mcp, live = ag && (ag.phase === "working" || ag.phase === "needs_you");
+  if (!m || !live) return "";
+  const at = (s) => new Date(s * 1000).toLocaleTimeString(LOCALE, { timeStyle: "short" });
+  const line = (text, spin, tech) => `<li class="k-mcp${spin ? "" : " failed"}"><span class="who">${window.t("Board")}</span><div class="msg">${spin ? turning(14) + " " : ""}${esc(text)}${tech ? `<div class="tech">${esc(tech)}</div>` : ""}</div></li>`;
+  const out = [];
+  if (ag.phase === "working") {
+    if (m.connecting && m.connecting.length) out.push(line(window.t("{who} is connecting to MCP: {names}…", { who: nm, names: m.connecting.join(", ") }), true));
+    for (const c of m.calls || []) out.push(line(window.t("{who} is using MCP: {what} (since {at})", { who: nm, what: c.tool ? `${c.server} · ${c.tool}` : c.server, at: at(c.since) }), true));
+  }
+  for (const f of m.failed || []) out.push(line(window.t("Could not connect to MCP: {name}", { name: f.name }), false, f.error));
+  return out.join("");
+}
+
 // Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.
 const AGENT_LABELS = { working: t("Working"), needs_you: t("Needs you"), finished: t("Finished"), gone: t("Session removed") };
 const agentLabel = (ag) => (ag ? (ag.phase === "working" && reviewing(ag) ? t("Reviewing code") : AGENT_LABELS[ag.phase] || ag.phase) : t("Starting…"));

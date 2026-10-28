@@ -2,6 +2,7 @@
 
 ## 2026-10-28
 
+- The Conversation tab now shows when Claude or Codex is hooking up to a helper tool or waiting on one, and says when a helper could not start.
 - Closing or reloading the board while it checks for updates no longer fills the board's window with a long error message.
 
 ## 2026-10-27

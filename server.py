@@ -2066,6 +2066,55 @@ def cache_info(session_id):
     return info
 
 
+_mcp_memo = {}  # transcript path -> ((mtime, size), info)
+
+
+def mcp_label(name):
+    """A server name as people know it: "plugin:context-mode:context-mode" and the tool-name form
+    "plugin_context-mode_context-mode" both read "context-mode"."""
+    name = str(name or "")
+    if name.startswith("plugin:"):
+        return name.rsplit(":", 1)[-1]
+    if name.startswith("plugin_"):
+        return name.rsplit("_", 1)[-1]
+    return name
+
+
+def mcp_state(session_id):
+    """A Claude session's MCP servers and calls, from its transcript: {"connecting": [names], "failed": [{name,
+    error}], "calls": [{server, tool, since}]}, or None when there is nothing to show. Claude Code puts
+    pendingMcpServers / failedMcpServers on each deferred_tools_delta attachment (the newest one is the current
+    state); a call is open while its mcp__<server>__<tool> tool_use has no tool_result yet."""
+    path = transcript_path(session_id)
+    if not path:
+        return None
+    st = os.stat(path)
+    memo = _mcp_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    pending, failed, calls = [], [], {}
+    for e in transcript_tail(path):
+        a = e.get("attachment") or {}
+        if a.get("type") == "deferred_tools_delta" and "pendingMcpServers" in a:
+            pending = [mcp_label(s.get("name") if isinstance(s, dict) else s) for s in a.get("pendingMcpServers") or []]
+            failed = [{"name": mcp_label(s.get("name")), "error": str(s.get("error") or "")} if isinstance(s, dict)
+                      else {"name": mcp_label(s), "error": ""} for s in a.get("failedMcpServers") or []]
+        content = (e.get("message") or {}).get("content")
+        for c in content if isinstance(content, list) else []:
+            if not isinstance(c, dict):
+                continue
+            if c.get("type") == "tool_use" and str(c.get("name", "")).startswith("mcp__"):
+                server, _, tool = c["name"][len("mcp__"):].partition("__")
+                calls[c.get("id")] = {"server": mcp_label(server), "tool": tool, "since": _ts(e["timestamp"])}
+            elif c.get("type") == "tool_result":
+                calls.pop(c.get("tool_use_id"), None)
+    info = {"connecting": [n for n in pending if n], "failed": [f for f in failed if f["name"]],
+            "calls": list(calls.values())}
+    info = info if any(info.values()) else None
+    _mcp_memo[path] = ((st.st_mtime, st.st_size), info)
+    return info
+
+
 FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
 TIMER_TOOLS = ("ScheduleWakeup", "Monitor", "CronCreate")
 _fresh_memo = {}  # transcript path -> ((mtime, size, card log length), result)
@@ -2630,6 +2679,10 @@ class Watcher:
             except OSError:
                 ctx = None
             try:
+                mcp = codex.mcp_state(s["log"]) if is_codex(s) else mcp_state(s and s.get("sessionId"))
+            except OSError:
+                mcp = None
+            try:
                 subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
             except OSError:
                 subs = []
@@ -2677,7 +2730,7 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "subagents": subs, "skills": used, "tokens": spent,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                       "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
