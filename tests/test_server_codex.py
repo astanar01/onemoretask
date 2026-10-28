@@ -87,6 +87,9 @@ def subagent_usage(log_path):
 
 def context(log_path):
     return {"tokens": 5, "peak": 9, "model": "gpt-5.5", "max": 258400}
+
+def mcp_state(log_path):
+    return None
 ''')
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, FAKE)
