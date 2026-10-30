@@ -950,7 +950,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div></div>
 <div id="fresh-modal" role="dialog" aria-modal="true" aria-labelledby="fresh-title"><div class="box">
   <h3 id="fresh-title">New task from this</h3>
-  <p>Claude writes a short summary of this card's work, and a new card starts from it.</p>
+  <p id="fresh-intro">Claude writes a short summary of this card's work, and a new card starts from it.</p>
   <label for="fresh-text">What should the new task do?</label>
   <textarea id="fresh-text" placeholder="Optional"></textarea>
   <label class="toggle"><input type="checkbox" id="fresh-close"> Close the old session</label>
@@ -2363,13 +2363,17 @@ function freshTip(f) {
     : d < 0 ? window.t("Costs ~{diff} more tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
     : window.t("Same cost either way: resuming re-reads ~{resume}, a new task reads ~{new}", both);
 }
-let freshFor = null, freshBusy = false;   // card the New task dialog was opened from; the recap is being written
+let freshFor = null, freshBusy = false, freshSaved = false;   // card the New task dialog was opened from; the recap is being written; the card already has its recap
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
-function openFresh(t, text = "") {
+function openFresh(t, text = "", saved = false) {
   const f = (agents[t.id] && agents[t.id].fresh_start) || {};
   freshFor = t.id;
+  freshSaved = saved;
   $("#fresh-text").value = text;
-  $("#fresh-close").checked = f.fit === "good";
+  $("#fresh-intro").textContent = saved ? window.t("The new card starts with this card's recap.") : window.t("Claude writes a short summary of this card's work, and a new card starts from it.");
+  // A done card's session is closed already, or closes by itself.
+  $("#fresh-close").closest("label").style.display = saved ? "none" : "";
+  $("#fresh-close").checked = !saved && f.fit === "good";
   $("#fresh-msg").textContent = ""; $("#fresh-msg").className = "";
   $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = false;
   $("#fresh-modal").classList.add("open");
@@ -2382,7 +2386,7 @@ async function createFresh() {
   if (!id || freshBusy) return;
   const lock = (on) => { freshBusy = on; $("#fresh-yes").disabled = $("#fresh-no").disabled = $("#fresh-text").disabled = $("#fresh-close").disabled = on; };
   lock(true);
-  $("#fresh-msg").className = ""; $("#fresh-msg").textContent = t("Writing the recap…");
+  $("#fresh-msg").className = ""; $("#fresh-msg").textContent = freshSaved ? t("Reading the recap…") : t("Writing the recap…");
   try {
     const res = await post("/api/agent/spawn", { p: pid, taskId: id, close });
     lock(false);
@@ -2711,8 +2715,10 @@ function nextAction(t, ag, g) {
     const wt = t.agent.worktree && ag && ag.worktree;
     // canWorktree needs the Review column; a done card can merge once its recap is posted (the reply reopens it).
     const canMerge = wt && useServer && replyOpen(t) && ag.phase !== "working" && !ag.recapping && (ag.closed || ag.archived);
+    const fromRecap = useServer && ag && !ag.recapping && ag.phase !== "working" && (ag.log || []).some((e) => e.status === "recap");
+    const startNew = fromRecap ? [act(window.t("Start new card from this"), canMerge ? "sec" : "primary", () => openFresh(t, "", true), { title: window.t("A new card starts with this card's recap") })] : [];
     return { title: window.t("Done"), text: canMerge ? window.t("Its worktree is not merged yet. Merge it with the button below, or delete the worktree from the ⋯ menu if you do not need it.")
-      : wt ? window.t("Its worktree is not merged yet. The merge button shows here once Claude has written the recap.") : ag && ag.recapping ? window.t("Claude is writing the recap.") : window.t("Nothing left to do."), actions: canMerge ? [merge()] : [] };
+      : wt ? window.t("Its worktree is not merged yet. The merge button shows here once Claude has written the recap.") : ag && ag.recapping ? window.t("Claude is writing the recap.") : window.t("Nothing left to do."), actions: [...(canMerge ? [merge()] : []), ...startNew] };
   }
   if (!ag) return { title: window.t("Work in progress"), text: window.t("Waiting for the first status from the session."), actions: [], busy: true };
   if (ag.phase === "working") {

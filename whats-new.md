@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-30
+
+- A finished card with a recap now has a "Start new card from this" button. The new card starts with that recap, and you can add what it should do.
+
 ## 2026-10-28
 
 - The Conversation tab now shows when Claude or Codex is hooking up to a helper tool or waiting on one, and says when a helper could not start.
