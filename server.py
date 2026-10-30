@@ -3790,6 +3790,7 @@ def spawn(p, task_id, close):
     The page creates the new card itself. A card whose sessions were already closed starts from its saved recap;
     while that recap is being written (moved to done a moment ago), this waits for it."""
     key = (p.id, task_id)
+    older = False
     deadline = time.time() + SPAWN_WAIT
     while True:
         with WATCH.lock:
@@ -3812,17 +3813,27 @@ def spawn(p, task_id, close):
             raise
         WATCH.hand_notes(p, task_id)
     else:
-        r = recap_sessions(p, task_id)
-        r = r and (r[0], r[2], r[3])
+        try:
+            r = recap_sessions(p, task_id)
+            r = r and (r[0], r[2], r[3])
+        except Exception:
+            # The card's later work could not be summed up: its saved recap still gives the new card a start.
+            r = saved_recap(p, task_id)
+            if not r:
+                raise
+            older = True
     if not r:
         r = saved_recap(p, task_id)
     if not r:
         raise LookupError("no Claude session for this task")
     t, recap, paths = r
     notes = f'Continues the card "{t["title"]}" ({t["id"]}).\n\n{recap}'
+    if older:
+        notes += "\n\nThis recap is older than the card's last work, which it may miss."
     if paths:
         notes += "\n\nFull conversations: " + ", ".join(shell_path(x) for x in paths)
     return {"ok": True, "title": "Follow-up: " + t["title"], "tags": list(t.get("tags") or []), "notes": notes,
+            **({"older_recap": True} if older else {}),
             "model": t["agent"].get("model") or "", **({"effort": t["agent"]["effort"]} if t["agent"].get("effort") else {})}
 
 

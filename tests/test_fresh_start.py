@@ -230,7 +230,11 @@ server.write_recap = lambda *a: (_ for _ in ()).throw(RuntimeError("claude -p fa
 server.list_sessions = lambda cwd: [{"id": "a0", "sessionId": "s0", "state": "done"}, {"id": "b1", "sessionId": "s0"}]
 reports.append(p.board, "t1", "reply", "more", "you", session="b1")
 code, r = post({"p": p.id, "taskId": "t1", "close": False})
-check(code == 500 and r == {"error": "claude -p failed: overloaded"}, "failing recap: its message", (code, r))
+check(code == 200 and r.get("older_recap") is True and "## Goal\nDo the thing." in r["notes"] and "may miss" in r["notes"],
+      "failing recap: the new card starts from the saved one and says it is older", (code, r))
+os.remove(reports.recap_path(p.board, "t1"))
+code, r = post({"p": p.id, "taskId": "t1", "close": False})
+check(code == 500 and r == {"error": "claude -p failed: overloaded"}, "failing recap, none saved: its message", (code, r))
 httpd.shutdown()
 
 print("PASS" if not fails else f"{fails} failed")

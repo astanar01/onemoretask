@@ -2,7 +2,7 @@
 
 ## 2026-10-30
 
-- A finished card with a recap now has a "Start new card from this" button. The new card starts with that recap, and you can add what it should do.
+- A finished card with a recap now has a "Start new card from this" button. The new card starts with that recap, and you can add what it should do. If the card did more work and a newer recap can't be written, the new card still starts from the older one and tells you.
 
 ## 2026-10-28
 

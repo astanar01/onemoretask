@@ -2363,14 +2363,19 @@ function freshTip(f) {
     : d < 0 ? window.t("Costs ~{diff} more tokens: resuming re-reads ~{resume}, a new task reads ~{new}", both)
     : window.t("Same cost either way: resuming re-reads ~{resume}, a new task reads ~{new}", both);
 }
-let freshFor = null, freshBusy = false, freshSaved = false;   // card the New task dialog was opened from; the recap is being written; the card already has its recap
+let freshFor = null, freshBusy = false, freshSaved = false;   // card the New task dialog was opened from; the recap is being written; the saved recap covers all the card's work
 const freshOpen = () => $("#fresh-modal").classList.contains("open");
+// A live session worked after the last recap, so the server writes a new one (see recap_sessions).
+function workSinceRecap(ag) {
+  const log = (ag && ag.log) || [];
+  return !!(ag && ag.sessionId) && log.slice(log.map((e) => e.status).lastIndexOf("recap") + 1).some((e) => e.session);
+}
 function openFresh(t, text = "", saved = false) {
   const f = (agents[t.id] && agents[t.id].fresh_start) || {};
   freshFor = t.id;
-  freshSaved = saved;
+  freshSaved = saved && !workSinceRecap(agents[t.id]);
   $("#fresh-text").value = text;
-  $("#fresh-intro").textContent = saved ? window.t("The new card starts with this card's recap.") : window.t("Claude writes a short summary of this card's work, and a new card starts from it.");
+  $("#fresh-intro").textContent = freshSaved ? window.t("The new card starts with this card's recap.") : window.t("Claude writes a short summary of this card's work, and a new card starts from it.");
   // A done card's session is closed already, or closes by itself.
   $("#fresh-close").closest("label").style.display = saved ? "none" : "";
   $("#fresh-close").checked = !saved && f.fit === "good";
@@ -2402,7 +2407,7 @@ async function createFresh() {
     openDetail(nt.id);
     const c = document.querySelector(`.card[data-id="${nt.id}"]`);
     if (c) c.scrollIntoView({ block: "nearest" });
-    setStatus(t("New task created from the recap"));
+    setStatus(res.older_recap ? t("New task created from an older recap. It may miss the card's last work.") : t("New task created from the recap"), !!res.older_recap);
   } catch (e) {
     lock(false);
     $("#fresh-msg").className = "err";

@@ -585,6 +585,7 @@ const I18N = {
     "The new card starts with this card's recap.": "La nouvelle carte démarre avec le résumé de celle-ci.",
     "The board switched project, so the new task was not added": "Le tableau a changé de projet, la nouvelle tâche n’a donc pas été ajoutée",
     "New task created from the recap": "Nouvelle tâche créée à partir du résumé",
+    "New task created from an older recap. It may miss the card's last work.": "Nouvelle tâche créée à partir d’un résumé plus ancien. Il peut manquer le dernier travail de la carte.",
     "Could not create the task: {error}": "Impossible de créer la tâche : {error}",
     "Layout": "Disposition",
     "List": "Liste",

@@ -35,6 +35,9 @@ CASES = {
     "worktree": ("done", {"phase": "finished", "archived": True, "closed": True, "worktree": True, "log": [SAID, RECAP]},
                  {"worktree": {"path": "/x", "branch": "b"}}, None),
     "review": ("rev", {"phase": "finished", "log": [SAID, RECAP]}, {}, None),
+    # Reopened, finished again, and the new recap failed: the session is still there, with work after the old recap.
+    "later": ("done", {"phase": "finished", "sessionId": "s2", "closed": True,
+                       "log": [SAID, RECAP, {"from": "claude", "status": "done", "at": AT, "session": "a2", "message": "More"}]}, {}, [BTN]),
 }
 TASKS, AGENTS = [], {}
 for i, (tid, (col, ag, extra, _)) in enumerate(CASES.items()):
@@ -84,6 +87,8 @@ class Stub(SimpleHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         if self.path.split("?")[0] == "/api/agent/spawn":
             spawned.append(json.loads(body))
+            if spawned[-1]["taskId"] == "later":
+                return self.send_json({"ok": True, "title": "Follow-up: Case later", "tags": [], "notes": "old", "model": "", "older_recap": True})
             return self.send_json({"ok": True, "title": "Follow-up: Case recap", "tags": ["ui"], "notes": NOTES, "model": ""})
         return self.send_json({"ok": True})
 
@@ -155,6 +160,18 @@ await ev(`openFresh(state.tasks.find((x) => x.id === 'review'))`);
 await wait(100);
 out.plain = await ev(`({ intro: document.querySelector('#fresh-intro').textContent,
   closeShown: getComputedStyle(document.querySelector('#fresh-close').closest('label')).display !== 'none' })`);
+await ev(`closeFresh()`);
+// Work after the last recap: the dialog says a recap gets written, and the page warns when only the old one was used.
+await ev(`openDetail('later')`);
+await wait(150);
+await ev(`document.querySelector('#d-next-actions button').click()`);
+await wait(100);
+out.later = await ev(`({ intro: document.querySelector('#fresh-intro').textContent, saved: freshSaved,
+  closeShown: getComputedStyle(document.querySelector('#fresh-close').closest('label')).display !== 'none' })`);
+await ev(`document.querySelector('#fresh-yes').click()`);
+for (let i = 0; i < 50; i++) { await wait(100); if (await ev(`!document.querySelector('#fresh-modal').classList.contains('open')`) === true) break; }
+await wait(200);
+out.laterStatus = await ev(`document.querySelector('#status').textContent`);
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -201,7 +218,10 @@ def main():
     check("no merge waiting: the button is the main one", "primary" in res["cls"], True)
     check("dialog", res["modal"], {"open": True, "intro": "The new card starts with this card's recap.",
                                    "closeShown": False, "closeChecked": False})
-    check("asks for the card's recap, closing nothing", spawned, [{"p": "demo", "taskId": "recap", "close": False}])
+    check("asks for the card's recap, closing nothing", spawned[0], {"p": "demo", "taskId": "recap", "close": False})
+    check("work after the recap: dialog says a recap gets written, no close option", res["later"], {
+        "intro": "Claude writes a short summary of this card's work, and a new card starts from it.", "saved": False, "closeShown": False})
+    check("older recap used: the page says so", res["laterStatus"], "New task created from an older recap. It may miss the card's last work.")
     check("new card holds the typed text and the recap",
           res["made"], {"notes": "Now add sound\n\n" + NOTES, "tags": ["ui"], "column": "todo", "open": True})
     check("ordinary dialog unchanged", res["plain"], {
