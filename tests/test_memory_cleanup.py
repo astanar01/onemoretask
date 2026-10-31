@@ -308,7 +308,9 @@ class TheBoard(Base):
     def test_the_week_list_shows_a_removal_then_lets_it_go(self):
         self.removed_note()
         self.assertEqual([e["id"] for e in self.view(NOW + DAY)["removed"]], ["a"])
-        self.assertEqual(self.view(NOW + 9 * DAY)["removed"], [])
+        later = self.view(NOW + 9 * DAY)
+        self.assertEqual(later["removed"], [])
+        self.assertEqual([e["id"] for e in later["earlier"]], ["a"])  # still there to bring back
 
     def test_bring_back_reopens_the_note_and_it_stays(self):
         fake = self.removed_note()

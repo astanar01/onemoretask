@@ -418,12 +418,14 @@ def view(now=None, state_path=STATE, actions_path=ACTIONS):
     state, actions = read_json(state_path), read_json(actions_path)
     restored, kept = actions.get("restored", {}), actions.get("kept", {})
     recent = lambda e: now - e.get("when", 0) < SHOWN_DAYS * DAY
-    removed = [e for e in state.get("removed", []) + actions.get("removed", []) if recent(e) and e["id"] not in restored]
+    every = [e for e in state.get("removed", []) + actions.get("removed", []) if e["id"] not in restored]
+    removed = [e for e in every if recent(e)]
     gone_ids = {e["id"] for e in actions.get("removed", [])}
     review = [e for i, e in state.get("review", {}).items() if i not in kept and i not in gone_ids]
     covered_from = state.get("covered_from")
     return {"last_run": state.get("last_run"), "error": state.get("error"), "notes": state.get("notes", 0),
             "waiting": state.get("waiting", 0), "removed": sorted(removed, key=lambda e: -e["when"]),
+            "earlier": sorted((e for e in every if not recent(e)), key=lambda e: -e["when"]),
             "renamed": [e for e in state.get("renamed", []) if recent(e)],
             "review": sorted(review, key=lambda e: e.get("concept", "")),
             "removal_from": covered_from + UNUSED_DAYS * DAY if covered_from else None}

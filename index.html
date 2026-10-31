@@ -3896,6 +3896,8 @@ function fmtMemory(d) {
     + d.review.map((e) => fmtMemoryNote(e, [["remove", t("Remove")], ["keep", t("Keep it")]])).join("") + `<div class="gap"></div>`;
   html += `<div class="h h1">${t("Removed this week")}</div>`
     + (d.removed.length ? d.removed.map((e) => fmtMemoryNote(e, [["restore", t("Bring back")]])).join("") : `<div class="obs-empty">${t("Nothing removed this week.")}</div>`);
+  if (d.earlier.length) html += `<div class="gap"></div><div class="h h1">${t("Removed before this week")}</div>`
+    + d.earlier.map((e) => fmtMemoryNote(e, [["restore", t("Bring back")]])).join("");
   if (d.renamed.length) html += `<div class="gap"></div><div class="h h1">${t("Names updated this week")}</div>`
     + d.renamed.map((e) => `<div class="li">${esc(e.concept || e.text || "")}</div>`).join("");
   html += `<div class="gap"></div><div class="h h1">${t("How it works")}</div>`

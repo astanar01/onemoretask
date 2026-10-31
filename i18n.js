@@ -655,6 +655,7 @@ const I18N = {
     "These are key decisions, so they never go on their own.": "Ce sont des décisions importantes : elles ne partent jamais toutes seules.",
     "Keep it": "La garder",
     "Removed this week": "Retirées cette semaine",
+    "Removed before this week": "Retirées avant cette semaine",
     "Bring back": "Rétablir",
     "Nothing removed this week.": "Rien de retiré cette semaine.",
     "Names updated this week": "Noms mis à jour cette semaine",
