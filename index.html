@@ -826,6 +826,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <div class="pop-head" id="proj-menu-h">Project settings<small id="proj-menu-name"></small></div>
   <label class="pop-row two" id="simple-row" hidden><input type="checkbox" id="simple-words"><span>Simple words<small>Claude writes its messages on this project's cards in easy words, with no tech terms. New messages only.</small></span></label>
   <button class="pop-row" id="cl-btn" title="What changed in the task board app"><span>Changelog</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span></button>
+  <button class="pop-row" id="mem-btn" title="Old memory notes the board cleared out, and the ones waiting for you"><span>Memory clean-up</span><span class="v"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span></button>
 </div>
 <div id="banner" data-i18n>Not running through <code>server.py</code>: tasks are saved in this browser only. Run <code>python3 server.py</code> (next to this page) to save them to the project's <code>tasks.json</code>.</div>
 <main id="board"></main>
@@ -3861,6 +3862,7 @@ function fmtChangelog(list) {
 const clOpen = () => $("#cl-modal").classList.contains("open");
 async function openChangelog() {
   closeObs();
+  $("#cl-title").textContent = t("Changelog");
   $("#cl-modal").classList.add("open");
   $("#cl-body").innerHTML = `<div class="obs-empty">${useServer ? t("Loading…") : t("The changelog needs server.py.")}</div>`;
   if (!useServer) return;
@@ -3879,6 +3881,57 @@ $("#cl-btn").onclick = openChangelog;
 $("#cl-x").onclick = closeChangelog;
 $("#cl-close").onclick = closeChangelog;
 $("#cl-modal").addEventListener("mousedown", (e) => { if (e.target.id === "cl-modal") closeChangelog(); });
+
+// ---------------------------------------------------------------- memory clean-up (memory_cleanup.py)
+// Shares the changelog's window: only one of them shows at a time.
+function fmtMemoryNote(e, buttons) {
+  const names = (e.names || []).map((n) => `<code>${esc(n)}</code>`).join(", ");
+  return `<div class="li">${esc(e.concept || e.text || "")}<br><span class="obs-empty">${t("Gone: {names}", { names })}</span>${buttons
+    .map(([action, label]) => ` <button class="btn" data-mem-id="${esc(e.id)}" data-mem-action="${action}">${label}</button>`).join("")}</div>`;
+}
+function fmtMemory(d) {
+  const day = (s) => new Date(s * 1000).toLocaleDateString(LOCALE, { month: "long", day: "numeric", year: "numeric" });
+  let html = d.error ? `<div class="li">${t("The last check could not finish. It will try again tomorrow.")}</div>` : "";
+  if (d.review.length) html += `<div class="h h1">${t("Waiting for you")}</div><div class="li">${t("These are key decisions, so they never go on their own.")}</div>`
+    + d.review.map((e) => fmtMemoryNote(e, [["remove", t("Remove")], ["keep", t("Keep it")]])).join("") + `<div class="gap"></div>`;
+  html += `<div class="h h1">${t("Removed this week")}</div>`
+    + (d.removed.length ? d.removed.map((e) => fmtMemoryNote(e, [["restore", t("Bring back")]])).join("") : `<div class="obs-empty">${t("Nothing removed this week.")}</div>`);
+  if (d.renamed.length) html += `<div class="gap"></div><div class="h h1">${t("Names updated this week")}</div>`
+    + d.renamed.map((e) => `<div class="li">${esc(e.concept || e.text || "")}</div>`).join("");
+  html += `<div class="gap"></div><div class="h h1">${t("How it works")}</div>`
+    + `<div class="li">${t("A note goes only when the file or folder it talks about is gone, two checks a day apart agree, and nobody has used the note for 90 days. It can always be brought back.")}</div>`;
+  if (d.waiting) html += `<div class="li">${t("{n} notes are waiting for their 90 days.", { n: d.waiting })}</div>`;
+  if (d.removal_from && d.removal_from * 1000 > Date.now()) html += `<div class="li">${t("The board needs 90 days of watching first, so nothing goes on its own before {date}.", { date: day(d.removal_from) })}</div>`;
+  html += d.last_run ? `<div class="li">${t("Last check: {date}, {n} notes.", { date: day(d.last_run), n: d.notes })}</div>`
+    : `<div class="li">${t("The first check runs a minute after the board starts.")}</div>`;
+  return html;
+}
+async function openMemory() {
+  closeObs();
+  $("#cl-title").textContent = t("Memory clean-up");
+  $("#cl-modal").classList.add("open");
+  $("#cl-body").innerHTML = `<div class="obs-empty">${t("Loading…")}</div>`;
+  let html;
+  try {
+    const r = await fetch("/api/memory-cleanup", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    html = fmtMemory(await r.json());
+  } catch (e) { html = `<div class="obs-empty">${t("Could not load the memory clean-up.")}</div>`; }
+  if (clOpen()) $("#cl-body").innerHTML = html;
+}
+$("#mem-btn").onclick = openMemory;
+$("#mem-btn").addEventListener("click", () => closePop());
+$("#cl-body").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-mem-action]");
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const r = await fetch("/api/memory-cleanup", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: b.dataset.memId, action: b.dataset.memAction }) });
+    if (!r.ok) throw new Error(r.status);
+    if (clOpen()) $("#cl-body").innerHTML = fmtMemory(await r.json());
+  } catch (err) { b.disabled = false; b.title = t("Could not load the memory clean-up."); }
+});
 
 // ---------------------------------------------------------------- images
 // Pasted/dropped images upload to server.py, which stores them by content hash and returns the file name.

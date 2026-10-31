@@ -8,6 +8,11 @@ carries the recall/remember reminder. When working on a feature area, recall key
 relevant is stored, so an empty result is a real "no memory", not a failure. Semantic recall needs
 embeddings; local Ollama with `nomic-embed-text`, set in `~/.muninn/muninn.env`, is optional.
 
+**A file or folder a memory names may be gone.** Check it exists before relying on the memory. Renamed:
+`muninn_evolve` it with the new name. No longer true: `muninn_forget` it with `not_true_since`. The board's
+daily check (`memory_cleanup.py`) retires what no session has used for 90 days; it never decides for you
+on a memory you just read.
+
 **A changed fact replaces the old one; it is never added beside it.** Recall ranks by similarity, not
 by date, so an old, detailed memory left active outranks its newer replacement. Before storing a fact,
 recall its topic: `muninn_evolve` the memory it replaces, or `muninn_forget` with `not_true_since`

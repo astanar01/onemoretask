@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-10-31
+
+- The board now clears out old memory notes about files that are gone, without asking you each time. Open "Memory clean-up" in the menu to see what went and why, and to bring any note back. Notes marked as key decisions wait for your say. Nothing can go on its own until the board has watched for 90 days.
+
 ## 2026-10-30
 
 - A finished card with a recap now has a "Start new card from this" button. The new card starts with that recap, and you can add what it should do. If the card did more work and a newer recap can't be written, the new card still starts from the older one and tells you.

@@ -13,7 +13,8 @@ TEXT=$(cat <<'PROMPT'
 RECALL — before exploring the codebase, launching agents, or reading files:
 1. Call `mcp__muninn__muninn_recall` with a query matching the user's request, `mode: "semantic"`, `threshold: 0.5` and `annotate: true` (an empty result means nothing relevant is stored)
 2. Review what Muninn returns — it may already have the context you need. A result annotated `stale` or `possibly_superseded_by` is a lead to check against the real system, not a fact
-3. Only THEN proceed with the task
+3. Before relying on a file or folder a memory names, check it still exists. If it was renamed, `muninn_evolve` the memory with the new name; if the fact stopped being true, `muninn_forget` it with `not_true_since`
+4. Only THEN proceed with the task
 
 If the user's message is a simple question, clarification, or follow-up that doesn't require codebase exploration, skip the recall. If you're about to search code, read files, or start implementing — recall FIRST. Skipping this wastes tokens re-discovering what Muninn already knows.
 

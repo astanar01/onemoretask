@@ -84,6 +84,8 @@ agent_reports/<task>.recap.md and posts it on the card, then `claude rm` removes
 frees its job folder and scratch files; the transcript stays). A reply on such a card starts a fresh session with
 the task prompt, the recap and the reply (reopen); when it stops in the done column it is closed the same way.
 GET /api/changelog is the board app's own changelog, whats-new.md in plain words, plus the entries the Update button would bring.
+GET /api/memory-cleanup is what memory_cleanup.py did to old memory notes this week and what waits for a person; POST it
+{"id", "action": keep|remove|restore} acts on one note.
 
 The server does not reload its own code: after server.py or reports.py change, restart it (Ctrl-C, then
 onemoretask). Until then new /api routes answer a bare 404, which the page reports as "runs older code".
@@ -151,6 +153,7 @@ from urllib.request import urlopen
 
 import attach
 import codex
+import memory_cleanup
 import observations
 import reports
 
@@ -4230,6 +4233,23 @@ def setup_tools():
         SETUP["running"] = False
 
 
+def memory_cleanup_loop():
+    """Check the memory store's notes about once a day, in a separate process: the first check reads every session
+    transcript. Waits a minute first, so a short-lived server (a test, a restart) never starts one. Not from a task's
+    worktree (.git is a file there): only the installed board may change notes."""
+    if os.path.isfile(os.path.join(APP, ".git")) or os.environ.get("ONEMORETASK_NO_TOOLS"):
+        return
+    time.sleep(60)
+    while True:
+        if memory_cleanup.due():
+            try:
+                subprocess.run([sys.executable, memory_cleanup.__file__], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                memory_cleanup.note_failure(e)
+        time.sleep(3600)
+
+
 # ---------------------------------------------------------------- http
 FILE_ROUTE = re.compile(r"/files/([0-9a-f]{10})/(images|agent_reports/images)/([^/]+)")
 
@@ -4407,6 +4427,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
         elif path == "/api/changelog":
             self._errors(lambda: self._json(200, app_changelog()))
+        elif path == "/api/memory-cleanup":
+            self._errors(lambda: self._json(200, memory_cleanup.view()))
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
@@ -4444,7 +4466,7 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy", "/api/push", "/api/autofill", "/api/which-project",
-                  "/api/task/move", "/api/claude-version", "/api/plan/suggest")
+                  "/api/task/move", "/api/claude-version", "/api/plan/suggest", "/api/memory-cleanup")
         if not self._host_ok():
             return
         if path not in routes:
@@ -4470,6 +4492,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/projects/trust":
                 trust_folder(project(body["p"]))
                 self._json(200, {"ok": True})
+            elif path == "/api/memory-cleanup":
+                self._json(200, memory_cleanup.act(body["id"], body["action"]))
             elif path == "/api/agent":
                 self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or "",
                                        body.get("effort") or ""))
@@ -4620,6 +4644,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     threading.Thread(target=WATCH.run, daemon=True).start()
     threading.Thread(target=setup_tools, daemon=True).start()
+    threading.Thread(target=memory_cleanup_loop, daemon=True).start()
     ready_args = bare_claude_args(AUTOFILL_MODEL, autofill_system(True, True))   # a new card wants both
     threading.Thread(target=READY.start, args=(ready_args,), daemon=True).start()
     print(f"Task board: http://127.0.0.1:{args.port}  (projects: {', '.join(p.name for p in projects())})")

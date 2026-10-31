@@ -646,7 +646,25 @@ const I18N = {
     "Make a milestone, write the tasks it needs, then send them to the board when you are ready.": "Créez une étape, écrivez les tâches dont elle a besoin, puis envoyez-les sur le tableau quand vous êtes prêt.",
     "Write what the milestone is about first": "Écrivez d’abord le but de l’étape",
     "Claude had no new tasks to add": "Claude n’avait pas de nouvelle tâche à ajouter",
-    "Could not get task ideas: {error}": "Impossible d’obtenir des idées de tâches : {error}"
+    "Could not get task ideas: {error}": "Impossible d’obtenir des idées de tâches : {error}",
+    "Memory clean-up": "Nettoyage de la mémoire",
+    "Old memory notes the board cleared out, and the ones waiting for you": "Les vieilles notes de mémoire retirées par le tableau, et celles qui vous attendent",
+    "Gone: {names}": "Disparu : {names}",
+    "The last check could not finish. It will try again tomorrow.": "La dernière vérification n’a pas pu finir. Elle réessaiera demain.",
+    "Waiting for you": "En attente de vous",
+    "These are key decisions, so they never go on their own.": "Ce sont des décisions importantes : elles ne partent jamais toutes seules.",
+    "Keep it": "La garder",
+    "Removed this week": "Retirées cette semaine",
+    "Bring back": "Rétablir",
+    "Nothing removed this week.": "Rien de retiré cette semaine.",
+    "Names updated this week": "Noms mis à jour cette semaine",
+    "How it works": "Comment ça marche",
+    "A note goes only when the file or folder it talks about is gone, two checks a day apart agree, and nobody has used the note for 90 days. It can always be brought back.": "Une note part seulement si le fichier ou le dossier dont elle parle a disparu, si deux vérifications à un jour d’écart sont d’accord, et si personne ne l’a utilisée depuis 90 jours. On peut toujours la rétablir.",
+    "{n} notes are waiting for their 90 days.": "{n} notes attendent leurs 90 jours.",
+    "The board needs 90 days of watching first, so nothing goes on its own before {date}.": "Le tableau doit d’abord observer pendant 90 jours : rien ne part tout seul avant le {date}.",
+    "Last check: {date}, {n} notes.": "Dernière vérification : {date}, {n} notes.",
+    "The first check runs a minute after the board starts.": "La première vérification a lieu une minute après le démarrage du tableau.",
+    "Could not load the memory clean-up.": "Impossible de charger le nettoyage de la mémoire."
   } /* fr-end */
 };
 
