@@ -406,6 +406,7 @@ check("S30 task rows on a Build card change look with status",
 check("S31 a Build card with documents and lookups but no list yet shows the task list empty line",
       be["docs"] and "task list" in (be["empty"] or ""), be)
 check("S32 a Build card opens no document by itself", bl["docs"] and not bl["read"], bl)
+check("S32 a Build card in phase ready opens no document by itself either", "plan.md" in br["docs"] and not br["read"], br)
 check("S33 a Build card in phase ready with a plan.md still offers no Build this plan",
       "plan.md" in br["docs"] and "Build this plan" not in br["buttons"] and "The plan is ready" not in br["title"], br)
 check("S34 a plain card shows no pane", o["plain"]["pane"] is True and o["plain"]["withPlan"] is False and o["leakPlain"]["paneShown"] is False, (o["plain"], o["leakPlain"]))

@@ -4202,7 +4202,7 @@ const cpIsBuild = (t) => !!t && !!t.buildOf && !t.answerOnly;
 const cpCard = (t) => !!t && (!!t.planMode || cpIsBuild(t));
 const cpPhaseName = (x) => ({ explore: window.t("Explore"), draft: window.t("Draft"), review: window.t("Review"), ready: window.t("Ready"), tests: window.t("Tests"), code: window.t("Code"), done: window.t("Done") })[x];
 const cpKindName = (x) => ({ goal: window.t("Goal"), question: window.t("Question"), decision: window.t("Decision"), option: window.t("Option"), task: window.t("Task"), risk: window.t("Risk"), note: window.t("Note") })[x] || "";
-const cpDocOpen = (d) => cpDoc !== null ? cpDoc : d.phase === "ready" ? "plan.md" : "";
+const cpDocOpen = (d) => cpDoc !== null ? cpDoc : d.phase === "ready" && !cpIsBuild(openId && task(openId)) ? "plan.md" : "";
 const cpReady = (t) => !!t.planMode && cpFor === t.id && !!cpData && cpData.phase === "ready" && (cpData.docs || []).some((d) => d.name === "plan.md" && d.text.trim());
 function cpBuild(t, act) {
   return act(window.t("Build this plan"), "primary", () => {
