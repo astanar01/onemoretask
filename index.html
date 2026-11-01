@@ -742,13 +742,12 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 #d-log { list-style: none; margin: 0; padding: 0 6px 0 0; display: flex; flex-direction: column; gap: 22px; }
 .tab[hidden] { display: none; }
 /* A plan card's live pane: beside the chat when the panel has room (.cp-wide, set by measuring it), else above it. */
-#d-cplan[hidden], #d-cplan-doc:empty { display: none; }
-#d-cplan { border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; margin-bottom: 18px; font-size: calc(13px * var(--ts)); max-height: 45vh; overflow: auto; }
+#d-cplan[hidden] { display: none; }
+#d-cplan { border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; margin-bottom: 18px; font-size: calc(13px * var(--ts)); max-height: min(45vh, var(--cp-fit, 45vh)); overflow: auto; }
 #d-tab-conversation.with-plan.cp-wide.on { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 44%); gap: 0 20px; align-items: start; }
 #d-tab-conversation.with-plan.cp-wide > #d-dtree, #d-tab-conversation.with-plan.cp-wide > #d-log { grid-column: 1; min-width: 0; }
-#d-tab-conversation.with-plan.cp-wide > #d-cplan { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 0; margin: 0; max-height: calc(100vh - 210px); }
-#d-tab-plan > #d-cplan { max-height: none; }
-#d-cplan-doc { border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+#d-tab-conversation.with-plan.cp-wide > #d-cplan { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 0; margin: 0; max-height: var(--cp-fit, calc(100vh - 210px)); }
+.cp-read { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 10px 14px; margin-top: 8px; overflow-wrap: anywhere; }
 .cp-steps { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
 .cp-step { padding: 2px 9px; border-radius: 999px; font-size: calc(11px * var(--ts)); color: var(--muted); background: var(--bg); border: 1px solid var(--line); }
 .cp-step.past { color: var(--text); }
@@ -923,8 +922,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
           <button class="tab" role="tab" data-tab="summary">Summary</button>
           <button class="tab" role="tab" data-tab="changes">Changes <span class="badge" id="d-chcount"></span></button>
           <button class="tab" role="tab" data-tab="conversation">Conversation</button>
-          <button class="tab" role="tab" data-tab="plan" id="d-plan-tab" hidden>Plan</button>
-          <button class="tab" role="tab" data-tab="images">Images <span class="badge" id="d-imgcount"></span></button>
+                    <button class="tab" role="tab" data-tab="images">Images <span class="badge" id="d-imgcount"></span></button>
         </div>
         <span class="grow"></span>
         <button class="iconbtn" id="d-more" title="More actions" aria-haspopup="menu" aria-expanded="false"><span data-ico="more" data-s="18"></span></button>
@@ -961,8 +959,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
           <pre class="diff" id="d-diff" hidden></pre>
         </div>
         <div class="tabpane" id="d-tab-conversation" role="tabpanel"><div id="d-dtree" hidden></div><div id="d-cplan" hidden></div><ul id="d-log"></ul></div>
-        <div class="tabpane" id="d-tab-plan" role="tabpanel"><div id="d-cplan-doc" class="md"></div></div>
-        <div class="tabpane" id="d-tab-images" role="tabpanel"><div class="img-grid" id="d-allimgs"></div></div>
+                <div class="tabpane" id="d-tab-images" role="tabpanel"><div class="img-grid" id="d-allimgs"></div></div>
       </div>
       <div class="composer" id="d-reply-wrap">
         <div class="cache-note" id="d-cache-note" hidden></div>
@@ -2753,7 +2750,7 @@ function showTab(tab) {
   document.querySelectorAll("#d-tabs .tab").forEach((b) => { const on = b.dataset.tab === mainTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   document.querySelectorAll("#d-body .tabpane").forEach((p) => p.classList.toggle("on", p.id === "d-tab-" + mainTab));
   const t = openId && task(openId);
-  $("#d-reply-wrap").classList.toggle("on", !!(t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation" || mainTab === "plan")));   // undefined would flip it
+  $("#d-reply-wrap").classList.toggle("on", !!(t && t.agent && replyOpen(t) && (mainTab === "summary" || mainTab === "conversation")));   // undefined would flip it
   cpPlace();
   // One decision tree, moved to the top of whichever of Summary and Conversation is open.
   if (mainTab === "summary" || mainTab === "conversation") { const pane = $("#d-tab-" + mainTab); place($("#d-dtree"), pane, pane.firstChild); renderDecisionTree(dtLog); }
@@ -2829,7 +2826,7 @@ function nextAction(t, ag, g) {
       // A question often follows "try it with Run app", so keep that button beside the reply one while the worktree exists.
       actions: replyOpen(t) ? [toReply(), ...(useServer && t.agent.worktree && ag.worktree && !t.answerOnly ? [runApp()] : [])] : [] };
   }
-  if (t.planMode) return cpReady(t) ? { title: window.t("The plan is ready"), text: window.t("Read it in the Plan tab. Build this plan starts a new card that follows it, or reply to change it."), actions: [cpBuild(t, act), toReply(), markDone("ghost")] }
+  if (t.planMode) return cpReady(t) ? { title: window.t("The plan is ready"), text: window.t("Read it in Conversation. Build this plan starts a new card that follows it and moves this one to done, or reply to change it."), actions: [cpBuild(t, act), toReply(), markDone("ghost")] }
     : { title: window.t("The plan is not finished"), text: window.t("{who} stopped before writing the final plan. Reply in Conversation to carry on.", { who: nm }), actions: [toReply(), markDone("ghost")] };
   // An answer-only card changes nothing: a follow-up that asks for work goes to a new task, with that follow-up as its brief.
   // Below the working / needs_you branches so a reply still shows progress and permission buttons.
@@ -2993,25 +2990,22 @@ function renderOverview(t) {
   if (ovFor !== t.id) {
     ovFor = t.id;
     const ag = agents[t.id];
-    mainTab = !sent ? "summary" : ag && (ag.phase === "working" || ag.phase === "needs_you") ? "conversation" : "summary";
+    mainTab = !sent ? "summary" : t.planMode || (ag && (ag.phase === "working" || ag.phase === "needs_you")) ? "conversation" : "summary";
     for (const d of document.querySelectorAll("#d-side details")) d.open = false;
     closeDiff();
     loadTaskGit(t, true);
   } else if (t.agent && taskGitFor(t) === undefined) loadTaskGit(t, true);   // the session arrived after the card opened
+  cpOpen(t);   // before the draft return: its grid rule outranks the draft's hidden tab panes, so the last plan would stay up
   if (!sent) {
     place($("#d-subs"), $("#d-subblock"), $("#d-newsub"));
     place($("#d-images"), $("#d-notesblock"), $("#d-img-hint"));
     $("#d-crit").hidden = $("#d-tech").hidden = $("#d-subagents").hidden = $("#d-skills").hidden = $("#d-tokens").hidden = $("#d-context").hidden = $("#d-prompt").hidden = true;
     $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = true));
-    $("#d-plan-tab").hidden = true;
     $("#d-reply-wrap").classList.remove("on");
     renderNext(t);
     return;
   }
   $("#d-tabs").querySelectorAll(".tab").forEach((b) => (b.disabled = false));
-  $("#d-plan-tab").hidden = !t.planMode;
-  if (mainTab === "plan" && !t.planMode) mainTab = "conversation";
-  cpOpen(t);
   place($("#d-subs"), $("#d-crit-slot"));
   place($("#d-images"), $("#d-prompt-imgs"));
   $("#d-tech").hidden = false;
@@ -4197,12 +4191,13 @@ function fmtMsg(text) {
   flushTable();
   return out;
 }
-// A plan card's live pane (report.py plan, GET /api/plan): phase, goal tree, files, lookups, documents. One element,
-// moved between Conversation (beside the chat) and the Plan tab, which also reads the documents.
-let cpData = null, cpFor = null, cpBusy = false, cpDoc = "", cpSeen = Object.create(null), cpFresh = Object.create(null);
+// A plan card's live pane in Conversation (report.py plan, GET /api/plan): phase, goal tree, files, lookups, documents.
+// cpDoc: the document read in the pane, "" for none, null until the user picks (a finished plan then opens plan.md).
+let cpData = null, cpFor = null, cpBusy = false, cpDoc = null, cpSeen = Object.create(null), cpFresh = Object.create(null);
 const CP_PHASES = ["explore", "draft", "review", "ready"];
 const cpPhaseName = (x) => ({ explore: window.t("Explore"), draft: window.t("Draft"), review: window.t("Review"), ready: window.t("Ready") })[x];
 const cpKindName = (x) => ({ goal: window.t("Goal"), question: window.t("Question"), decision: window.t("Decision"), option: window.t("Option"), task: window.t("Task"), risk: window.t("Risk"), note: window.t("Note") })[x] || "";
+const cpDocOpen = (d) => cpDoc !== null ? cpDoc : d.phase === "ready" ? "plan.md" : "";
 const cpReady = (t) => !!t.planMode && cpFor === t.id && !!cpData && cpData.phase === "ready" && (cpData.docs || []).some((d) => d.name === "plan.md" && d.text.trim());
 function cpBuild(t, act) {
   return act(window.t("Build this plan"), "primary", () => {
@@ -4212,22 +4207,19 @@ function cpBuild(t, act) {
     const nt = withDelegateChoice(addTask(window.t("Build: {title}", { title: t.title }), firstOpenCol()));
     nt.tags = [...(t.tags || [])];
     nt.notes = `Build what the plan card "${t.title}" (${t.id}) worked out. Its other documents are in ${cpData.dir}\n\n${doc.text}`;
-    touch(nt); render(); openDetail(nt.id);
-  }, { title: window.t("A new card starts with this plan as its brief") });
+    touch(nt); moveToDone(t.id); openDetail(nt.id);
+  }, { title: window.t("A new card starts with this plan as its brief, and this card moves to done") });
 }
 function cpOpen(t) {
-  if (cpFor !== t.id) { cpFor = t.id; cpData = null; cpDoc = ""; cpSeen = Object.create(null); cpFresh = Object.create(null); for (const el of [$("#d-cplan"), $("#d-cplan-doc")]) { el.innerHTML = ""; delete el.dataset.html; } }
+  if (cpFor !== t.id) { cpFor = t.id; cpData = null; cpDoc = null; cpSeen = Object.create(null); cpFresh = Object.create(null); const el = $("#d-cplan"); el.innerHTML = ""; delete el.dataset.html; }
   cpPlace();
   if (t.planMode && t.agent && !cpData) cpPoll();
 }
 function cpPlace() {
   const t = openId && task(openId), box = $("#d-cplan"), on = !!(t && t.planMode && t.agent);
-  box.hidden = !on || (mainTab !== "conversation" && mainTab !== "plan");
+  box.hidden = !on || mainTab !== "conversation";
   $("#d-tab-conversation").classList.toggle("with-plan", on);
-  if (!on) return;
-  if (mainTab === "plan") place(box, $("#d-tab-plan"), $("#d-cplan-doc"));
-  else if (mainTab === "conversation") place(box, $("#d-tab-conversation"), $("#d-log"));
-  cpDraw();
+  if (on) cpDraw();
 }
 async function cpPoll() {
   const t = openId && task(openId);
@@ -4237,7 +4229,10 @@ async function cpPoll() {
     const sig = cpFor === t.id && cpData ? cpData.sig : "";
     const r = await fetch(api("/api/plan") + "&t=" + encodeURIComponent(t.id) + "&sig=" + sig, { cache: "no-store" });
     const res = r.ok ? await r.json() : null;
-    if (res && !res.same && openId === t.id && cpFor === t.id) { cpData = res; cpDraw(); renderNext(t); }
+    if (res && !res.same && openId === t.id && cpFor === t.id) {
+      if (res.phase === "ready" && cpData && cpData.phase !== "ready") cpDoc = null;   // the plan just finished: show it
+      cpData = res; cpDraw(); renderNext(t);
+    }
   } catch (_) {} finally { cpBusy = false; }
 }
 setInterval(() => document.hidden || cpPoll(), 2000);
@@ -4258,30 +4253,31 @@ function cpDraw() {
   const group = (title, rows) => rows.length ? `<div class="cp-h">${title}</div><ul class="cp-files">${rows.map((f) => `<li><code>${esc(f.path)}</code>${f.why ? ` <span>${esc(f.why)}</span>` : ""}</li>`).join("")}</ul>` : "";
   const files = d.files || [], of = (x) => files.filter((f) => f.do === x);
   const docs = d.docs || [];
-  const inTab = mainTab === "plan";
-  if (inTab && !docs.some((x) => x.name === cpDoc)) cpDoc = (docs.find((x) => x.name === "plan.md") || docs[docs.length - 1] || {}).name || "";
+  const doc = docs.find((x) => x.name === cpDocOpen(d));
   const lookName = { map: window.t("Code map"), read: window.t("Read"), search: window.t("Search") };
   const looked = d.lookups || [];
   const empty = !nodes.length && !d.goal && !files.length && !docs.length && !looked.length;
   const html = steps + (empty ? `<div class="cp-empty">${window.t("{who} draws the plan here as it learns.", { who: who(t) })}</div>` : "")
     + (d.goal ? `<div class="cp-goal">${esc(d.goal)}</div>` : "")
+    + (docs.length ? `<div class="cp-h">${window.t("Documents")}</div><div class="cp-docs">${docs.map((x) => `<button type="button" class="cp-doc${doc === x ? " on" : ""}" data-doc="${esc(x.name)}">${esc(x.name)}</button>`).join("")}</div>` : "")
+    + (doc ? `<div class="cp-read md">${fmtMsg(doc.text)}</div>` : "")
     + (nodes.length ? tree(tops) : "")
-    + (docs.length ? `<div class="cp-h">${window.t("Documents")}</div><div class="cp-docs">${docs.map((x) => `<button type="button" class="cp-doc${inTab && x.name === cpDoc ? " on" : ""}" data-doc="${esc(x.name)}">${esc(x.name)}</button>`).join("")}</div>` : "")
     + group(window.t("Files to change"), of("change")) + group(window.t("Files to add"), of("add")) + group(window.t("Files to look at"), of("look"))
     + (looked.length ? `<div class="cp-h">${window.t("Just looked up")}</div><ul class="cp-looked">${looked.map((l) => `<li title="${esc(l.what)}">${esc(lookName[l.tool] || "")}: ${esc(l.what)}</li>`).join("")}</ul>` : "");
   if (box.dataset.html !== html) { const top = box.scrollTop; box.innerHTML = html; box.dataset.html = html; box.scrollTop = top; }
-  const doc = inTab && docs.find((x) => x.name === cpDoc), view = $("#d-cplan-doc");
-  const docHtml = doc ? fmtMsg(doc.text) : "";
-  if (view.dataset.html !== docHtml) { view.innerHTML = docHtml; view.dataset.html = docHtml; }
 }
 $("#d-cplan").addEventListener("click", (e) => {
   const b = e.target.closest(".cp-doc");
-  if (!b) return;
-  cpDoc = b.dataset.doc;
-  if (mainTab === "plan") cpDraw(); else showTab("plan");
+  if (!b || !cpData) return;
+  cpDoc = b.dataset.doc === cpDocOpen(cpData) ? "" : b.dataset.doc;
+  cpDraw();
 });
-// Wide enough for two columns? Measured on the panel, since the docked list leaves it far less than the window.
-new ResizeObserver(([e]) => $("#d-tab-conversation").classList.toggle("cp-wide", e.contentRect.width >= 720)).observe($("#d-body"));
+// Measured on the panel, since the docked list and the reply box leave it far less than the window. Two columns if it is
+// wide enough; the pane is never taller than the space it can scroll in (the content box: the padding stays free).
+new ResizeObserver(([e]) => {
+  $("#d-tab-conversation").classList.toggle("cp-wide", e.contentRect.width >= 720);
+  $("#d-cplan").style.setProperty("--cp-fit", e.contentRect.height + "px");
+}).observe($("#d-body"));
 // The task's decisions (report.py decision) as one tree, left to right: each decision hangs off the option chosen
 // in the one before (off its query, dashed, while that one is open). A repeated query replaces its node in place.
 let dtLog = [], dtKey = null, dtSeen = "", dtShut = false;

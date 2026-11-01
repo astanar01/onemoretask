@@ -1,5 +1,5 @@
-"""A plan card on the real page: the "Plan first" tick, the live pane beside the chat that grows without a reload, the
-Plan tab that reads the documents, and "Build this plan". Drives the real index.html + i18n.js in headless Chrome over
+"""A plan card on the real page: the "Plan first" tick, the live pane beside the chat that grows without a reload and
+reads the documents, stays on its own card, always fits the window, and "Build this plan". Drives the real index.html + i18n.js in headless Chrome over
 raw CDP, with /api faked by a stub server on a free port (never the live board). Plan data goes through the real
 reports.py, into a temp board.
 
@@ -124,6 +124,10 @@ class Stub(SimpleHTTPRequestHandler):
             reports.update_plan(BOARD_DIR, "p1", {"phase": "ready"})
             with open(os.path.join(folder, "plan.md"), "w") as f:
                 f.write("## Steps\n\n1. Add the switch in the menu\n")
+        if self.path == "/__test/tall":
+            reports.update_plan(BOARD_DIR, "p1", {"nodes": [{"id": f"t{i}", "parent": "g", "kind": "task", "label": f"Step {i}"} for i in range(70)]})
+            for i in range(40):
+                reports.append(BOARD_DIR, "p1", "progress", f"Line {i}", "claude")
             reports.append(BOARD_DIR, "p1", "done", "The plan is ready.", "claude")
         return self.send_json({"ok": True})
 
@@ -144,7 +148,7 @@ const [url, chrome, dport, profile, shots] = process.argv.slice(2);
 const proc = spawn(chrome, ['--headless=new', `--remote-debugging-port=${dport}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
 const quit = (code) => { try { proc.kill(); } catch {} setTimeout(() => process.exit(code), 300); };
-setTimeout(() => { console.log(JSON.stringify({ error: 'HUNG driver' })); quit(2); }, 60000);
+setTimeout(() => { console.log(JSON.stringify({ error: 'HUNG driver' })); quit(2); }, 90000);
 let targets;
 for (let i = 0; i < 75 && !targets; i++) {
   try { targets = await (await fetch(`http://127.0.0.1:${dport}/json`)).json(); } catch { await new Promise(r => setTimeout(r, 200)); }
@@ -170,10 +174,17 @@ for (let i = 0; i < 100; i++) { await sleep(100); if (await ev(`typeof polledOnc
 const out = {};
 const LAYOUT = `(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const a = r('#d-cplan'), b = r('#d-log');
   return { beside: a.left >= b.right - 1, above: a.bottom <= b.top + 1, pane: !document.querySelector('#d-cplan').hidden, paneW: a.width }; })()`;
+// The whole pane is on screen, between the tabs and the reply box, and any extra stays in its own scroll bar.
+const FIT = `(() => { const p = document.querySelector('#d-cplan'), a = p.getBoundingClientRect(), b = document.querySelector('#d-body').getBoundingClientRect(), c = document.querySelector('#d-reply-wrap');
+  const under = c.classList.contains('on') ? c.getBoundingClientRect().top : innerHeight;
+  return { top: Math.round(a.top), bottom: Math.round(a.bottom), bodyTop: Math.round(b.top), under: Math.round(under), fits: a.top >= b.top - 1 && a.bottom <= b.bottom + 1 && a.bottom <= under + 1, ownScroll: p.scrollHeight > p.clientHeight, outer: document.querySelector('#d-body').scrollHeight > document.querySelector('#d-body').clientHeight }; })()`;
+const FIT_BOTH = async () => { await ev(`document.querySelector('#d-body').scrollTop = 0`); await sleep(100); const top = await ev(FIT);
+  await ev(`document.querySelector('#d-body').scrollTop = 1e6`); await sleep(100); return { top, end: await ev(FIT) }; };
+const LEAK = `(() => { const p = document.querySelector('#d-cplan'), a = p.getBoundingClientRect(); return { paneShown: !!p.offsetParent && a.height > 0, words: document.querySelector('#d-main').innerText.includes('Dark mode on every page'), chatShown: !!document.querySelector('#d-tab-conversation').offsetParent }; })()`;
 
 // The tick on a card not sent yet.
 await ev(`openDetail('d1')`); await sleep(100);
-out.draft = await ev(`({ shown: !!document.querySelector('#d-planmode').offsetParent, tab: document.querySelector('#d-plan-tab').hidden })`);
+out.draft = await ev(`({ shown: !!document.querySelector('#d-planmode').offsetParent, tab: !document.querySelector('[data-tab=plan]') })`);
 await ev(`document.querySelector('#d-planmode').click()`); await sleep(50);
 out.ticked = await ev(`({ plan: task('d1').planMode, answer: task('d1').answerOnly, ansBox: document.querySelector('#d-answeronly').checked, ansLocked: document.querySelector('#d-answeronly').disabled, wt: document.querySelector('#d-worktree').checked })`);
 await ev(`document.querySelector('#d-planmode').click()`); await sleep(50);
@@ -182,17 +193,34 @@ await ev(`closeDetail()`);
 
 // A plain card shows none of it.
 await ev(`openDetail('n1'); showTab('conversation')`); await sleep(200);
-out.plain = await ev(`({ tab: document.querySelector('#d-plan-tab').hidden, pane: document.querySelector('#d-cplan').hidden, withPlan: document.querySelector('#d-tab-conversation').classList.contains('with-plan') })`);
+out.plain = await ev(`({ tab: !document.querySelector('[data-tab=plan]'), pane: document.querySelector('#d-cplan').hidden, withPlan: document.querySelector('#d-tab-conversation').classList.contains('with-plan') })`);
 await ev(`closeDetail()`);
 
 // The plan card, live: the pane sits beside the chat.
 await ev(`openDetail('p1'); showTab('conversation')`); await sleep(600);
 out.wide = await ev(LAYOUT);
-out.first = await ev(`({ tab: !document.querySelector('#d-plan-tab').hidden, text: document.querySelector('#d-cplan').innerText, step: document.querySelector('.cp-step.now')?.innerText,
+out.first = await ev(`({ tab: !document.querySelector('[data-tab=plan]'), text: document.querySelector('#d-cplan').innerText, step: document.querySelector('.cp-step.now')?.innerText,
   nodes: document.querySelectorAll('.cp-node').length, flash: document.querySelectorAll('.cp-node.fresh').length,
   nest: document.querySelector('.cp-node.k-option')?.parentElement.parentElement.classList.contains('k-decision'), dropped: !!document.querySelector('.cp-node.s-dropped'),
   xss: window.cpXss || 0, imgs: document.querySelectorAll('#d-cplan img').length, next: document.querySelector('#d-next-title').innerText })`);
 await shot('plan-pane-beside-chat');
+
+// A new card, and a card not sent yet, never show the plan of the card you came from; the plan card keeps it.
+await ev(`setView('list')`); await sleep(200);
+await ev(`openDetail('p1'); showTab('conversation')`); await sleep(500);
+out.listShown = await ev(LEAK);
+await ev(`document.querySelector('.lnew').click()`); await sleep(300);
+out.leakNew = await ev(LEAK);
+out.leakNewId = await ev(`openId !== 'p1' && !task(openId).agent`);
+await shot('new-card-after-plan-card');
+await ev(`closeDetail(); setView('board')`); await sleep(200);
+await ev(`openDetail('p1'); showTab('conversation')`); await sleep(500);
+await ev(`openDetail('d1')`); await sleep(300);
+out.leakDraft = await ev(LEAK);
+await ev(`openDetail('n1'); showTab('conversation')`); await sleep(300);
+out.leakPlain = await ev(LEAK);
+await ev(`openDetail('p1'); showTab('conversation')`); await sleep(500);
+out.back = await ev(LEAK);
 await ev(`document.querySelector('#d-cplan').scrollTop = 40`);
 
 // It grows with no reload.
@@ -203,28 +231,52 @@ out.grown = await ev(`({ text: document.querySelector('#d-cplan').innerText, ste
   fresh: [...document.querySelectorAll('.cp-node.fresh .cp-label')].map(e => e.innerText), docs: [...document.querySelectorAll('.cp-doc')].map(e => e.innerText), top: document.querySelector('#d-cplan').scrollTop })`);
 out.flashed = flashed;
 
-// A document button leads to the Plan tab, which reads it.
+// A document button reads it right there, in the pane; pressing it again folds it away.
 await ev(`document.querySelector('.cp-doc').click()`); await sleep(200);
-out.doc = await ev(`({ tab: mainTab, moved: document.querySelector('#d-cplan').parentElement.id, body: document.querySelector('#d-cplan-doc').innerText, h: !!document.querySelector('#d-cplan-doc b, #d-cplan-doc strong'), xss: window.cpXss || 0,
-  on: document.querySelector('.cp-doc.on')?.innerText, composer: document.querySelector('#d-reply-wrap').classList.contains('on'), docVisible: !!document.querySelector('#d-cplan-doc').offsetParent })`);
-await shot('plan-tab-document');
+out.doc = await ev(`(() => { const v = document.querySelector('#d-cplan .cp-read'); return { tab: mainTab, body: v?.innerText, h: !!v?.querySelector('b, strong'), xss: window.cpXss || 0,
+  on: document.querySelector('.cp-doc.on')?.innerText, composer: document.querySelector('#d-reply-wrap').classList.contains('on'), visible: !!v?.offsetParent }; })()`);
+await shot('plan-pane-document');
+await ev(`document.querySelector('.cp-doc').click()`); await sleep(200);
+out.docShut = await ev(`({ read: !!document.querySelector('.cp-read'), on: !!document.querySelector('.cp-doc.on') })`);
 await ev(`showTab('summary')`); await sleep(100);
 out.summary = await ev(`document.querySelector('#d-cplan').hidden`);
 await ev(`showTab('conversation')`); await sleep(100);
 
+// A long plan and a long chat: the pane fits the window, whatever its size, wherever the chat is scrolled.
+await ev(`fetch('/__test/tall', { method: 'PUT' })`);
+for (let i = 0; i < 60; i++) { await sleep(100); if (await ev(`document.querySelectorAll('.cp-node').length > 50 && document.querySelector('#d-body').scrollHeight > document.querySelector('#d-body').clientHeight`) === true) break; }
+out.fitBig = await FIT_BOTH();
+await shot('plan-pane-fits');
+await size(1500, 560); await sleep(300);
+out.fitShort = await FIT_BOTH();
+await shot('plan-pane-fits-short');
+await size(1500, 950); await sleep(300);
+await ev(`setView('list')`); await sleep(200);
+await ev(`openDetail('p1'); showTab('conversation')`); await sleep(400);
+out.fitList = await FIT_BOTH();
+await shot('plan-pane-fits-list');
+await ev(`closeDetail(); setView('board')`); await sleep(200);
+await ev(`openDetail('p1'); showTab('conversation')`); await sleep(400);
+
 // Narrow: above the chat, not squeezed beside it.
 await size(760, 900); await sleep(300);
+await ev(`document.querySelector('#d-body').scrollTop = 0`); await sleep(100);
 out.narrow = await ev(LAYOUT);
+out.fitNarrow = await ev(FIT);
 await shot('plan-pane-narrow');
 await size(1500, 950); await sleep(300);
 
 // The plan is finished: the card offers to build it, from the document itself.
 await ev(`fetch('/__test/ready', { method: 'PUT' })`);
 for (let i = 0; i < 80; i++) { await sleep(100); if (await ev(`document.querySelector('#d-next-title').innerText.includes('ready')`) === true) break; }
-out.ready = await ev(`({ title: document.querySelector('#d-next-title').innerText, buttons: [...document.querySelectorAll('#d-next-actions button')].map(b => b.innerText) })`);
+out.ready = await ev(`({ read: document.querySelector('#d-cplan .cp-read')?.innerText, text: document.querySelector('#d-next').innerText, title: document.querySelector('#d-next-title').innerText, buttons: [...document.querySelectorAll('#d-next-actions button')].map(b => b.innerText) })`);
 await shot('plan-ready');
 await ev(`[...document.querySelectorAll('#d-next-actions button')].find(b => b.innerText.includes('Build this plan')).click()`); await sleep(300);
-out.built = await ev(`(() => { const t = task(openId); return { other: t.id !== 'p1', title: t.title, notes: t.notes, tags: t.tags, plan: !!t.planMode, answer: !!t.answerOnly, sent: !!t.agent, tab: document.querySelector('#d-plan-tab').hidden }; })()`);
+out.built = await ev(`(() => { const t = task(openId); return { other: t.id !== 'p1', title: t.title, notes: t.notes, tags: t.tags, plan: !!t.planMode, answer: !!t.answerOnly, sent: !!t.agent, planDone: isDone(task('p1')), planColumn: task('p1').column }; })()`);
+await ev(`closeDetail()`);
+// Opened again later, a finished plan card goes straight to the plan.
+await ev(`openDetail('p1')`); await sleep(500);
+out.reopen = await ev(`({ tab: mainTab, shown: !!document.querySelector('#d-cplan').offsetParent, read: document.querySelector('#d-cplan .cp-read')?.innerText })`);
 await ev(`closeDetail()`);
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -239,7 +291,7 @@ with open(driver, "w") as f:
     f.write(DRIVER)
 os.makedirs(SHOTS, exist_ok=True)
 r = subprocess.run([NODE, driver, f"http://127.0.0.1:{srv.server_port}/", CHROME, str(free_port()), os.path.join(TMP, "profile"), SHOTS],
-                   capture_output=True, text=True, timeout=90)
+                   capture_output=True, text=True, timeout=120)
 try:
     o = json.loads(r.stdout.strip().splitlines()[-1])
 except (ValueError, IndexError):
@@ -262,7 +314,13 @@ check("a plain card has no pane and no tab", o["plain"] == {"tab": True, "pane":
 check("the pane sits beside the chat", o["wide"]["pane"] and o["wide"]["beside"], o["wide"])
 check("the pane has room", o["wide"]["paneW"] >= 280, o["wide"])
 f = o["first"]
-check("a plan card has the Plan tab", f["tab"])
+check("a plan card has no Plan tab", f["tab"] is True)
+hid = {"paneShown": False, "words": False, "chatShown": False}
+check("the new card test really made a new card", o["leakNewId"] is True, o["leakNewId"])
+check("a new card does not show another card's plan", o["leakNew"] == hid, o["leakNew"])
+check("a card not sent yet does not show another card's plan", o["leakDraft"] == hid, o["leakDraft"])
+check("a plain card does not show another card's plan", not o["leakPlain"]["paneShown"] and not o["leakPlain"]["words"], o["leakPlain"])
+check("the plan card still has its plan after all that", o["back"]["paneShown"] and o["back"]["words"], o["back"])
 check("the phase shows", f["step"] == "Explore", f["step"])
 for word in ("Let people switch", "Where does the switch live?", "It stays out of the way", "index.html", "the colours live here", "i18n.js",
              "search_graph: dark colours", "FILES TO CHANGE", "FILES TO LOOK AT", "JUST LOOKED UP"):
@@ -281,21 +339,32 @@ check("the phase moves on", g["step"] == "Draft" and g["past"] == 1, g)
 check("a new file shows", "server.py" in g["text"] and "FILES TO ADD" in g["text"], g["text"])
 check("a new document shows", g["docs"] == ["brief.md"], g["docs"])
 d = o["doc"]
-check("a document button opens the Plan tab", d["tab"] == "plan" and d["moved"] == "d-tab-plan", d)
-check("the document is rendered", "The brief" in d["body"] and d["h"], d)
+check("a document opens in the pane, on the same tab", d["tab"] == "conversation" and d["visible"], d)
+check("the document is rendered", "The brief" in (d["body"] or "") and d["h"], d)
 check("a document cannot run code", d["xss"] == 0, d)
 check("the open document is marked", d["on"] == "brief.md", d)
-check("you can still reply from the Plan tab", d["composer"] is True, d)
+check("you can reply while reading it", d["composer"] is True, d)
+check("pressing the document again folds it", o["docShut"] == {"read": False, "on": False}, o["docShut"])
 check("the pane stays out of Summary", o["summary"] is True)
 check("narrow: the pane is above the chat", o["narrow"]["above"] and not o["narrow"]["beside"], o["narrow"])
+check("the list layout shows the plan first", o["listShown"]["paneShown"], o["listShown"])
+for name, m in (("big window", o["fitBig"]), ("short window", o["fitShort"]), ("list layout", o["fitList"])):
+    check(f"{name}: the chat is long enough to scroll", m["top"]["outer"], m)
+    check(f"{name}: the pane fits at the top of the chat", m["top"]["fits"] and m["top"]["ownScroll"], m["top"])
+    check(f"{name}: the pane fits at the end of the chat", m["end"]["fits"] and m["end"]["ownScroll"], m["end"])
+check("narrow: the pane fits", o["fitNarrow"]["fits"], o["fitNarrow"])
 r_ = o["ready"]
 check("a finished plan says so", "ready" in r_["title"], r_)
+check("a finished plan opens by itself", "Add the switch in the menu" in (r_["read"] or ""), r_)
+check("the card says where to read it", "Conversation" in r_["text"] and "Plan tab" not in r_["text"], r_["text"])
 check("it offers Build this plan first", r_["buttons"][:1] == ["Build this plan"], r_)
 b = o["built"]
 check("Build this plan makes a new card and opens it", b["other"] and not b["sent"], b)
+check("the plan card moves to done by itself", b["planDone"] is True and b["planColumn"] == "c4", b)
 check("the new card is named for the plan", b["title"] == "Build: Add dark mode", b["title"])
 check("the new card holds the whole plan", "Add the switch in the menu" in b["notes"] and "p1" in b["notes"], b["notes"])
 check("the new card may change things", not b["plan"] and not b["answer"], b)
 check("the new card keeps the tags", b["tags"] == ["ui"], b["tags"])
+check("a finished plan card opens on its plan", o["reopen"]["tab"] == "conversation" and o["reopen"]["shown"] and "Add the switch" in (o["reopen"]["read"] or ""), o["reopen"])
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all ok'}; shots in {SHOTS}")
 sys.exit(1 if fails else 0)

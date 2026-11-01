@@ -10,7 +10,7 @@ const section = (start, end) => {
   return html.slice(a, b);
 };
 const elements = {};
-let created = [];
+let created = [], finished = [];
 const card = { id: 'p1', title: 'Plan', planMode: true, tags: ['ui'] };
 const ctx = vm.createContext({
   window: { t: (s) => s }, openId: card.id, task: () => card,
@@ -18,7 +18,7 @@ const ctx = vm.createContext({
   mainTab: 'conversation', esc: String, who: () => 'Claude', fmtMsg: String,
   withDelegateChoice: (t) => t, firstOpenCol: () => 'todo',
   addTask: () => { const t = {}; created.push(t); return t; },
-  touch() {}, render() {}, openDetail() {},
+  touch() {}, render() {}, openDetail() {}, moveToDone: (id) => finished.push(id),
 });
 vm.runInContext(section('let cpData =', 'function cpOpen('), ctx);
 vm.runInContext(section('function cpDraw()', '$("#d-cplan").addEventListener'), ctx);
@@ -27,6 +27,7 @@ run('cpFor = "p1"; cpData = {phase: "review", docs: [{name: "plan.md", text: "Ol
 assert.equal(run('cpReady(task())'), false, 'reviewing an old plan is not ready');
 run('cpBuild(task(), (label, cls, click) => click)()');
 assert.equal(created.length, 0, 'an unfinished plan cannot start work');
+assert.equal(finished.length, 0, 'an unfinished plan stays open');
 run('cpData.phase = "ready"; cpData.docs[0].text = "  "');
 assert.equal(run('cpReady(task())'), false, 'an empty plan is not ready');
 run('cpData.docs[0].text = "Approved steps"');
@@ -34,6 +35,7 @@ assert.equal(run('cpReady(task())'), true);
 run('cpBuild(task(), (label, cls, click) => click)()');
 assert.equal(created.length, 1);
 assert(created[0].notes.includes('Approved steps'), 'the ready plan reaches the new card');
+assert.deepEqual(finished, ['p1'], 'building moves the plan card to done');
 run('cpFor = "other"');
 assert.equal(run('cpReady(task())'), false, 'another card cannot reuse the plan');
 run('cpFor = "p1"');
