@@ -3,6 +3,7 @@
 ## 2026-11-01
 
 - New tick on a new card: "Plan first". Claude talks through your idea, asks you questions and writes a plan, and changes nothing in your project. While it works, you watch a tree of goals and choices grow beside the chat, with the list of files it found. When the plan is ready, "Build this plan" starts a new card that follows it, and the plan opens with all that card needs to know.
+- The plan now lives only in Conversation, with no extra Plan tab: press a document's name to read it right there, and the finished plan opens by itself. It always fits on the screen, and it no longer shows up on a new card or on another card. "Build this plan" also moves the plan's card to done.
 
 ## 2026-10-31
 
