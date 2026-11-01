@@ -261,6 +261,8 @@ body.view-plan #search { visibility: hidden; }
 .pl-chip { font-size: calc(11px * var(--ts)); color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
 .pl-chip.is-done { color: var(--ok); border-color: var(--ok); }
 .pl-chip.gone { color: var(--wait); border-color: var(--wait); }
+.pl-row.is-done input[type="text"], .pl-row.is-done .sent { text-decoration: line-through; color: var(--muted); }
+.pl-row .icon.pl-send-one { font-size: calc(12px * var(--ts)); }
 .pl-meta { display: flex; align-items: center; gap: 6px; }
 .pl-subn { font-size: calc(12px * var(--ts)); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pl-subn.is-done { color: var(--ok); }
@@ -1669,14 +1671,13 @@ function listRowEl(x, depth) {
 
 // ---------------------------------------------------------------- plan layout (milestones)
 // tasks.json "milestones": [{ id, title, notes, order, created, updated, card?, tasks: [{ id, title, notes, order,
-// card?, suggested?, tasks?: [subtasks, same shape, one level only] }] }]. A task is a draft here until it is sent; from
-// then on its card is the truth (title, column). Sending puts the milestone in To Do as one card (made again if it was
+// card?, suggested?, done?, tasks?: [subtasks, same shape, one level only] }] }]. A task is a draft here until it is sent;
+// from then on its card is the truth (title, column). done is the tick on a task with no live card. Sending puts the milestone in To Do as one card (made again if it was
 // deleted) with the sent tasks as its subtasks, and each task's own subtasks under the task's card.
 let planOpen = null;           // milestone shown on the right
 try { planOpen = localStorage.getItem(LS_KEY + ":plan"); } catch (_) {}
 let planHideDone = false;
 try { planHideDone = localStorage.getItem(LS_KEY + ":planHideDone") === "1"; } catch (_) {}
-const planTick = new Set();    // ticked tasks, this page only
 const planNotes = new Set();   // tasks whose notes box is open
 let planSubAt = null;          // task whose "add a subtask" box is open (one at a time)
 let planBusy = null;           // milestone waiting on Suggest tasks
@@ -1686,7 +1687,7 @@ let planHtml = "";             // what the plan was last drawn from: polls redra
 const milestones = () => (state.milestones = Array.isArray(state.milestones) ? state.milestones : []);
 const msById = (id) => milestones().find((m) => m.id === id);
 const planCard = (x) => (x.card && task(x.card)) || null;
-const planSendable = (d) => !planCard(d) && !!(d.title || "").trim();
+const planSendable = (d) => !planCard(d) && !d.done && !!(d.title || "").trim();
 const byOrder = (a, b) => a.order - b.order;
 const nextIn = (list) => (list.length ? Math.max(...list.map((x) => x.order)) + 1 : 0);
 const planSubs = (d) => (Array.isArray(d.tasks) ? d.tasks : []);
@@ -1707,7 +1708,7 @@ function planPick(m, want) {
   }
   return rows.filter((r) => pick.has(r.d));
 }
-const planItemDone = (x) => { const c = planCard(x); return !!c && isDone(c); };
+const planItemDone = (x) => { const c = planCard(x); return c ? isDone(c) : !!x.done; };
 function planCount(m) {
   const cards = m.tasks.map(planCard).filter(Boolean);
   // A task counts as done only once its subtasks are done too.
@@ -1731,19 +1732,21 @@ function planSubCount(d) {
 }
 function planChip(d) {
   const c = planCard(d);
+  if (!c && d.done) return "";
   if (!d.card) return d.suggested ? `<span class="pl-chip">${t("Suggested")}</span>` : "";
-  if (!c) return `<span class="pl-chip gone" title="${esc(t("Its card was deleted. Tick it to send it again."))}">${t("Not on the board")}</span>`;
+  if (!c) return `<span class="pl-chip gone" title="${esc(t("Its card was deleted. You can send it again."))}">${t("Not on the board")}</span>`;
   const col = column(c.column);
   return `<span class="pl-chip${isDone(c) ? " is-done" : ""}">${esc(col ? t(col.name) : "")}</span>`;
 }
 function planRowHtml({ d, up }) {
-  const c = planCard(d), open = !c && planNotes.has(d.id);
+  const c = planCard(d), done = planItemDone(d), open = !c && planNotes.has(d.id);
   const name = c ? `<span class="sent" data-open="${esc(c.id)}" title="${esc(t("Open its card"))}">${esc(c.title || t("Untitled task"))}</span>`
     : `<input type="text" data-f="title" value="${esc(d.title || "")}" placeholder="${esc(up ? t("Subtask title") : t("Task title"))}">`;
   const sub = up ? "" : `<button type="button" class="icon pl-addsub${planSubAt === d.id ? " on" : ""}" title="${esc(t("Add a subtask"))}">+</button>`;
-  const tools = sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`);
-  return `<div class="pl-row${up ? " pl-subrow" : ""}${d.suggested && !d.card ? " sug" : ""}" data-d="${esc(d.id)}" data-up="${up ? esc(up.id) : ""}" draggable="true">
-    <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${!c && planTick.has(d.id) ? " checked" : ""} title="${esc(c ? t("Already on the board") : t("Tick to send"))}">
+  const send = planCanSend({ d, up }) ? `<button type="button" class="icon pl-send-one" title="${esc(t("Put this task in To Do"))}">${t("Send")}</button>` : "";
+  const tools = send + sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`);
+  return `<div class="pl-row${up ? " pl-subrow" : ""}${d.suggested && !d.card ? " sug" : ""}${done ? " is-done" : ""}" data-d="${esc(d.id)}" data-up="${up ? esc(up.id) : ""}" draggable="true">
+    <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${done ? " checked" : ""} title="${esc(c ? t("Follows its card on the board") : t("Tick when this is done"))}">
     ${name}<span class="pl-meta">${up ? "" : planSubCount(d)}${planChip(d)}</span><span>${tools}</span>
     ${open ? `<textarea data-f="notes" placeholder="${esc(t("Notes for Claude"))}">${esc(d.notes || "")}</textarea>` : ""}</div>`;
 }
@@ -1752,7 +1755,7 @@ const planTaskHtml = (d) => planRowHtml({ d, up: null }) + planSubs(d).slice().s
   + (planSubAt === d.id ? `<input class="pl-sub-add" data-up="${esc(d.id)}" placeholder="${esc(t("+ Add a subtask and press Enter"))}">` : "");
 function planMainHtml(m) {
   const rows = m.tasks.slice().sort(byOrder);
-  const ticked = planPick(m, (d) => planTick.has(d.id)).length, left = planPick(m, () => true).length;
+  const left = planPick(m, () => true).length;
   const armed = planArmed === m.id;
   return `<input class="pl-title" data-mf="title" value="${esc(m.title || "")}" placeholder="${esc(t("Milestone name"))}">
     <textarea class="pl-notes" data-mf="notes" placeholder="${esc(t("What should be true when this milestone is done? Claude reads this to suggest tasks, and each task gets it too."))}">${esc(m.notes || "")}</textarea>
@@ -1761,7 +1764,6 @@ function planMainHtml(m) {
     <div class="pl-tasks">${rows.map(planTaskHtml).join("")}</div>
     <input class="pl-add" placeholder="${esc(t("+ Add a task and press Enter"))}">
     <div class="pl-actions"><button type="button" class="btn danger pl-delm${armed ? " armed" : ""}" title="${esc(t("Its cards on the board stay"))}">${armed ? t("Really delete? Click again") : t("Delete milestone")}</button><span class="grow"></span>
-      <button type="button" class="btn pl-send-ticked"${ticked ? "" : " disabled"} title="${esc(t("Put the ticked tasks in To Do"))}">${t("Send ticked ({n})", { n: ticked })}</button>
       <button type="button" class="btn primary pl-send-all"${left ? "" : " disabled"} title="${esc(t("Put every task not done and not on the board yet in To Do"))}">${t("Send all ({n})", { n: left })}</button></div>`;
 }
 // force: redraw even while a plan field has the cursor (after the user's own click or Enter).
@@ -1799,7 +1801,20 @@ function planAddTask(m, title, notes = "", suggested = false) {
 }
 function planAddSub(m, d, title) {
   if (!Array.isArray(d.tasks)) d.tasks = [];
-  d.tasks.push({ id: uid(), title, notes: "", order: nextIn(d.tasks) }); touch(m);
+  d.tasks.push({ id: uid(), title, notes: "", order: nextIn(d.tasks) });
+  if (!planCard(d)) delete d.done;
+  touch(m);
+}
+// Keeps one promise: a done draft task never has a draft subtask that is not done.
+function planSetDone(m, r, on) {
+  const set = (x) => { if (on) { x.done = true; delete x.suggested; } else delete x.done; };
+  set(r.d);
+  if (!r.up) planSubs(r.d).filter((s) => !planCard(s)).forEach(set);
+  else if (!planCard(r.up)) {
+    if (!on) delete r.up.done;
+    else if (planSubs(r.up).every(planItemDone)) set(r.up);
+  }
+  touch(m);
 }
 // rows: from planPick, so a task comes before its subtasks and its card exists when they are sent.
 function planSend(m, rows) {
@@ -1812,7 +1827,7 @@ function planSend(m, rows) {
   }
   for (const { d, up } of rows) {
     const c = withDelegateChoice(addTask(d.title.trim(), todo, up ? planCard(up).id : big.id));
-    c.notes = d.notes || ""; d.card = c.id; delete d.suggested; planTick.delete(d.id);
+    c.notes = d.notes || ""; d.card = c.id; delete d.suggested; delete d.done;
     // The task's card was deleted: its subtasks still on the board move under the new one.
     if (!up) planSubs(d).forEach((s) => { const sc = planCard(s); if (sc) sc.parent = c.id; });
   }
@@ -1864,8 +1879,8 @@ $("#board").addEventListener("click", (e) => {
   }
   if (el.closest(".pl-del") && d) {
     if (r.up) r.up.tasks = planSubs(r.up).filter((x) => x !== d);
-    else { m.tasks = m.tasks.filter((x) => x !== d); planSubs(d).forEach((s) => planTick.delete(s.id)); }
-    planTick.delete(d.id); touch(m); return renderPlan(true);
+    else m.tasks = m.tasks.filter((x) => x !== d);
+    touch(m); return renderPlan(true);
   }
   if (el.closest(".pl-delm")) {
     if (planArmed !== m.id) { planArmed = m.id; return renderPlan(true); }
@@ -1873,7 +1888,7 @@ $("#board").addEventListener("click", (e) => {
     return renderPlan(true);
   }
   if (el.closest(".pl-send-all")) return planSend(m, planPick(m, () => true));
-  if (el.closest(".pl-send-ticked")) return planSend(m, planPick(m, (x) => planTick.has(x.id)));
+  if (el.closest(".pl-send-one") && d) return planSend(m, planPick(m, (x) => x === d));
   if (el.closest(".pl-suggest")) return planSuggest(m);
 });
 $("#board").addEventListener("change", (e) => {
@@ -1884,8 +1899,8 @@ $("#board").addEventListener("change", (e) => {
     try { localStorage.setItem(LS_KEY + ":planHideDone", planHideDone ? "1" : "0"); } catch (_) {}
     renderPlan(true);
   } else if (c.contains("pl-tick")) {
-    const id = e.target.closest(".pl-row").dataset.d;
-    e.target.checked ? planTick.add(id) : planTick.delete(id);
+    const m = msById(planOpen), r = m && planFind(m, e.target.closest(".pl-row").dataset.d);
+    if (r && !planCard(r.d)) planSetDone(m, r, e.target.checked);
     renderPlan(true);
   }
 });
@@ -1903,7 +1918,10 @@ $("#board").addEventListener("input", (e) => {
     if (r) { r.d[f] = e.target.value; touch(m); }
   } else if (e.target.classList.contains("pl-add") || e.target.classList.contains("pl-sub-add")) {
     // Leaving an add box keeps what is in it as a task, so Send all counts it already.
-    const b = $(".pl-send-all"), n = planPick(m, () => true).length + (e.target.value.trim() ? 1 : 0);
+    // Typing a subtask under a done draft task sends the task too, once the new subtask unticks it.
+    const up = e.target.classList.contains("pl-sub-add") && planFind(m, e.target.dataset.up);
+    const extra = !e.target.value.trim() ? 0 : up && up.d.done && !planCard(up.d) && (up.d.title || "").trim() ? 2 : 1;
+    const b = $(".pl-send-all"), n = planPick(m, () => true).length + extra;
     if (b) { b.disabled = !n; b.textContent = t("Send all ({n})", { n }); }
   }
 });

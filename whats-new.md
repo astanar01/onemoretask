@@ -2,7 +2,7 @@
 
 ## 2026-11-01
 
-- The Plan button is now called Roadmap, so it no longer looks like the Plan first tick on a card.
+- The Plan button is now called Roadmap, so it no longer looks like the Plan first tick on a card. On the Roadmap, tick a task to mark it done without sending it to the board. Each task now has its own Send button, in place of Send ticked.
 - New tick on a new card: "Plan first". Claude talks through your idea, asks you questions and writes a plan, and changes nothing in your project. While it works, you watch a tree of goals and choices grow beside the chat, with the list of files it found. When the plan is ready, "Build this plan" starts a new card that follows it, and the plan opens with all that card needs to know.
 
 ## 2026-10-31
