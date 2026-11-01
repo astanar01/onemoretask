@@ -44,7 +44,10 @@ def task(tid, **more):
 
 TASKS = {"version": 1, "columns": [{"id": "c1", "name": "To Do", "done": False}],
          "tasks": [task("plan1", planMode=True, answerOnly=True), task("other", planMode=True, answerOnly=True),
-                   task("ans1", answerOnly=True), task("plain1")]}
+                   task("ans1", answerOnly=True), task("plain1"),
+                   task("build1", buildOf="plan1"), task("buildans", buildOf="plan1", answerOnly=True),
+                   task("badid", buildOf="../x"), task("badtype", buildOf=123),
+                   task("buildgone", buildOf="gone")]}
 with open(os.path.join(board, "tasks.json"), "w") as f:
     json.dump(TASKS, f)
 
@@ -108,6 +111,17 @@ check("the limit holds", report("plan1", "plan", json.dumps(
     {"nodes": [{"id": str(i), "label": "n"} for i in range(reports.PLAN_MAX + 1)]})).returncode != 0)
 check("a message is still required for the other statuses", report("plan1", "progress", " ").returncode != 0)
 
+# --- phases of a Build card
+said = []
+for phase in ("tests", "code", "done"):
+    r = report("build1", "plan", json.dumps({"phase": phase}))
+    said.append(r.returncode == 0 and reports.read_plan(board, "build1")["phase"] == phase)
+check("S21 report.py plan takes phases tests, code and done", all(said), said)
+r = report("build1", "plan", json.dumps({"phase": "shipping"}))
+check("S22 report.py plan still refuses an unknown phase", r.returncode != 0 and "phase" in r.stderr, r.stdout + r.stderr)
+r = subprocess.run([sys.executable, os.path.join(ROOT, "report.py")], capture_output=True, text=True)
+check("S23 report.py help names the new phases", "tests" in r.stdout + r.stderr and "explore|draft|review|ready|tests|code|done" in r.stdout + r.stderr, r.stdout + r.stderr)
+
 # --- the prompt
 state = json.load(open(os.path.join(board, "tasks.json")))
 P = server.Project(project)
@@ -116,8 +130,15 @@ prompt = server.build_prompt(P, state, tasks_by["plan1"])
 folder = reports.plan_dir(board, "plan1")
 check("the prompt names the plan folder", folder in prompt)
 check("the prompt asks for the plan update command", " plan --file " in prompt)
-for word in ("search_graph", "brief.md", "design.md", "plan.md", "## Context", "memory tools", "fresh reviewers", "no history", "Build this plan"):
+for word in ("search_graph", "brief.md", "plan.md", "## Context", "memory tools", "fresh reviewers", "no history", "Build this plan"):
     check(f"the prompt says {word}", word in prompt)
+check("S1 the plan prompt names spec.md", "spec.md" in prompt)
+check("S2 the plan prompt no longer names design.md", "design.md" not in prompt)
+check("S3 the plan prompt asks for numbered points with a check per point",
+      "Number every point" in prompt and "Give each point its check" in prompt)
+check("S4 the plan prompt asks plan.md for ## Tasks after ## Context",
+      "## Context" in prompt and "## Tasks" in prompt and prompt.index("## Context") < prompt.index("## Tasks"))
+check("S5 the plan prompt tells reviewers to check each point can be proven by its check", "proven by its check" in prompt)
 check("the prompt does not carry the answer-only brief", "Answer only (this task" not in prompt)
 check("the prompt keeps the sandbox rule", "sandbox where the project folder is read-only" in prompt)
 check("the prompt allows only plan documents", "Write only the plan documents" in prompt)
@@ -128,6 +149,39 @@ check("a Codex session gets its own way to start reviewers", "spawn_agent" in co
 check("the task's sandbox is on for a plan card", server.answer_only_task(P, "plan1"))
 remind = server.plan_reminder(P, tasks_by["plan1"])
 check("a reply repeats the folder and the command", folder in remind and " plan --file " in remind and "plan.md" in remind and "## Context" in remind, remind)
+check("S6 the plan reminder names ## Tasks", "## Tasks" in remind, remind)
+
+# --- the Build card's prompt
+built = server.build_prompt(P, state, tasks_by["build1"])
+check("S7 a card with a good buildOf gets build lines naming the plan folder", "Build mode:" in built and folder in built, built)
+check("S8 a card without buildOf gets no build lines", "Build mode:" not in server.build_prompt(P, state, tasks_by["plain1"]))
+check("S9 a card with buildOf and Answer only gets no build lines", "Build mode:" not in server.build_prompt(P, state, tasks_by["buildans"]))
+try:
+    bad = [server.build_prompt(P, state, tasks_by[x]) for x in ("badid", "badtype")]
+    check("S10 a card with a bad buildOf launches with no build lines and no error", not any("Build mode:" in b for b in bad))
+except Exception as e:
+    check("S10 a card with a bad buildOf launches with no build lines and no error", False, repr(e))
+check("S11 the build lines say to write no production code before the tests", "Write no production code yet" in built)
+check("S12 the build lines say tests must fail because the behaviour is missing", "must fail because the behaviour is missing" in built)
+check("S13 the build lines say commit tests alone in a worktree, and not on a shared branch",
+      "In a worktree, commit the tests alone" in built and "do not commit failing tests to the shared branch" in built)
+check("S14 the build lines say never to weaken a spec test", "Never weaken, skip or delete a spec test" in built)
+check("S15 the build lines say to ask after 3 failed tries", "survives 3 tries, ask with a `question` report" in built)
+check("S16 the build lines say one test per point outranks a fewest tests rule", 'One test per point here outranks any "fewest tests" rule' in built)
+check("S17 the build lines name the design.md fallback, the recap case and $TMPDIR",
+      "use design.md" in built and "If your notes are a recap" in built and "$TMPDIR" in built)
+
+# --- a reply on a Build card
+tail = server.board_tail(P, "build1")
+check("S18 a reply on a Build card repeats the order, spec path, state path and report command",
+      "Build card for plan card plan1" in tail and "tests from the spec with no production code" in tail
+      and os.path.join(folder, "spec.md") in tail and reports.plan_path(board, "build1") in tail and " plan --file " in tail, tail)
+check("S19 a reply on a plain card has no build reminder", "Build card" not in server.board_tail(P, "plain1"))
+try:
+    tails = [server.board_tail(P, x) for x in ("badid", "badtype")]
+    check("S20 a reply on a card with a bad buildOf does not raise", not any("Build card" in x for x in tails))
+except Exception as e:
+    check("S20 a reply on a card with a bad buildOf does not raise", False, repr(e))
 
 
 # --- the guard
@@ -203,6 +257,16 @@ _, newer2 = api("plan1", newer["sig"])
 check("a saved document is sent", any("More" in d["text"] for d in newer2.get("docs", [])), newer2)
 check("a card that is not a plan card is refused", api("plain1")[0] == 404, api("plain1")[0])
 check("an unknown card is refused", api("nosuch")[0] == 404)
+
+report("build1", "plan", json.dumps({"phase": "tests", "nodes": [{"id": "T1", "kind": "task", "label": "First", "status": "open"}]}))
+code, bview = api("build1")
+check("S24 plan_view on a Build card returns its own nodes", code == 200 and [n["id"] for n in bview["nodes"]] == ["T1"], (code, bview))
+check("S25 plan_view on a Build card returns the plan card's documents",
+      code == 200 and "brief.md" in [d["name"] for d in bview["docs"]] and bview["dir"] == folder, (code, bview))
+refused = {x: api(x)[0] for x in ("plain1", "badid", "badtype", "buildans")}
+check("S26 plan_view on a plain card, or one with a bad buildOf, is refused", set(refused.values()) == {404}, refused)
+code, gone = api("buildgone")
+check("S27 plan_view on a Build card whose plan folder is gone returns no documents and no error", code == 200 and gone["docs"] == [], (code, gone))
 srv.shutdown()
 
 

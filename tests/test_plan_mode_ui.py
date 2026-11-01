@@ -38,7 +38,11 @@ BOARD = {"version": 1, "columns": [{"id": "c1", "name": "To Do", "done": False},
                                    {"id": "c3", "name": "Review", "done": False, "role": "review"},
                                    {"id": "c4", "name": "Done", "done": True}],
          "tasks": [task("p1", "Add dark mode", planMode=True, answerOnly=True), task("n1", "A plain card"),
-                   task("d1", "An idea", col="c1", agent=False)]}
+                   task("d1", "An idea", col="c1", agent=False),
+                   # Build cards: b1 has a list, b2 has none yet, b3 reached phase ready, b0 is not sent yet.
+                   task("b1", "Build: list", buildOf="p1"), task("b2", "Build: no list yet", buildOf="p1"),
+                   task("b3", "Build: phase ready", buildOf="p1"), task("b0", "Build: draft", col="c1", agent=False, buildOf="p1")]}
+BUILD_CARDS = ("b1", "b2", "b3")
 SAVED = {"tasks": None}
 PHASE = {"p1": "working"}
 
@@ -53,11 +57,17 @@ reports.update_plan(BOARD_DIR, "p1", {
               {"path": "i18n.js", "do": "look", "why": "the words"}]})
 reports.append(BOARD_DIR, "p1", "question", "Where should the switch live?", "claude", options=["In the menu", "On every card"])
 reports.append(BOARD_DIR, "n1", "progress", "Plain work.", "claude")
+reports.update_plan(BOARD_DIR, "b1", {"phase": "tests", "goal": "Build dark mode", "nodes": [
+    {"id": "T1", "kind": "task", "label": "Write the checks", "status": "done"},
+    {"id": "T2", "kind": "task", "label": "Add the switch", "status": "working"},
+    {"id": "T3", "kind": "task", "label": "Save the choice", "status": "open"}]})
+reports.update_plan(BOARD_DIR, "b3", {"phase": "ready"})
 
 
 def view(tid):
     plan = reports.read_plan(BOARD_DIR, tid)
-    out = {**plan, "docs": reports.plan_docs(BOARD_DIR, tid), "dir": reports.plan_dir(BOARD_DIR, tid),
+    docs_id = "p1" if tid in BUILD_CARDS else tid  # as server.plan_view: a Build card's documents are its plan's
+    out = {**plan, "docs": reports.plan_docs(BOARD_DIR, docs_id), "dir": reports.plan_dir(BOARD_DIR, docs_id),
            "lookups": [{"tool": "map", "what": "search_graph: dark colours", "at": 1}, {"tool": "read", "what": "/x/index.html", "at": 1}]}
     sig = str(hash(json.dumps(out, sort_keys=True)))
     return {**out, "sig": sig}
@@ -65,7 +75,7 @@ def view(tid):
 
 def agents():
     return {tid: {"id": tid, "state": "working", "phase": PHASE.get(tid, "finished"), "reason": "", "log": reports.read(BOARD_DIR, tid)}
-            for tid in ("p1", "n1")}
+            for tid in ("p1", "n1", *BUILD_CARDS)}
 
 
 class Stub(SimpleHTTPRequestHandler):
@@ -91,7 +101,7 @@ class Stub(SimpleHTTPRequestHandler):
             return self.send_json(agents())
         if p == "/api/plan":
             tid = self.path.split("&t=")[1].split("&")[0]
-            if tid != "p1":
+            if tid != "p1" and tid not in BUILD_CARDS:
                 return self.send_json({"error": "not a plan card"}, 404)
             return self.send_json(view(tid))
         if p == "/api/app-copy":
@@ -272,11 +282,32 @@ for (let i = 0; i < 80; i++) { await sleep(100); if (await ev(`document.querySel
 out.ready = await ev(`({ read: document.querySelector('#d-cplan .cp-read')?.innerText, text: document.querySelector('#d-next').innerText, title: document.querySelector('#d-next-title').innerText, buttons: [...document.querySelectorAll('#d-next-actions button')].map(b => b.innerText) })`);
 await shot('plan-ready');
 await ev(`[...document.querySelectorAll('#d-next-actions button')].find(b => b.innerText.includes('Build this plan')).click()`); await sleep(300);
-out.built = await ev(`(() => { const t = task(openId); return { other: t.id !== 'p1', title: t.title, notes: t.notes, tags: t.tags, plan: !!t.planMode, answer: !!t.answerOnly, sent: !!t.agent, planDone: isDone(task('p1')), planColumn: task('p1').column }; })()`);
+out.built = await ev(`(() => { const t = task(openId); return { other: t.id !== 'p1', title: t.title, notes: t.notes, tags: t.tags, plan: !!t.planMode, answer: !!t.answerOnly, sent: !!t.agent, planDone: isDone(task('p1')), planColumn: task('p1').column, buildOf: t.buildOf }; })()`);
 await ev(`closeDetail()`);
 // Opened again later, a finished plan card goes straight to the plan.
 await ev(`openDetail('p1')`); await sleep(500);
 out.reopen = await ev(`({ tab: mainTab, shown: !!document.querySelector('#d-cplan').offsetParent, read: document.querySelector('#d-cplan .cp-read')?.innerText })`);
+await ev(`closeDetail()`);
+
+// A Build card that is sent shows its task list; p1's documents and plan.md exist by now.
+const BUILD = `(() => { const look = (id) => { const row = [...document.querySelectorAll('.cp-node')].find(n => n.innerText.includes(id)); if (!row) return null; const c = getComputedStyle(row.querySelector('.cp-mark')); return { bg: c.backgroundColor, anim: c.animationName }; };
+  return { shown: !!document.querySelector('#d-cplan').offsetParent, steps: [...document.querySelectorAll('.cp-step')].map(e => e.innerText), now: document.querySelector('.cp-step.now')?.innerText,
+  empty: document.querySelector('.cp-empty')?.innerText, read: !!document.querySelector('.cp-read'), docs: [...document.querySelectorAll('.cp-doc')].map(e => e.innerText),
+  done: look('Write the checks'), working: look('Add the switch'), open: look('Save the choice'), buttons: [...document.querySelectorAll('#d-next-actions button')].map(b => b.innerText), title: document.querySelector('#d-next-title').innerText }; })()`;
+await ev(`openDetail('b1'); showTab('conversation')`); await sleep(600);
+out.buildList = await ev(BUILD);
+await shot('build-card-task-list');
+await ev(`openDetail('b2'); showTab('conversation')`); await sleep(600);
+out.buildEmpty = await ev(BUILD);
+await ev(`openDetail('b3'); showTab('conversation')`); await sleep(600);
+out.buildReady = await ev(BUILD);
+await ev(`openDetail('b0')`); await sleep(300);
+out.buildDraft = await ev(LEAK);
+// A new card from a Build card's recap stays a Build card; one from a plain card does not become one.
+await ev(`freshFor = 'b1'; await createFresh()`); await sleep(300);
+out.fromRecap = await ev(`({ other: openId !== 'b1', buildOf: task(openId).buildOf })`);
+await ev(`freshFor = 'n1'; await createFresh()`); await sleep(300);
+out.fromPlainRecap = await ev(`({ other: openId !== 'n1', buildOf: task(openId).buildOf ?? null })`);
 await ev(`closeDetail()`);
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -366,5 +397,20 @@ check("the new card holds the whole plan", "Add the switch in the menu" in b["no
 check("the new card may change things", not b["plan"] and not b["answer"], b)
 check("the new card keeps the tags", b["tags"] == ["ui"], b["tags"])
 check("a finished plan card opens on its plan", o["reopen"]["tab"] == "conversation" and o["reopen"]["shown"] and "Add the switch" in (o["reopen"]["read"] or ""), o["reopen"])
+check("S28 Build this plan makes a card whose buildOf is the plan card's id", b["buildOf"] == "p1", b)
+bl, be, br = o["buildList"], o["buildEmpty"], o["buildReady"]
+check("S29 a sent Build card shows the steps Tests, Code, Done", bl["shown"] and bl["steps"] == ["Tests", "Code", "Done"] and bl["now"] == "Tests", bl)
+looks = (bl["done"], bl["working"], bl["open"])
+check("S30 task rows on a Build card change look with status",
+      all(looks) and bl["open"]["bg"] != bl["done"]["bg"] and bl["working"]["anim"] != bl["done"]["anim"], looks)
+check("S31 a Build card with documents and lookups but no list yet shows the task list empty line",
+      be["docs"] and "task list" in (be["empty"] or ""), be)
+check("S32 a Build card opens no document by itself", bl["docs"] and not bl["read"], bl)
+check("S33 a Build card in phase ready with a plan.md still offers no Build this plan",
+      "plan.md" in br["docs"] and "Build this plan" not in br["buttons"] and "The plan is ready" not in br["title"], br)
+check("S34 a plain card shows no pane", o["plain"]["pane"] is True and o["plain"]["withPlan"] is False and o["leakPlain"]["paneShown"] is False, (o["plain"], o["leakPlain"]))
+check("a Build card not sent yet shows no pane", o["buildDraft"]["paneShown"] is False and o["buildDraft"]["words"] is False, o["buildDraft"])
+check("S35 a new card from a Build card's recap keeps buildOf", o["fromRecap"] == {"other": True, "buildOf": "p1"}, o["fromRecap"])
+check("a new card from a plain card's recap has no buildOf", o["fromPlainRecap"] == {"other": True, "buildOf": None}, o["fromPlainRecap"])
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all ok'}; shots in {SHOTS}")
 sys.exit(1 if fails else 0)
