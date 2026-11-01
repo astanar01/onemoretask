@@ -1,6 +1,6 @@
-"""The Plan page: make a milestone, write tasks, get Claude's ideas, send ticked tasks and then the rest to To Do as
-one milestone card with subtasks, follow the done count, send a deleted card again, reorder by drag, and keep it all
-across a reload. A poll never takes the cursor out of a field being typed in.
+"""The Roadmap: make a milestone, write tasks, get Claude's ideas, send tasks by their row button and then the rest to To
+Do as one milestone card with subtasks, tick drafts done, follow the done count, send a deleted card again, reorder by
+drag, and keep it all across a reload. A poll never takes the cursor out of a field being typed in.
 Drives the real index.html + i18n.js in headless Chrome over raw CDP, with /api faked by a stub server on a free
 port that keeps what the page saves (never the live board, never .task_board).
 
@@ -163,13 +163,11 @@ for (let i = 0; i < 50 && document.querySelectorAll('.pl-row').length < 5; i++) 
 __rows()`);
 await sleep(100);
 await shot('plan-suggested');
-// Tick 1 and 4, send those; then send the rest.
-out.ticked = await ev(`const ticks = () => document.querySelectorAll('.pl-tick');
-ticks()[0].click(); ticks()[3].click();
-const label = document.querySelector('.pl-send-ticked').textContent;
-document.querySelector('.pl-send-ticked').click();
+// Send 1 and 4 by their row buttons; then send the rest. A send redraws, so the rows are looked up again in between.
+out.ticked = await ev(`const rowSend = (i) => document.querySelectorAll('.pl-row')[i].querySelector('.pl-send-one').click();
+rowSend(0); rowSend(3);
 const big = __big();
-({ label, bigCount: big.length, bigCol: big[0]?.column, bigTitle: big[0]?.title, bigNotes: big[0]?.notes,
+({ bigCount: big.length, bigCol: big[0]?.column, bigTitle: big[0]?.title, bigNotes: big[0]?.notes,
    kids: children(big[0]?.id).map((k) => [k.title, k.column, k.notes]), msCard: __ms().card === big[0]?.id, rows: __rows(),
    sendAll: document.querySelector('.pl-send-all').textContent })`);
 await shot('plan-ticked-sent');
@@ -269,11 +267,9 @@ for (const v of ['A1', 'A2']) { const b = document.querySelector('.pl-sub-add');
 await shot('plan-subtasks');
 out.subEsc = await ev(`document.querySelector('.pl-sub-add').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 !document.querySelector('.pl-sub-add')`);
-out.subTicked = await ev(`__rowEl('A2').querySelector('.pl-tick').click();
-const label = document.querySelector('.pl-send-ticked').textContent;
-document.querySelector('.pl-send-ticked').click();
+out.subTicked = await ev(`__rowEl('A2').querySelector('.pl-send-one').click();
 const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A');
-({ label, kids: children(ms.card).map((k) => k.title), aKids: children(a.card).map((k) => [k.title, k.column]), sendAll: document.querySelector('.pl-send-all').textContent })`);
+({ kids: children(ms.card).map((k) => k.title), aKids: children(a.card).map((k) => [k.title, k.column]), sendAll: document.querySelector('.pl-send-all').textContent })`);
 out.subAll = await ev(`document.querySelector('.pl-send-all').click();
 const ms = ${subMs}, a = ms.tasks.find((d) => d.title === 'Parent A');
 ({ kids: children(ms.card).map((k) => k.title), aKids: children(a.card).map((k) => k.title).sort(), sendAllOff: document.querySelector('.pl-send-all').disabled })`);
@@ -332,6 +328,113 @@ const hit = b && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2
   await ev(`${planBtn}.click(); true`);
   out['back_' + lay] = await ev(`({ view, overlay: getComputedStyle(document.querySelector('#overlay')).display, list: document.querySelector('#board').classList.contains('list') })`);
 }
+out.words = await ev(`if (view === 'plan') ${planBtn}.click();
+({ header: document.querySelector('#plan-btn .t').textContent })`);
+// The box means done: T1, T2 with S1 and S2, T3, T4 and a suggested idea.
+const TICK = `window.__tm = () => state.milestones.find((m) => m.title === 'Tick test');
+window.__d = (title) => planRows(__tm()).find((r) => r.d.title === title).d;
+window.__tk = (title) => __rowEl(title).querySelector('.pl-tick');
+window.__st = (title) => { const r = __rowEl(title), k = r.querySelector('.pl-tick');
+  return { done: !!__d(title).done, box: k.checked, off: k.disabled, line: r.classList.contains('is-done'), send: !!r.querySelector('.pl-send-one'), chip: r.querySelector('.pl-chip')?.textContent ?? '' }; };
+window.__all = () => document.querySelector('.pl-send-all').textContent;
+window.__pr = () => __prog('.pl-head .progress');
+window.__fit = () => { const main = document.querySelector('.pl-main').getBoundingClientRect();
+  return [...document.querySelectorAll('.pl-row')].filter((r) => r.scrollWidth > r.clientWidth || r.getBoundingClientRect().right > main.right).length; };
+window.__sub = (t, v) => { __rowEl(t).querySelector('.pl-addsub').click(); const b = document.querySelector('.pl-sub-add'); b.value = v; __enter(b); document.querySelector('.pl-sub-add').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); };
+true`;
+await ev(TICK);
+out.tickStart = await ev(`${planBtn}.click();
+document.querySelector('.pl-new').click(); __type(document.querySelector('.pl-title'), 'Tick test');
+for (const v of ['T1', 'T2', 'T3', 'T4']) { const a = document.querySelector('.pl-add'); a.value = v; __enter(a); }
+document.activeElement.blur(); await new Promise((r) => setTimeout(r, 50));
+__rowEl('T2').querySelector('.pl-addsub').click();
+for (const v of ['S1', 'S2']) { const b = document.querySelector('.pl-sub-add'); b.value = v; __enter(b); }
+document.querySelector('.pl-sub-add').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+planAddTask(__tm(), 'Idea', '', true); renderPlan(true);
+({ noSendTicked: !document.querySelector('.pl-send-ticked'), all: __all(), pr: __pr(), big: __big().length })`);
+out.tickT1 = await ev(`__tk('T1').click(); ({ st: __st('T1'), big: __big().length, card: __d('T1').card ?? null, all: __all(), pr: __pr() })`);
+await shot('roadmap-ticked-row');
+out.untickT1 = await ev(`__tk('T1').click(); ({ st: __st('T1'), all: __all(), pr: __pr() })`);
+out.tickSubs = await ev(`const three = () => ['T2', 'S1', 'S2'].map((x) => __st(x).done);
+__tk('T2').click(); const on = three(), onPr = __pr();
+__tk('T2').click(); const off = three(), offPr = __pr();
+__tk('T2').click(); __tk('S1').click(); const s1Off = three();
+__tk('S1').click(); const s1On = three();
+({ on, onPr, off, offPr, s1Off, s1On })`);
+out.tickAddSub = await ev(`__rowEl('T2').querySelector('.pl-addsub').click();
+const before = __all(), b = document.querySelector('.pl-sub-add');
+__type(b, 'S3'); const typing = __all(), stillDone = __d('T2').done === true;
+__enter(b); document.querySelector('.pl-sub-add').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+({ before, typing, stillDone, after: __all(), t2: __st('T2').done, s1: __st('S1').done })`);
+out.tickSent = await ev(`const big0 = __big().length, noCard = !__tm().card;
+__rowEl('T3').querySelector('.pl-send-one').click();
+const sent = __st('T3'), madeBig = __big().length - big0, c = task(__d('T3').card);
+c.column = 'c4'; render(); const inDone = __st('T3');
+__tk('T3').click(); const clicked = [__st('T3').box, task(__d('T3').card).column, !!__d('T3').done];
+c.column = 'c1'; render(); const back = __st('T3');
+({ noCard, sent, madeBig, inDone, clicked, back })`);
+out.tickGone = await ev(`state.tasks = state.tasks.filter((x) => x.id !== __d('T3').card); render();
+const gone = __st('T3'); __tk('T3').click(); ({ gone, ticked: __st('T3') })`);
+// A real mouse right after typing, on a row's Send and on a box: leaving the field redraws, and no click may be lost.
+const t4 = await ev(`__d('T4').id`), t1 = await ev(`__d('T1').id`);
+await ev(`const f = __rowEl('T4').querySelector('input[type=text]'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); true`);
+await send('Input.insertText', { text: ' edited' });
+await press(`.pl-row[data-d="${t4}"] .pl-send-one`);
+out.tickPress = await ev(`const d = __d('T4 edited'), c = planCard(d); ({ title: c && c.title, parent: c && c.parent === __tm().card })`);
+await ev(`document.querySelector('.pl-add').focus(); true`);
+await send('Input.insertText', { text: 'T5' });
+await press(`.pl-row[data-d="${t1}"] .pl-tick`);
+out.tickBoxPress = await ev(`({ t5: !!__rowEl('T5'), t1: __st('T1').box, box: document.querySelector('.pl-add').value })`);
+out.tickIdea = await ev(`const before = [__rowEl('Idea').classList.contains('sug'), __st('Idea').chip];
+__tk('Idea').click(); ({ before, after: [__rowEl('Idea').classList.contains('sug'), __st('Idea').chip], flag: 'suggested' in __d('Idea') })`);
+out.tickCardDone = await ev(`const start = planCount(__tm()).done;
+__sub('T4 edited', 'U1');
+const c = task(__d('T4 edited').card); c.column = 'c4'; render();
+const st = __st('T4 edited'), n = __subn('T4 edited')[0], open = planCount(__tm()).done;
+__tk('U1').click();
+({ start, st, n, open, ticked: planCount(__tm()).done, subDone: __st('U1').done, n2: __subn('T4 edited')[0], col: task(__d('T4 edited').card).column })`);
+await shot('roadmap-ticks');
+out.tickAll = await ev(`__tk('T2').click(); __tk('T5').click();
+const cur = document.querySelector('.pl-item.cur').classList.contains('done');
+document.querySelector('.pl-hide-done').click();
+const other = [...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Mouse test'); other.click();
+const hidden = ![...document.querySelectorAll('.pl-item .t')].some((x) => x.textContent === 'Tick test');
+document.querySelector('.pl-hide-done').click();
+[...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Tick test').click();
+({ cur, hidden, pr: __pr(), allOff: document.querySelector('.pl-send-all').disabled })`);
+// Saved: the stub's copy holds the ticks, and they come back after a reload.
+await ev(`await settled(); true`);
+out.tickSaved = await ev(`const m = (await (await fetch('/__test/board')).json()).board.milestones.find((x) => x.title === 'Tick test');
+Object.fromEntries(m.tasks.flatMap((d) => [d, ...(d.tasks || [])]).map((d) => [d.title, d.done ?? null]))`);
+await send('Page.reload', {});
+const tickReady = await waitReady();
+await ev(HELPERS); await ev(TICK); await sleep(200);
+out.tickReload = await ev(`[...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Tick test').click();
+({ ready: ${tickReady}, t1: __st('T1'), t2: __st('T2'), s1: __st('S1'), t3: __st('T3'), pr: __pr() })`);
+// Nothing spills off a row, with a Send button on it.
+out.rowFit = await ev(`__tm().tasks.push({ id: 'longsend', title: 'A task with a rather long name so the row has to share its room with the Send button', notes: '', order: 99 });
+touch(__tm()); renderPlan(true); await settled(); __fit()`);
+await shot('roadmap-send-buttons');
+// French: the longer name must still fit the header at this width.
+await ev(`localStorage.setItem('task-board:lang', 'fr'); true`);
+await send('Page.reload', {});
+const frReady = await waitReady();
+await ev(HELPERS); await ev(TICK); await sleep(200);
+await ev(`[...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Tick test').click(); true`);
+out.fr = await ev(`const head = document.querySelector('header'), bs = [...head.querySelectorAll('button')].filter((b) => b.offsetParent);
+const rects = bs.map((b) => b.getBoundingClientRect());
+({ ready: ${frReady}, name: document.querySelector('#plan-btn .t').textContent, send: document.querySelector('.pl-send-one')?.textContent ?? null,
+   overflow: head.scrollWidth > head.clientWidth, off: rects.filter((r) => r.right > innerWidth).length, tops: new Set(rects.map((r) => Math.round(r.top))).size, rows: __fit() })`);
+await shot('roadmap-french');
+// The same on a busy board: filter box and every optional button showing.
+out.frBusy = await ev(`${planBtn}.click();
+const u = document.querySelector('#unpushed'), w = document.querySelector('#waiting'), o = document.querySelector('#obs-btn'), head = document.querySelector('header');
+u.hidden = false; u.textContent = t('{n} unpushed', { n: 2 }); w.style.display = 'inline-block'; w.textContent = t('{n} waiting on you', { n: 3 }); o.style.display = 'inline-flex';
+const measure = () => ({ over: head.scrollWidth - head.clientWidth, off: [...head.querySelectorAll('button')].filter((b) => b.offsetParent && b.getBoundingClientRect().right > innerWidth).length });
+const roadmap = measure(), name = document.querySelector('#plan-btn .t');
+const keep = name.textContent; name.textContent = 'Plan'; const plan = measure(); name.textContent = keep;
+({ roadmap, plan, inner: innerWidth })`);
+await shot('roadmap-french-busy-board');
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -401,10 +504,9 @@ def main():
     check("Claude's ideas are added as dashed suggested drafts", [(r["title"], r["sug"], r["chip"]) for r in s[3:]],
           [("Idea one", True, "Suggested"), ("Idea two", True, "Suggested")])
     t = res["ticked"]
-    check("Send ticked counts the ticked tasks", t["label"], "Send ticked (2)")
     check("one milestone card in To Do with its name and goal", (t["bigCount"], t["bigCol"], t["bigTitle"], t["bigNotes"]),
           (1, "c1", "Login works", "People can log in with email."))
-    check("only the ticked tasks became its subtasks, in To Do", t["kids"],
+    check("only the tasks sent by their row button became its subtasks, in To Do", t["kids"],
           [["Make the users table", "c1", ""], ["Idea one", "c1", "From Claude."]])
     check("the milestone remembers its card", t["msCard"])
     check("sent rows show their column and lock their tick box", [(r["chip"], r["tickOff"]) for r in t["rows"]],
@@ -451,8 +553,7 @@ def main():
     check("Send all counts subtasks too", s["sendAll"], "Send all (4)")
     check("Escape closes the subtask box", res["subEsc"])
     s = res["subTicked"]
-    check("a ticked subtask brings its task along", s["label"], "Send ticked (2)")
-    check("the task goes under the milestone card, the subtask under the task's card",
+    check("a subtask's Send brings its task along: the task goes under the milestone card, the subtask under the task's card",
           (s["kids"], s["aKids"], s["sendAll"]), (["Parent A"], [["A2", "c1"]], "Send all (2)"))
     s = res["subAll"]
     check("Send all sends the rest of the subtasks under their task", (s["kids"], s["aKids"], s["sendAllOff"]),
@@ -483,6 +584,59 @@ def main():
           {"view": "board", "overlay": "none", "list": False})
     check("closing Plan goes back to the list with its empty task pane", res["back_list"],
           {"view": "list", "overlay": "flex", "list": True})
+    check("the header says Roadmap", res["words"], {"header": "Roadmap"})
+
+    def st(done=False, box=False, off=False, line=False, send=True, chip=""):
+        return {"done": done, "box": box, "off": off, "line": line, "send": send, "chip": chip}
+    done_st = st(done=True, box=True, line=True, send=False)
+    k = res["tickStart"]
+    check("no Send ticked button; Send all and the count start full", (k["noSendTicked"], k["all"], k["pr"]),
+          (True, "Send all (7)", ["0 of 5 done", "0%", "0%"]))
+    k1 = res["tickT1"]
+    check("ticking a task marks it done with a line through it, and no Send", k1["st"], done_st)
+    check("ticking makes no card", (k1["big"], k1["card"]), (k["big"], None))
+    check("ticking takes it out of Send all and counts it", (k1["all"], k1["pr"]), ("Send all (6)", ["1 of 5 done", "14%", "14%"]))
+    u = res["untickT1"]
+    check("unticking puts it all back", (u["st"], u["all"], u["pr"]), (st(), "Send all (7)", ["0 of 5 done", "0%", "0%"]))
+    s = res["tickSubs"]
+    check("ticking a task ticks its subtasks", (s["on"], s["onPr"]), ([True, True, True], ["1 of 5 done", "42%", "42%"]))
+    check("unticking a task unticks its subtasks", (s["off"], s["offPr"]), ([False, False, False], ["0 of 5 done", "0%", "0%"]))
+    check("unticking a subtask unticks its task, not the other subtask", s["s1Off"], [False, False, True])
+    check("ticking the last open subtask ticks its task", s["s1On"], [True, True, True])
+    s = res["tickAddSub"]
+    check("typing a subtask under a done task counts two more in Send all", (s["before"], s["typing"], s["stillDone"]),
+          ("Send all (4)", "Send all (6)", True))
+    check("adding a subtask under a done task unticks the task only", (s["after"], s["t2"], s["s1"]), ("Send all (6)", False, True))
+    s = res["tickSent"]
+    check("Send on a row makes its card and the milestone card; its box locks, empty", (s["noCard"], s["madeBig"], s["sent"]),
+          (True, 1, st(off=True, send=False, chip="To Do")))
+    check("a sent task's box follows its card into Done", s["inDone"], st(box=True, off=True, line=True, send=False, chip="Done"))
+    check("a click on that box changes nothing", s["clicked"], [True, "c4", False])
+    check("and follows it back out", s["back"], st(off=True, send=False, chip="To Do"))
+    s = res["tickGone"]
+    check("a deleted card opens the box and Send again", s["gone"], st(chip="Not on the board"))
+    check("ticking it then hides the chip and Send", s["ticked"], done_st)
+    check("a real click on a row's Send right after typing sends the edited title", res["tickPress"], {"title": "T4 edited", "parent": True})
+    check("a real click on a box right after typing in the add box adds the task and ticks", res["tickBoxPress"], {"t5": True, "t1": True, "box": ""})
+    s = res["tickIdea"]
+    check("ticking a suggested idea accepts it: chip and dashed edge go", (s["before"], s["after"], s["flag"]), ([True, "Suggested"], [False, ""], False))
+    s = res["tickCardDone"]
+    check("a card in Done with an open subtask: box ticked, 0/1 shown, not counted yet", (s["st"]["box"], s["st"]["line"], s["n"], s["open"] - s["start"]), (True, True, "0/1", 0))
+    check("its draft subtask can be ticked: then it counts, the card stays put", (s["subDone"], s["n2"], s["ticked"] - s["start"], s["col"]), (True, "1/1", 1, "c4"))
+    s = res["tickAll"]
+    check("all ticked: the left row shows done, Send all is off, the count is full", (s["cur"], s["allOff"], s["pr"]), (True, True, ["6 of 6 done", "100%", "100%"]))
+    check("Hide done milestones hides it", s["hidden"])
+    check("the server's copy holds the ticks", res["tickSaved"],
+          {"T1": True, "T2": True, "S1": True, "S2": True, "S3": True, "T3": True, "T4 edited": None, "U1": True, "Idea": True, "T5": True})
+    s = res["tickReload"]
+    check("ticks stay after a reload", (s["ready"], s["t1"], s["t2"], s["s1"], s["t3"], s["pr"]),
+          (True, done_st, done_st, done_st, done_st, ["6 of 6 done", "100%", "100%"]))
+    check("nothing spills off a row with a long name and a Send button", res["rowFit"], 0)
+    f = res["fr"]
+    check("in French the button says Feuille de route, a row's button Envoyer", (f["ready"], f["name"], f["send"]), (True, "Feuille de route", "Envoyer"))
+    check("in French the header still fits at 1280 wide, on one line", (f["overflow"], f["off"], f["tops"]), (False, 0, 1))
+    check("in French nothing spills off a row", f["rows"], 0)
+    check("in French a busy board's header still fits at 1280 wide", res["frBusy"]["roadmap"], {"over": 0, "off": 0})
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0
