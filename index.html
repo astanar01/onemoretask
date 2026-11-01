@@ -4181,13 +4181,14 @@ function fmtMsg(text) {
 }
 // A plan card's live pane (report.py plan, GET /api/plan): phase, goal tree, files, lookups, documents. One element,
 // moved between Conversation (beside the chat) and the Plan tab, which also reads the documents.
-let cpData = null, cpFor = null, cpBusy = false, cpDoc = "", cpSeen = {}, cpFresh = {};
+let cpData = null, cpFor = null, cpBusy = false, cpDoc = "", cpSeen = Object.create(null), cpFresh = Object.create(null);
 const CP_PHASES = ["explore", "draft", "review", "ready"];
 const cpPhaseName = (x) => ({ explore: window.t("Explore"), draft: window.t("Draft"), review: window.t("Review"), ready: window.t("Ready") })[x];
 const cpKindName = (x) => ({ goal: window.t("Goal"), question: window.t("Question"), decision: window.t("Decision"), option: window.t("Option"), task: window.t("Task"), risk: window.t("Risk"), note: window.t("Note") })[x] || "";
-const cpReady = (t) => !!t.planMode && cpFor === t.id && !!cpData && (cpData.docs || []).some((d) => d.name === "plan.md");
+const cpReady = (t) => !!t.planMode && cpFor === t.id && !!cpData && cpData.phase === "ready" && (cpData.docs || []).some((d) => d.name === "plan.md" && d.text.trim());
 function cpBuild(t, act) {
   return act(window.t("Build this plan"), "primary", () => {
+    if (!cpReady(t)) return;
     const doc = cpData.docs.find((d) => d.name === "plan.md");
     if (!doc) return;
     const nt = withDelegateChoice(addTask(window.t("Build: {title}", { title: t.title }), firstOpenCol()));
@@ -4197,7 +4198,7 @@ function cpBuild(t, act) {
   }, { title: window.t("A new card starts with this plan as its brief") });
 }
 function cpOpen(t) {
-  if (cpFor !== t.id) { cpFor = t.id; cpData = null; cpDoc = ""; cpSeen = {}; cpFresh = {}; for (const el of [$("#d-cplan"), $("#d-cplan-doc")]) { el.innerHTML = ""; delete el.dataset.html; } }
+  if (cpFor !== t.id) { cpFor = t.id; cpData = null; cpDoc = ""; cpSeen = Object.create(null); cpFresh = Object.create(null); for (const el of [$("#d-cplan"), $("#d-cplan-doc")]) { el.innerHTML = ""; delete el.dataset.html; } }
   cpPlace();
   if (t.planMode && t.agent && !cpData) cpPoll();
 }
@@ -4225,13 +4226,13 @@ setInterval(() => document.hidden || cpPoll(), 2000);
 function cpDraw() {
   const box = $("#d-cplan"), d = cpData, t = openId && task(openId);
   if (!d || !t || box.hidden) return;
-  const nodes = d.nodes || [], byId = Object.fromEntries(nodes.map((n) => [n.id, n])), kids = {}, tops = [];
+  const nodes = d.nodes || [], byId = Object.fromEntries(nodes.map((n) => [n.id, n])), kids = Object.create(null), tops = [];
   // A node first seen, or changed, since the last draw flashes; the first draw of a card shows it all quietly.
   const first = !Object.keys(cpSeen).length, now = Date.now();
   nodes.forEach((n) => {
     if (!first && cpSeen[n.id] !== n.at) cpFresh[n.id] = now + 1600;
     cpSeen[n.id] = n.at;
-    if (n.parent && byId[n.parent]) (kids[n.parent] ||= []).push(n); else tops.push(n);
+    if (n.parent && Object.prototype.hasOwnProperty.call(byId, n.parent)) (kids[n.parent] ||= []).push(n); else tops.push(n);
   });
   const tree = (list) => `<ul${list === tops ? ' class="cp-tree"' : ""}>${list.map((n) => `<li class="cp-node k-${esc(n.kind)} s-${esc(n.status)}${cpFresh[n.id] > now ? " fresh" : ""}"><div class="cp-row"><span class="cp-mark"></span><span class="cp-label">${esc(n.label)}</span><span class="cp-kind">${esc(cpKindName(n.kind))}</span></div>${n.detail ? `<div class="cp-detail">${esc(n.detail)}</div>` : ""}${kids[n.id] ? tree(kids[n.id]) : ""}</li>`).join("")}</ul>`;
   const at = CP_PHASES.indexOf(d.phase);
