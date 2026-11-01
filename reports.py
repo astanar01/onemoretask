@@ -274,7 +274,7 @@ def decision_message(d):
     return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
 
 
-PLAN_PHASES = ("explore", "draft", "review", "ready")
+PLAN_PHASES = ("explore", "draft", "review", "ready", "tests", "code", "done")  # the last three are a Build card's
 PLAN_KINDS = ("goal", "question", "decision", "option", "task", "risk", "note")
 PLAN_STATUSES = ("open", "working", "decided", "done", "dropped")
 PLAN_DOS = ("look", "change", "add")
