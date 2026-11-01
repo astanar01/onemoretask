@@ -2472,6 +2472,8 @@ async function createFresh() {
     const nt = withDelegateChoice(addTask(res.title || "", firstOpenCol()));
     nt.tags = res.tags || [];
     nt.notes = text ? text + "\n\n" + (res.notes || "") : res.notes || "";
+    const old = task(id);   // spawn does not return buildOf: without it the new card loses the build order and the pane
+    if (cpIsBuild(old)) nt.buildOf = old.buildOf;
     // The old session's model, preselected on this card only (like an answer-only pick) when the picker offers it.
     if (res.model && [...$("#d-model").options].some((o) => o.value === res.model)) answerPick[nt.id] = res.model;
     if (res.effort && [...$("#d-effort").options].some((o) => o.value === res.effort)) effortPick[nt.id] = res.effort;
@@ -4194,8 +4196,11 @@ function fmtMsg(text) {
 // A plan card's live pane in Conversation (report.py plan, GET /api/plan): phase, goal tree, files, lookups, documents.
 // cpDoc: the document read in the pane, "" for none, null until the user picks (a finished plan then opens plan.md).
 let cpData = null, cpFor = null, cpBusy = false, cpDoc = null, cpSeen = Object.create(null), cpFresh = Object.create(null);
-const CP_PHASES = ["explore", "draft", "review", "ready"];
-const cpPhaseName = (x) => ({ explore: window.t("Explore"), draft: window.t("Draft"), review: window.t("Review"), ready: window.t("Ready") })[x];
+const CP_PHASES = ["explore", "draft", "review", "ready"], CP_BUILD_PHASES = ["tests", "code", "done"];
+// Same rule as server.build_source: Answer only (always on with Plan first) wins over buildOf.
+const cpIsBuild = (t) => !!t && !!t.buildOf && !t.answerOnly;
+const cpCard = (t) => !!t && (!!t.planMode || cpIsBuild(t));
+const cpPhaseName = (x) => ({ explore: window.t("Explore"), draft: window.t("Draft"), review: window.t("Review"), ready: window.t("Ready"), tests: window.t("Tests"), code: window.t("Code"), done: window.t("Done") })[x];
 const cpKindName = (x) => ({ goal: window.t("Goal"), question: window.t("Question"), decision: window.t("Decision"), option: window.t("Option"), task: window.t("Task"), risk: window.t("Risk"), note: window.t("Note") })[x] || "";
 const cpDocOpen = (d) => cpDoc !== null ? cpDoc : d.phase === "ready" ? "plan.md" : "";
 const cpReady = (t) => !!t.planMode && cpFor === t.id && !!cpData && cpData.phase === "ready" && (cpData.docs || []).some((d) => d.name === "plan.md" && d.text.trim());
@@ -4207,23 +4212,24 @@ function cpBuild(t, act) {
     const nt = withDelegateChoice(addTask(window.t("Build: {title}", { title: t.title }), firstOpenCol()));
     nt.tags = [...(t.tags || [])];
     nt.notes = `Build what the plan card "${t.title}" (${t.id}) worked out. Its other documents are in ${cpData.dir}\n\n${doc.text}`;
+    nt.buildOf = t.id;
     touch(nt); moveToDone(t.id); openDetail(nt.id);
   }, { title: window.t("A new card starts with this plan as its brief, and this card moves to done") });
 }
 function cpOpen(t) {
   if (cpFor !== t.id) { cpFor = t.id; cpData = null; cpDoc = null; cpSeen = Object.create(null); cpFresh = Object.create(null); const el = $("#d-cplan"); el.innerHTML = ""; delete el.dataset.html; }
   cpPlace();
-  if (t.planMode && t.agent && !cpData) cpPoll();
+  if (cpCard(t) && t.agent && !cpData) cpPoll();
 }
 function cpPlace() {
-  const t = openId && task(openId), box = $("#d-cplan"), on = !!(t && t.planMode && t.agent);
+  const t = openId && task(openId), box = $("#d-cplan"), on = !!(cpCard(t) && t.agent);
   box.hidden = !on || mainTab !== "conversation";
   $("#d-tab-conversation").classList.toggle("with-plan", on);
   if (on) cpDraw();
 }
 async function cpPoll() {
   const t = openId && task(openId);
-  if (!useServer || !t || !t.planMode || !t.agent || cpBusy) return;
+  if (!useServer || !cpCard(t) || !t.agent || cpBusy) return;
   cpBusy = true;
   try {
     const sig = cpFor === t.id && cpData ? cpData.sig : "";
@@ -4248,16 +4254,17 @@ function cpDraw() {
     if (n.parent && Object.prototype.hasOwnProperty.call(byId, n.parent)) (kids[n.parent] ||= []).push(n); else tops.push(n);
   });
   const tree = (list) => `<ul${list === tops ? ' class="cp-tree"' : ""}>${list.map((n) => `<li class="cp-node k-${esc(n.kind)} s-${esc(n.status)}${cpFresh[n.id] > now ? " fresh" : ""}"><div class="cp-row"><span class="cp-mark"></span><span class="cp-label">${esc(n.label)}</span><span class="cp-kind">${esc(cpKindName(n.kind))}</span></div>${n.detail ? `<div class="cp-detail">${esc(n.detail)}</div>` : ""}${kids[n.id] ? tree(kids[n.id]) : ""}</li>`).join("")}</ul>`;
-  const at = CP_PHASES.indexOf(d.phase);
-  const steps = `<div class="cp-steps">${CP_PHASES.map((x, i) => `<span class="cp-step${i === at ? " now" : i < at ? " past" : ""}">${esc(cpPhaseName(x))}</span>`).join("")}</div>`;
+  const building = cpIsBuild(t), phases = building ? CP_BUILD_PHASES : CP_PHASES, at = phases.indexOf(d.phase);
+  const steps = `<div class="cp-steps">${phases.map((x, i) => `<span class="cp-step${i === at ? " now" : i < at ? " past" : ""}">${esc(cpPhaseName(x))}</span>`).join("")}</div>`;
   const group = (title, rows) => rows.length ? `<div class="cp-h">${title}</div><ul class="cp-files">${rows.map((f) => `<li><code>${esc(f.path)}</code>${f.why ? ` <span>${esc(f.why)}</span>` : ""}</li>`).join("")}</ul>` : "";
   const files = d.files || [], of = (x) => files.filter((f) => f.do === x);
   const docs = d.docs || [];
   const doc = docs.find((x) => x.name === cpDocOpen(d));
   const lookName = { map: window.t("Code map"), read: window.t("Read"), search: window.t("Search") };
   const looked = d.lookups || [];
-  const empty = !nodes.length && !d.goal && !files.length && !docs.length && !looked.length;
-  const html = steps + (empty ? `<div class="cp-empty">${window.t("{who} draws the plan here as it learns.", { who: who(t) })}</div>` : "")
+  // A Build card has the plan's documents and lookups from the start, so only its list counts.
+  const empty = !nodes.length && !d.goal && (building || (!files.length && !docs.length && !looked.length));
+  const html = steps + (empty ? `<div class="cp-empty">${building ? window.t("{who} shows the task list here as it works.", { who: who(t) }) : window.t("{who} draws the plan here as it learns.", { who: who(t) })}</div>` : "")
     + (d.goal ? `<div class="cp-goal">${esc(d.goal)}</div>` : "")
     + (docs.length ? `<div class="cp-h">${window.t("Documents")}</div><div class="cp-docs">${docs.map((x) => `<button type="button" class="cp-doc${doc === x ? " on" : ""}" data-doc="${esc(x.name)}">${esc(x.name)}</button>`).join("")}</div>` : "")
     + (doc ? `<div class="cp-read md">${fmtMsg(doc.text)}</div>` : "")

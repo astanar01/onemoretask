@@ -397,7 +397,7 @@ check("the new card holds the whole plan", "Add the switch in the menu" in b["no
 check("the new card may change things", not b["plan"] and not b["answer"], b)
 check("the new card keeps the tags", b["tags"] == ["ui"], b["tags"])
 check("a finished plan card opens on its plan", o["reopen"]["tab"] == "conversation" and o["reopen"]["shown"] and "Add the switch" in (o["reopen"]["read"] or ""), o["reopen"])
-check("S28 Build this plan makes a card whose buildOf is the plan card's id", b["buildOf"] == "p1", b)
+check("S28 Build this plan makes a card whose buildOf is the plan card's id", b.get("buildOf") == "p1", b)
 bl, be, br = o["buildList"], o["buildEmpty"], o["buildReady"]
 check("S29 a sent Build card shows the steps Tests, Code, Done", bl["shown"] and bl["steps"] == ["Tests", "Code", "Done"] and bl["now"] == "Tests", bl)
 looks = (bl["done"], bl["working"], bl["open"])

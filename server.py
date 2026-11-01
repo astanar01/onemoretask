@@ -38,12 +38,14 @@ resumes such a session repeats the rule (delegate_reminder), since the brief is 
 files or committing.
 
 A task ticked "Plan first" (task field `planMode`, always with `answerOnly`, so all of that card's locks apply) gets
-plan_lines instead: explore the idea with the user and write brief, design and plan documents in
+plan_lines instead: explore the idea with the user and write brief, spec and plan documents in
 <board>/plans/<task>/ (the only place branch_guard lets it write), checked by fresh reviewers who see only the document.
 It feeds the card's live pane with `report.py plan` (reports.merge_plan, <board>/agent_reports/<task>.plan.json). The
 page asks GET /api/plan every 2 s while the card is open (plan_view: state, documents, the latest code lookups from the
 transcript), kept apart from /api/agents so a chatty session does not resend every card log. "Build this plan" on the
-card makes a new card from plan.md, in the page.
+card makes a new card from plan.md, in the page, with `buildOf` set to the plan card's id. That Build card (build_source:
+`buildOf` set, neither Answer only nor Plan first) gets build_lines: tests from the spec, see them fail, then code until
+all pass, ticking its task list in the same pane, which shows its own nodes and the plan card's documents.
 
 A task ticked "Use a worktree" (task field `worktree`, on by default: a missing key counts as on; never for "Answer
 only") gets its own git worktree at launch: launch makes
@@ -573,6 +575,9 @@ def build_prompt(p, state, t, wt=None, model=""):
         lines += ["", *plan_lines(report, reports.plan_dir(p.board, t["id"]), codex.is_model(model))]
     elif answer_only:
         lines += ["", *answer_only_lines(report)]
+    plan_id = build_source(t)
+    if plan_id:
+        lines += ["", *build_lines(report, reports.plan_dir(p.board, plan_id), plan_id)]
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only, codex.is_model(model))]
     wt = None if answer_only else wt
@@ -645,7 +650,7 @@ def plan_lines(report, folder, on_codex=False):
             f"the JSON in $TMPDIR with the Write tool; a short update with no quote in it can go inline as "
             f"`{report} plan '<json>'`). Send only what changed, and send it early and often: as soon as you learn "
             "something, not at the end of a phase. It alerts nobody and stays out of the conversation. The JSON:",
-            '{"goal": "the goal in one line", "phase": "explore|draft|review|ready",',
+            '{"goal": "the goal in one line", "phase": "explore|draft|review|ready",',  # tests|code|done are a Build card's
             ' "nodes": [{"id": "q1", "parent": "g1", "kind": "goal|question|decision|option|task|risk|note", "label": '
             '"short", "status": "open|working|decided|done|dropped", "detail": "one or two lines"}],',
             ' "files": [{"path": "repo/relative/path.py", "do": "look|change|add", "why": "short"}],',
@@ -671,22 +676,79 @@ def plan_lines(report, folder, on_codex=False):
             "through `question` reports with options, a few at a time, and redraw the tree from each answer. "
             f"Never ask what the code already answers. Save the agreed direction in `{folder}/brief.md`: goal, what "
             "is out of scope, constraints, the options weighed, the choice and why.",
-            f"2. **draft**: write `{folder}/design.md` from the brief, one section at a time: how it works, what "
-            "changes in which file, the data, the edge cases, how it will be tested. Ask the user only about real "
-            "trade-offs.",
+            f"2. **draft**: write `{folder}/spec.md` from the brief, one section at a time. Number every point the "
+            "finished work must meet (S1, S2, ...): one thing a person can check, in plain sentences. Give each point "
+            "its check: `test` (say unit or integration), `picture` or `real run`. Use `test` whenever a test can "
+            "prove it. Then: how it works, what changes in which file, the data, the edge cases. Ask the user only "
+            "about real trade-offs.",
             f"3. **review**: you know too much to see the holes, so start fresh reviewers with {fresh}, with no history "
             "of this chat. Give each ONLY the document's path and what to look for. Run at least two: one asks \"could "
             "someone build this from the document alone? what is missing, unclear or assumed?\"; one checks every "
-            "file, function and claim in it against the real code (naming the same code map tools). Have them "
+            "file, function and claim in it against the real code (naming the same code map tools). Also have one "
+            "ask: can each point be proven by its check, and is each point one thing? Have them "
             f"report as text; you save the findings in `{folder}/review.md` and post them as `risk` nodes. Fix what "
             "is clear, ask the user about trade-offs, then re-run a reviewer once if you changed a lot. Never "
             "review it yourself instead: if you cannot start a fresh reviewer, say so on the card.",
             f"4. **ready**: write `{folder}/plan.md`, which a new session can follow with no other context. It opens "
             "with `## Context`, all you gathered: the files to read first and why (every `look` file), the rules and "
             "conventions to keep, the past decisions and mistakes that matter, how to run and test, what was ruled "
-            "out and the choices the user made. Then the ordered steps: for each step the files, the change and the "
-            "test that proves it. Set the phase to ready, then post "
+            "out and the choices the user made. Then `## Tasks`: the Implementation Task List, ordered `T1`, `T2`, ... "
+            "Each task gives the files, the change and the spec points it meets. The Build card writes the tests from "
+            "the spec before any code, so write no test code here. Set the phase to ready, then post "
             "`done` with the plan's outline and the choices the user made. Mention \"Build this plan\"."]
+
+
+def build_source(t):
+    """The plan card a Build card builds, or None. The field comes from the page, so it may be anything."""
+    v = t.get("buildOf")
+    if not isinstance(v, str) or t.get("answerOnly") or t.get("planMode"):
+        return None
+    try:
+        reports.plan_dir("", v)  # checks the id; only joins paths, so no board is needed
+    except ValueError:
+        return None
+    return v
+
+
+def build_lines(report, folder, plan_id):
+    return [f"Build mode: this card builds the plan of card {plan_id}. Its spec is `{folder}/spec.md`, the other "
+            "documents sit beside it, and the plan is in your notes. If there is no spec.md, use design.md; if neither "
+            "has numbered points, treat each step of the plan as a point whose check is `test`, unless a test cannot "
+            f"prove it. If your notes are a recap, the plan is `{folder}/plan.md`: post the list with finished tasks "
+            "already `done` and carry on from there. If you have no plan at all, stop and ask with a `question` report. "
+            "Work in this order:",
+            "1. Start: run the tests near this work. Post what fails already in a `progress` report: those failures are "
+            "not yours, unless a spec point needs them fixed. Post the task list to this card's pane: write the JSON in "
+            f"$TMPDIR with the Write tool, then `{report} plan --file <update.json>`: "
+            '{"goal": "...", "phase": "tests", "nodes": [{"id": "T1", "kind": "task", "label": "...", "status": "open"}]}.',
+            "2. Tests: for each spec point whose check is `test`, write its unit or integration test and put the point's "
+            "number in its name. Write no production code yet. Run them. Each must fail because the behaviour is missing: "
+            "fix a test that fails from a typo or bad setup. A test that passes at once: if the behaviour is really there "
+            "already, keep it and say so on the card; if not, rewrite it so it can fail. If a point needs a test tool the "
+            "project does not have, ask with a `question` report. In a worktree, commit the tests alone. With no worktree, "
+            "do not commit failing tests to the shared branch: commit them with the code at the end. Outside a git "
+            "repository, commit nothing. Post a `progress` saying how many fail. One test per point here outranks any "
+            "\"fewest tests\" rule, on this card only.",
+            "3. Code: set phase `code`. Do the tasks in order, setting each node `working` then `done`. Write the "
+            "production code and run the tests until all of step 2's tests and the tests that cover the changed code "
+            "pass. Never weaken, skip or delete a spec test to get there: if one is wrong, say why on the card first. If "
+            "the same failure survives 3 tries, ask with a `question` report.",
+            "4. Other checks: do each `picture` and `real run` point and attach pictures with --image. If one fails, go "
+            "back to step 3, under the same 3 tries.",
+            "5. Finish: set phase `done` once every point passes or the user has agreed to leave it. Your `done` report "
+            "lists each spec point and how it was checked. If a later reply asks for more, set phase `code` again.",
+            "Subagents may do tasks, in this same order: tests before code."]
+
+
+def build_reminder(p, t):
+    """Appended to a reply on a Build card: a session started again from a recap has only this, not build_lines."""
+    plan_id = build_source(t)
+    return (f"Reminder: this is a Build card for plan card {plan_id}. Spec: `{reports.plan_dir(p.board, plan_id)}/spec.md`. "
+            "Order: tests from the spec with no production code, see them fail, then code until all pass, then the "
+            "picture and real-run checks. Never weaken a spec test to get green. If you lost your place, your phase and "
+            f"ticked tasks are in `{reports.plan_path(p.board, t['id'])}`, and the tests you already wrote are in the code. "
+            f"Keep the pane current with `{report_cmd(p, t['id'])} plan --file <update.json>`, with the JSON in $TMPDIR. "
+            "If a reply asks for more after phase `done`, set phase `code`.")
 
 
 def plan_reminder(p, t):
@@ -695,7 +757,7 @@ def plan_reminder(p, t):
     return (f"Reminder: this is a plan card. Change no project file: Markdown documents only, in "
             f"`{reports.plan_dir(p.board, t['id'])}`. Keep the card's live pane current with `{report} plan --file "
             f"<update.json>` (the report script with no arguments prints the JSON it takes). The final document is "
-            "plan.md, opening with `## Context`: all the next session needs to know; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
+            "plan.md, opening with `## Context`: all the next session needs to know, then `## Tasks`; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
 
 
 # Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.
@@ -2277,18 +2339,21 @@ def plan_lookups(session_id):
 
 
 def plan_view(p, task_id, sig=""):
-    """What a plan card's pane draws: the live state, the documents and the latest lookups, or {"same": True} when
-    nothing changed since the page's `sig`, because an open card asks every 2 s."""
+    """What a plan or Build card's pane draws: the live state, the documents and the latest lookups, or {"same": True}
+    when nothing changed since the page's `sig`, because an open card asks every 2 s. A Build card has its own state
+    and its plan card's documents."""
     t = _find_task(p, task_id)
-    if not t.get("planMode"):
+    plan_id = build_source(t)
+    if not t.get("planMode") and not plan_id:
         raise LookupError("this task is not a plan card")
+    docs_id = task_id if t.get("planMode") else plan_id
     session = (WATCH.snapshot(p.id).get(task_id) or {}).get("sessionId")
     try:
         looked = plan_lookups(session)
     except OSError:
         looked = []
-    plan, docs = reports.read_plan(p.board, task_id), reports.plan_docs(p.board, task_id)
-    out = {**plan, "docs": docs, "lookups": looked, "dir": reports.plan_dir(p.board, task_id)}
+    plan, docs = reports.read_plan(p.board, task_id), reports.plan_docs(p.board, docs_id)
+    out = {**plan, "docs": docs, "lookups": looked, "dir": reports.plan_dir(p.board, docs_id)}
     now = hashlib.sha1(json.dumps(out, sort_keys=True).encode()).hexdigest()
     return {"same": True} if now == sig else {**out, "sig": now}
 
@@ -3095,6 +3160,8 @@ def board_tail(p, task_id):
         extra += "\n\n" + plan_reminder(p, t)
     elif t and t.get("answerOnly"):
         extra += "\n\n" + ANSWER_ONLY_WORK
+    elif t and build_source(t):
+        extra += "\n\n" + build_reminder(p, t)
     # Every reply restates the setting: it may have been switched since the session's first brief.
     # False (not missing) means the user switched it off, so a session briefed with it on stops.
     if simple_words(state):

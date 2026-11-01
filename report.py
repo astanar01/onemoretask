@@ -20,7 +20,7 @@ Posting a decision again with the same "query" replaces the earlier one (an open
     python3 report.py [--board DIR] <task_id> plan -   < update.json   (or a JSON string, or --file <path>)
 
 A plan update feeds a plan card's live pane. Send only what changed; a known id or path keeps the fields left out:
-{"goal": "...", "phase": "explore|draft|review|ready",
+{"goal": "...", "phase": "explore|draft|review|ready|tests|code|done",
  "nodes": [{"id": "q1", "parent": "g1", "kind": "goal|question|decision|option|task|risk|note", "label": "...",
             "status": "open|working|decided|done|dropped", "detail": "..."}],
  "files": [{"path": "server.py", "do": "look|change|add", "why": "..."}], "drop": ["node id"], "drop_files": ["path"]}
