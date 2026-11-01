@@ -2933,8 +2933,9 @@ class Watcher:
                 spent = tokens(paths) if paths is not None else None
             except OSError:
                 spent = None
+            # A finished card keeps the rows it had: reading every old chat after a board restart cost 6 s (4 GB).
             try:
-                uses = mcp_uses(paths or [])
+                uses = (old.get(key) or {}).get("mcp_uses") or [] if closed and not s else mcp_uses(paths or [])
             except OSError:
                 uses = []
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.

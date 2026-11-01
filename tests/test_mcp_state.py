@@ -301,5 +301,40 @@ check(rows.get("u9", {}).get("state") == "done", "the state moves to done after 
 check(rev is not None and server.WATCH.revs.get((p.id, "t1")) > rev, "the change count moves, so the page redraws",
       (rev, server.WATCH.revs.get((p.id, "t1"))))
 
+# ---- a finished card: never read after a restart, and it keeps the rows it had when it was moved to done
+def set_columns(**columns):
+    with open(p.data, encoding="utf-8") as f:
+        board = json.load(f)
+    for t_ in board["tasks"]:
+        t_["column"] = columns.get(t_["id"], t_["column"])
+    with open(p.data, "w", encoding="utf-8") as f:
+        json.dump(board, f)
+
+
+set_columns(t2="done")
+reads, real_calls = [], server._mcp_calls
+server._mcp_calls = lambda f: (reads.append(f), real_calls(f))[1]
+server.WATCH.poll()
+rec = server.WATCH.snapshot(p.id).get("t2") or {}
+check([r["id"] for r in rec.get("mcp_uses") or []] == ["r1"], "moved to done: the card keeps its rows", rec.get("mcp_uses"))
+check(removed not in reads, "moved to done: its chat is not read again", reads)
+server.WATCH.cache.clear()  # a board restart: nothing remembered
+server._mcp_use_memo.clear()
+reads.clear()
+server.WATCH.poll()
+rec = server.WATCH.snapshot(p.id).get("t2") or {}
+check(rec.get("mcp_uses") == [], "after a restart a finished card has no rows", rec.get("mcp_uses"))
+check(removed not in reads, "after a restart a finished card's chat is not read", reads)
+check(path in reads, "... while an open card's chat still is", reads)
+set_columns(t2="todo")
+server.WATCH.poll()
+rec = server.WATCH.snapshot(p.id).get("t2") or {}
+check([r["id"] for r in rec.get("mcp_uses") or []] == ["r1"], "reopened: the rows come back", rec.get("mcp_uses"))
+set_columns(t1="done")
+reads.clear()
+server.WATCH.poll()
+check(path in reads, "a finished card whose session is still there is still read", reads)
+server._mcp_calls = real_calls
+
 print("ALL OK" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)
