@@ -2649,8 +2649,8 @@ function renderAgent(t) {
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   logShown = shown;
   const groups = mcpGroups(shown, (ag && ag.mcp_uses) || [], start > 0);
-  const lastG = groups.map((g) => g.length > 0).lastIndexOf(true);
-  $("#d-log").innerHTML = shown.map((e, i) => usesLine(groups[i], ag, i === lastG) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG);
+  const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
+  $("#d-log").innerHTML = shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
@@ -2706,11 +2706,16 @@ function mcpGroups(shown, uses, cut) {
 }
 // The groups the user opened, by their first row's id: the poll rebuilds the list, and they must stay open.
 const usesOpen = new Set();
-// One small line for a run of MCP uses; click it to see each one. Only the newest group can be live, so a use left open
-// by a killed session never spins in an old group after a resume: it reads "no answer", true of a slow use too.
-function usesLine(rows, ag, newest) {
+// When the session's current run began: the newest launch or reply. A note joins the run already going.
+function mcpRunStart(shown) {
+  const starts = shown.filter((e) => (e.from === "you" || e.from === "board") && e.status !== "note").map((e) => Date.parse(e.at) / 1000);
+  return Math.max(0, ...starts.filter(Number.isFinite));
+}
+// One small line for a run of MCP uses; click it to see each one. Only a use in the newest group and the current run can
+// be live, so one left open by a killed session never spins after a resume: it reads "no answer", true of a slow use too.
+function usesLine(rows, ag, newest, runAt) {
   if (!rows.length) return "";
-  const live = (r) => r.state === "open" && newest && (ag.phase === "working" || ag.phase === "needs_you");
+  const live = (r) => r.state === "open" && newest && r.at >= runAt && (ag.phase === "working" || ag.phase === "needs_you");
   const n = rows.length;
   const head = ag.phase === "working" && rows.some(live) ? `${turning(14)} ${esc(window.t("Using MCP tools ({n} so far)…", { n }))}`
     : esc(n === 1 ? window.t("Used 1 MCP tool") : window.t("Used {n} MCP tools", { n }));

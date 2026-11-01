@@ -40,6 +40,10 @@ def msg(minute, text="A message"):
     return {"from": "claude", "status": "progress", "at": iso(minute), "message": text}
 
 
+def you(minute, status="reply"):
+    return {"from": "you", "status": status, "at": iso(minute), "message": "From you"}
+
+
 def row(rid, minute, state="done", what="what it looked for", sub=False, server="muninn", tool="muninn_recall"):
     return {"id": rid, "server": server, "tool": tool, "what": what, "at": at(minute), "state": state, "sub": sub}
 
@@ -53,6 +57,12 @@ CARDS = {
     "short": ("finished", [msg(10)], [row("s1", 1), row("s2", 2)], {}),
     "live": ("working", [msg(10)], [row("l1", 1, "open"), row("l2", 11, "open")], {}),
     "waits": ("needs_you", [msg(10)], [row("w1", 11, "open")], {"reason": "Asks something"}),
+    # An unanswered use from a run that stopped, then a reply starts a new run that has used no tool yet.
+    "again": ("working", [msg(0), you(10)], [row("a1", 5, "open")], {}),
+    # The same use with no new run: a report or a note while it runs does not make it old.
+    "report": ("working", [you(0), msg(10)], [row("r1", 5, "open")], {}),
+    "noted": ("working", [you(0), you(10, "note")], [row("n1", 5, "open")], {}),
+    "newrun": ("working", [msg(0), you(10)], [row("b1", 5, "open"), row("b2", 11, "open")], {}),
     "marks": ("finished", [msg(0)], [row("m1", 1, "failed"), row("m2", 2, sub=True)], {}),
     "evil": ("finished", [msg(0)], [row("e1", 1, what="<img src=x onerror=window.__xss=1>",
                                         server="<b>srv</b>", tool="<i>tool</i>")], {}),
@@ -292,6 +302,17 @@ def main():
     waits = uses(c["waits"])
     check("needs you: reads running, no spinner, says Used",
           (waits[0]["spin"], waits[0]["uses"], "running" in waits[0]["rows"][0]["text"]), (False, "Used 1 MCP tool", True))
+    a = uses(c["again"])[0]
+    check("a new run with no tool yet: the old open row does not spin and reads no answer",
+          (a["spin"], a["uses"], "no answer" in a["rows"][0]["text"], "running" in a["rows"][0]["text"]),
+          (False, "Used 1 MCP tool", True, False))
+    for name in ("report", "noted"):
+        x = uses(c[name])[0]
+        check(f"same run, then {name}: the open row still spins",
+              (x["spin"], x["uses"], "running" in x["rows"][0]["text"]), (True, "Using MCP tools (1 so far)…", True))
+    n = uses(c["newrun"])
+    check("a new run's own open row spins, the old one does not",
+          [(x["spin"], "no answer" in x["rows"][0]["text"]) for x in n], [(False, True), (True, False)])
     m = uses(c["marks"])[0]["rows"]
     check("a failed row reads did not work", (m[0]["failed"], "did not work" in m[0]["text"]), (True, True))
     check("a done row has no mark", ("did not work" in m[1]["text"], m[1]["failed"]), (False, False))
