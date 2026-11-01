@@ -638,7 +638,6 @@ const I18N = {
     "Checking which project this task is for…": "Vérification du projet de cette tâche…",
     "The board switched project, so the task was not sent": "Le tableau a changé de projet, la tâche n’a donc pas été envoyée",
     "Drag to resize, double-click to reset": "Glisser pour redimensionner, double-cliquer pour réinitialiser",
-    "Plan": "Plan",
     "Roadmap": "Feuille de route",
     "Your milestones and their tasks. Tick them off, or send them to the board": "Vos étapes et leurs tâches. Cochez-les, ou envoyez-les au tableau",
     "Milestone from the Roadmap": "Étape de la feuille de route",

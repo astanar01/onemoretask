@@ -329,7 +329,7 @@ const hit = b && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2
   out['back_' + lay] = await ev(`({ view, overlay: getComputedStyle(document.querySelector('#overlay')).display, list: document.querySelector('#board').classList.contains('list') })`);
 }
 out.words = await ev(`if (view === 'plan') ${planBtn}.click();
-({ header: document.querySelector('#plan-btn .t').textContent, tab: document.querySelector('#d-plan-tab').textContent })`);
+({ header: document.querySelector('#plan-btn .t').textContent })`);
 // The box means done: T1, T2 with S1 and S2, T3, T4 and a suggested idea.
 const TICK = `window.__tm = () => state.milestones.find((m) => m.title === 'Tick test');
 window.__d = (title) => planRows(__tm()).find((r) => r.d.title === title).d;
@@ -584,7 +584,7 @@ def main():
           {"view": "board", "overlay": "none", "list": False})
     check("closing Plan goes back to the list with its empty task pane", res["back_list"],
           {"view": "list", "overlay": "flex", "list": True})
-    check("the header says Roadmap, the card's tab still says Plan", res["words"], {"header": "Roadmap", "tab": "Plan"})
+    check("the header says Roadmap", res["words"], {"header": "Roadmap"})
 
     def st(done=False, box=False, off=False, line=False, send=True, chip=""):
         return {"done": done, "box": box, "off": off, "line": line, "send": send, "chip": chip}
