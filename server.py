@@ -2242,8 +2242,8 @@ def _mcp_calls(path):
             chunk = f.read(size - memo[0])
         end = chunk.rfind(b"\n") + 1  # a half-written last line is read next time
         for line in chunk[:end].splitlines():
-            if b'"mcp__' not in line and not (waiting and b'"tool_result"' in line
-                                              and any(i.encode() in line for i in waiting)):
+            if not (b'"mcp__' in line and b'"tool_use"' in line) and not (
+                    waiting and b'"tool_result"' in line and any(i.encode() in line for i in waiting)):
                 continue
             try:
                 e = json.loads(line)
