@@ -332,6 +332,8 @@ const hit = b && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2
   await ev(`${planBtn}.click(); true`);
   out['back_' + lay] = await ev(`({ view, overlay: getComputedStyle(document.querySelector('#overlay')).display, list: document.querySelector('#board').classList.contains('list') })`);
 }
+out.words = await ev(`if (view === 'plan') ${planBtn}.click();
+({ header: document.querySelector('#plan-btn .t').textContent, tab: document.querySelector('#d-plan-tab').textContent })`);
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -483,6 +485,7 @@ def main():
           {"view": "board", "overlay": "none", "list": False})
     check("closing Plan goes back to the list with its empty task pane", res["back_list"],
           {"view": "list", "overlay": "flex", "list": True})
+    check("the header says Roadmap, the card's tab still says Plan", res["words"], {"header": "Roadmap", "tab": "Plan"})
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"\n{passes} passed, {fails} failed")
     return 1 if fails else 0
