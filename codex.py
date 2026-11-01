@@ -642,26 +642,62 @@ def context(log_path):
     return {"tokens": info["context"], "peak": info["peak"], "model": info["model"], "max": info["window"]}
 
 
-_mcp_seen = {}  # (log path, item id) -> when the board first saw the call open
+_MCP_WHAT_KEYS = ("query", "queries", "pattern", "name_pattern", "qualified_name", "function_name", "semantic_query",
+                  "context", "concept", "intent", "path", "file_path", "repo_path", "url", "code", "id")
+_MCP_WHAT_SKIP = ("project", "mode", "language")
+MCP_WHAT_MAX = 120
 
 
-def mcp_state(log_path):
-    """The MCP calls the last turn waits on, in server.mcp_state's shape, or None. `codex exec --json` writes no
-    event while it connects to its servers, so only calls show; their events carry no time, so `since` is when
-    the board first saw the call."""
-    calls = {}
-    for e in _last_turn(log_path):
+def mcp_what(args):
+    """What an MCP call looked for, in one short line, from its arguments; "" when nothing fits. Lives here because
+    server.py imports this module and not the reverse."""
+    if not isinstance(args, dict):
+        return ""
+    value = next((args[k] for k in _MCP_WHAT_KEYS if args.get(k)), None)
+    if value is None:
+        value = next((v for k, v in args.items() if k not in _MCP_WHAT_SKIP and v and isinstance(v, str)), "")
+    text = ", ".join(str(x) for x in value) if isinstance(value, (list, tuple)) else str(value)
+    text = " ".join(text.split())
+    return text[:MCP_WHAT_MAX - 1] + "…" if len(text) > MCP_WHAT_MAX else text
+
+
+_mcp_seen = {}  # (log path, turn, item id) -> the time a call is shown at (its events carry none)
+_mcp_logs_read = set()  # logs read since the board started: on the first read their calls get the log's write time
+_mcp_use_memo = {}  # log path -> ((mtime, size), rows)
+
+
+def mcp_uses(log_path):
+    """Each MCP call in a Codex log, oldest first, in server.mcp_uses's row shape. Item ids start again each turn, so
+    the turn is part of a row's id. A call first seen live gets a time within one pass; calls from before a board
+    restart all get the log's last write time."""
+    try:
+        st = os.stat(log_path)
+    except OSError:
+        return []
+    memo = _mcp_use_memo.get(log_path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return [dict(r) for r in memo[1]]
+    now = st.st_mtime if log_path not in _mcp_logs_read else time.time()
+    _mcp_logs_read.add(log_path)
+    rows, turn, name = {}, 0, os.path.basename(log_path)
+    for e in _events(log_path):
+        if e.get("type") == "turn.started":
+            turn += 1
         item = e.get("item")
-        if not isinstance(item, dict) or item.get("type") != "mcp_tool_call":
+        if e.get("type") not in ("item.started", "item.completed") or not isinstance(item, dict) \
+                or item.get("type") != "mcp_tool_call":
             continue
-        key = (log_path, item.get("id"))
-        if e.get("type") == "item.started":
-            calls[key] = {"server": str(item.get("server") or ""), "tool": str(item.get("tool") or ""),
-                          "since": _mcp_seen.setdefault(key, time.time())}
-        elif e.get("type") == "item.completed":
-            calls.pop(key, None)
-            _mcp_seen.pop(key, None)
-    return {"connecting": [], "failed": [], "calls": list(calls.values())} if calls else None
+        key = (log_path, turn, item.get("id"))
+        row = rows.get(key)
+        if not row:
+            row = rows[key] = {"id": f"{name}:{turn}:{item.get('id')}", "server": str(item.get("server") or ""),
+                               "tool": str(item.get("tool") or ""), "what": mcp_what(item.get("arguments")),
+                               "at": _mcp_seen.setdefault(key, now), "state": "open", "sub": False}
+        if e.get("type") == "item.completed":
+            row["state"] = "done" if item.get("status") == "completed" else "failed"
+    found = list(rows.values())
+    _mcp_use_memo[log_path] = ((st.st_mtime, st.st_size), found)
+    return [dict(r) for r in found]
 
 
 def digest(log_path):

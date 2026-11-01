@@ -5,6 +5,7 @@
 - The Plan button is now called Roadmap, so it no longer looks like the Plan first tick on a card. On the Roadmap, tick a task to mark it done without sending it to the board. Each task now has its own Send button, in place of Send ticked.
 - New tick on a new card: "Plan first". Claude talks through your idea, asks you questions and writes a plan, and changes nothing in your project. While it works, you watch a tree of goals and choices grow beside the chat, with the list of files it found. When the plan is ready, "Build this plan" starts a new card that follows it, and the plan opens with all that card needs to know.
 - The plan now lives only in Conversation, with no extra Plan tab: press a document's name to read it right there, and the finished plan opens by itself. It always fits on the screen, and it no longer shows up on a new card or on another card. "Build this plan" also moves the plan's card to done.
+- Each card's chat now shows every time an outside helper tool was really used, with the time and what it looked for. Click the small "Used 5 MCP tools" line to see them. The line that listed all these helpers at the start is gone.
 
 ## 2026-10-31
 
