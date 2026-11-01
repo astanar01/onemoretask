@@ -232,10 +232,10 @@ this** button and fit check as on the board. **Create new task** at the top adds
 the search box at the top filters the list. Drag the list's edge to make it wider or narrower; double-click
 the edge to reset it. The board view is one click back in the same menu.
 
-### Plan milestones
+### Roadmap
 
-The **Plan** button at the top of the board opens a place to plan before anything reaches the board. It is a
-tool of its own, not a layout: click **Plan** again to go back to the board or list you came from. **New milestone** makes one:
+The **Roadmap** button at the top of the board opens a place to plan before anything reaches the board. It is a
+tool of its own, not a layout: click **Roadmap** again to go back to the board or list you came from. **New milestone** makes one:
 give it a name and say what should be true when it is done. Add its tasks one by one (type, then Enter), or
 click **Suggest tasks**: Claude (Sonnet, no tools) reads the milestone, the project's README and recent card
 titles, and adds a few dashed "Suggested" drafts. Edit them, open their notes with **≡**, remove them with
@@ -243,16 +243,19 @@ titles, and adds a few dashed "Suggested" drafts. Edit them, open their notes wi
 
 A task can have its own subtasks: click **+** on its row, type one, press Enter (Escape closes the box). They
 sit indented under the task and drag only among themselves. Sending a task takes its subtasks with it, as
-subtasks of the task's card; a ticked subtask takes its task along if that is not on the board yet. **+** also
+subtasks of the task's card; sending a subtask takes its task along if that is not on the board yet. **+** also
 works on a task already sent: the new subtask goes under its card on the next send.
 
-When you are ready, tick some tasks and click **Send ticked**, or click **Send all**. The milestone lands in
-To Do as one card (marked **⚑**) with the sent tasks as its subtasks; no session starts, you send each card to
-Claude yourself. Each task's prompt names the milestone and carries its notes. You can send more later: they
-join the same milestone card.
+Tick a task when it is done: it stays here with a line through it, counts as done, and never goes to the board.
+Ticking a task ticks its subtasks, and unticking it unticks them. When you are ready to hand a task over, click
+**Send** on its row, or click **Send all** for every task not done and not on the board. The milestone lands in To
+Do as one card (marked **⚑**) with the sent tasks as its subtasks; no session starts, you send each card to Claude
+yourself. Each task's prompt names the milestone and carries its notes. You can send more later: they join the same
+milestone card.
 
-The milestone stays on the Plan page with a done count. A sent task shows its card's column and opens the card
-on click; edit it there. A card deleted from the board shows **Not on the board** and can be sent again.
+The milestone stays on the Roadmap with a done count. A sent task shows its card's column and opens the card
+on click; edit it there. A sent task's box follows its card and cannot be clicked. A card deleted from the board
+shows **Not on the board** and can be sent again.
 **Delete milestone** removes the plan only: its cards stay on the board. **Hide done milestones** keeps the
 list short.
 
@@ -470,12 +473,12 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 - `agent` is only there once the task was sent to Claude. It holds the Claude session id.
 - Optional fields: `images` (file names in `images/`), `delegate` and `subagentModel`
   (the **Divide in subtasks** options), `answerOnly` (the **Answer only** box), `worktree` (the
-  **Use a worktree** box; missing counts as on), `milestone` (on a card sent from the Plan page: the id of
+  **Use a worktree** box; missing counts as on), `milestone` (on a card sent from the Roadmap: the id of
   its milestone).
-- `milestones` (optional) holds the Plan page: `[{ id, title, notes, order, created, updated, card?, tasks:
-  [{ id, title, notes, order, card?, suggested?, tasks? }] }]`; a task's `tasks` are its subtasks, same shape,
-  one level only. `card` is set once sent. A save that leaves the key out
-  (a board tab opened before the Plan page existed) keeps the milestones already on disk.
+- `milestones` (optional) holds the Roadmap: `[{ id, title, notes, order, created, updated, card?, tasks:
+  [{ id, title, notes, order, card?, suggested?, done?, tasks? }] }]`; a task's `tasks` are its subtasks, same shape,
+  one level only. `card` is set once sent. `done` is the tick on a task with no live card. A save that leaves the key out
+  (a board tab opened before the Roadmap existed) keeps the milestones already on disk.
 
 ### Card messages: `agent_reports/<task_id>.json`
 
