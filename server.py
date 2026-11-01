@@ -2220,20 +2220,19 @@ def cache_info(session_id):
 
 
 _mcp_memo = {}  # transcript path -> ((mtime, size), info)
-_mcp_servers = {}  # transcript path -> (pending, failed) from its newest deferred_tools_delta
+_mcp_servers = {}  # transcript path -> failed servers from its newest deferred_tools_delta
 
 
 def _mcp_servers_of(a):
-    pending = [mcp_label(s.get("name") if isinstance(s, dict) else s) for s in a.get("pendingMcpServers") or []]
-    failed = [{"name": mcp_label(s.get("name")), "error": str(s.get("error") or "")} if isinstance(s, dict)
-              else {"name": mcp_label(s), "error": ""} for s in a.get("failedMcpServers") or []]
-    return pending, failed
+    return [{"name": mcp_label(s.get("name")), "error": str(s.get("error") or "")} if isinstance(s, dict)
+            else {"name": mcp_label(s), "error": ""} for s in a.get("failedMcpServers") or []]
 
 
 def _last_mcp_servers(path):
-    """(pending, failed) from the newest deferred_tools_delta anywhere in the file; only lines naming the key
-    are parsed, so a long transcript costs one read."""
-    servers = ([], [])
+    """Failed servers from the newest deferred_tools_delta anywhere in the file; only lines naming the key are
+    parsed, so a long transcript costs one read. A delta without pendingMcpServers says nothing about the servers
+    (79 of 1183 real ones), so reading it as "no failures" would clear a real failure."""
+    servers = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             if '"pendingMcpServers"' not in line:
@@ -2260,10 +2259,9 @@ def mcp_label(name):
 
 
 def mcp_state(session_id):
-    """A Claude session's MCP servers and calls, from its transcript: {"connecting": [names], "failed": [{name,
-    error}], "calls": [{server, tool, since}]}, or None when there is nothing to show. Claude Code puts
-    pendingMcpServers / failedMcpServers on each deferred_tools_delta attachment (the newest one is the current
-    state); a call is open while its mcp__<server>__<tool> tool_use has no tool_result yet."""
+    """The MCP servers a Claude session could not connect to, from its transcript: {"failed": [{name, error}]}, or
+    None when there are none. Claude Code puts failedMcpServers on each deferred_tools_delta attachment (the newest
+    one is the current state). Uses of the tools are in mcp_uses."""
     path = transcript_path(session_id)
     if not path:
         return None
@@ -2271,30 +2269,90 @@ def mcp_state(session_id):
     memo = _mcp_memo.get(path)
     if memo and memo[0] == (st.st_mtime, st.st_size):
         return memo[1]
-    servers, calls = None, {}
+    servers = None
     for e in transcript_tail(path):
         a = e.get("attachment") or {}
         if a.get("type") == "deferred_tools_delta" and "pendingMcpServers" in a:
             servers = _mcp_servers_of(a)
-        content = (e.get("message") or {}).get("content")
-        for c in content if isinstance(content, list) else []:
-            if not isinstance(c, dict):
-                continue
-            if c.get("type") == "tool_use" and str(c.get("name", "")).startswith("mcp__"):
-                server, _, tool = c["name"][len("mcp__"):].partition("__")
-                calls[c.get("id")] = {"server": mcp_label(server), "tool": tool, "since": _ts(e["timestamp"])}
-            elif c.get("type") == "tool_result":
-                calls.pop(c.get("tool_use_id"), None)
     # No delta in the tail: the newest one sits further back (a transcript only grows, so it is still current).
+    # Not `.get() or`: an empty list is a known answer, and a healthy session would re-read the file on every change.
     if servers is None:
-        servers = _mcp_servers.get(path) or _last_mcp_servers(path)
+        servers = _mcp_servers[path] if path in _mcp_servers else _last_mcp_servers(path)
     _mcp_servers[path] = servers
-    pending, failed = servers
-    info = {"connecting": [n for n in pending if n], "failed": [f for f in failed if f["name"]],
-            "calls": list(calls.values())}
-    info = info if any(info.values()) else None
+    failed = [f for f in servers if f["name"]]
+    info = {"failed": failed} if failed else None
     _mcp_memo[path] = ((st.st_mtime, st.st_size), info)
     return info
+
+
+MCP_USES_SHOWN = 300
+_mcp_use_memo = {}  # transcript path -> [bytes read, {tool_use id: row}, {ids with no result yet}]
+
+
+def _mcp_calls(path):
+    """MCP tool uses in one transcript as {tool_use id: row}. Reads only the bytes added since the last call. Only
+    assistant entries count: api-request-blob entries hold copies with no time. The byte checks keep it cheap, as
+    a tool result is the most common big line and few uses are ever waiting for one."""
+    size = os.path.getsize(path)
+    memo = _mcp_use_memo.get(path)
+    if not memo or size < memo[0]:
+        memo = _mcp_use_memo[path] = [0, {}, set()]
+    if size > memo[0]:
+        rows, waiting = memo[1], memo[2]
+        with open(path, "rb") as f:
+            f.seek(memo[0])
+            chunk = f.read(size - memo[0])
+        end = chunk.rfind(b"\n") + 1  # a half-written last line is read next time
+        for line in chunk[:end].splitlines():
+            if not (b'"mcp__' in line and b'"tool_use"' in line) and not (
+                    waiting and b'"tool_result"' in line and any(i.encode() in line for i in waiting)):
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            kind = isinstance(e, dict) and e.get("type")
+            message = e.get("message") if kind in ("assistant", "user") else None
+            content = message.get("content") if isinstance(message, dict) else None
+            for b in content if isinstance(content, list) else []:
+                if not isinstance(b, dict):
+                    continue
+                # One bad entry must not stop the memo moving past this line: the poll only catches OSError.
+                try:
+                    if kind == "assistant" and b.get("type") == "tool_use" and str(b.get("name")).startswith("mcp__"):
+                        uid = b.get("id")
+                        if isinstance(uid, str) and uid and uid not in rows:
+                            server, _, tool = b["name"][len("mcp__"):].partition("__")
+                            rows[uid] = {"id": uid, "server": mcp_label(server), "tool": tool,
+                                         "what": codex.mcp_what(b.get("input")), "at": _ts(e["timestamp"]),
+                                         "state": "open", "sub": False}
+                            waiting.add(uid)
+                    elif kind == "user" and b.get("type") == "tool_result" and b.get("tool_use_id") in waiting:
+                        rows[b["tool_use_id"]]["state"] = "failed" if b.get("is_error") else "done"
+                        waiting.discard(b["tool_use_id"])
+                except (KeyError, TypeError, ValueError, AttributeError):
+                    continue
+        memo[0] += end
+    return memo[1]
+
+
+def mcp_uses(paths):
+    """Each MCP tool use in the given main transcripts (or Codex logs) and their subagents, oldest first, at most
+    MCP_USES_SHOWN: [{id, server, tool, what, at, state ("open", "done", "failed"), sub}]. Always new dicts, never the
+    memo's: Watcher._put keeps the old entry when old == entry, so rows the memo changes in place would compare equal
+    and a use going from open to done would never reach the page."""
+    rows = {}
+    for path in paths:
+        if codex.is_log(path):
+            found = codex.mcp_uses(path)
+        else:
+            folder = os.path.join(path[:-len(".jsonl")], "subagents")
+            subs = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")] if os.path.isdir(folder) else []
+            found = [{**r, "sub": f != path} for f in [path] + subs for r in _mcp_calls(f).values()]
+        for r in found:
+            if r["id"] not in rows or rows[r["id"]]["state"] == "open":
+                rows[r["id"]] = r  # a forked copy may hold the result the first copy never got
+    return sorted(rows.values(), key=lambda r: r["at"])[-MCP_USES_SHOWN:]
 
 
 FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
@@ -2920,7 +2978,7 @@ class Watcher:
             except OSError:
                 ctx = None
             try:
-                mcp = codex.mcp_state(s["log"]) if is_codex(s) else mcp_state(s and s.get("sessionId"))
+                mcp = None if is_codex(s) else mcp_state(s and s.get("sessionId"))
             except OSError:
                 mcp = None
             try:
@@ -2933,9 +2991,18 @@ class Watcher:
             except OSError:
                 used = []
             try:
-                spent = tokens(task_transcripts(p, t["id"], [sessions[i].get("sessionId") for i in ids if i in sessions]))
+                paths = task_transcripts(p, t["id"], [sessions[i].get("sessionId") for i in ids if i in sessions])
+            except OSError:
+                paths = None
+            try:
+                spent = tokens(paths) if paths is not None else None
             except OSError:
                 spent = None
+            # A finished card keeps the rows it had: reading every old chat after a board restart cost 6 s (4 GB).
+            try:
+                uses = (old.get(key) or {}).get("mcp_uses") or [] if closed and not s else mcp_uses(paths or [])
+            except OSError:
+                uses = []
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.
             done = self.committed.get((p.id, t["id"]))
             if phase != "working" and (not done or done[0] != len(log)):
@@ -2971,7 +3038,7 @@ class Watcher:
             fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                       "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                       "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "subagents": subs, "skills": used, "tokens": spent,
+                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
                                       "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                       "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                       "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"

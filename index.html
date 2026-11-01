@@ -427,9 +427,18 @@ body.view-plan #search { visibility: hidden; }
 .pf.ref { background: var(--col); color: var(--muted); }
 #d-log li.k-question { border-left-color: var(--wait); }
 #d-log li.k-mcp { border-left-color: var(--accent); color: var(--muted); }
-#d-log li.k-mcp .turning { color: var(--accent); vertical-align: -2px; }
 #d-log li.k-mcp.failed { border-left-color: var(--danger); }
 #d-log li.k-mcp .tech { margin-top: 4px; font-size: calc(12px * var(--ts)); }
+#d-log li.k-uses { border-left-color: var(--accent); color: var(--muted); font-size: calc(12px * var(--ts)); }
+#d-log li.k-uses summary { cursor: pointer; width: fit-content; }
+#d-log li.k-uses summary:hover { color: var(--text); }
+#d-log li.k-uses .turning { color: var(--accent); vertical-align: -2px; }
+#d-log li.k-uses ul { list-style: none; margin: 4px 0 2px; padding: 0; }
+#d-log li.k-uses li { border-left: 0; margin: 0; padding: 1px 0; line-height: 1.5; overflow-wrap: anywhere; }
+#d-log li.k-uses li time { font-variant-numeric: tabular-nums; }
+#d-log li.k-uses li .tool { color: var(--text); }
+#d-log li.k-uses li.failed .mark-word { color: var(--danger); }
+#d-log li.k-uses .mark-word { font-style: italic; }
 #d-log li.k-done, #d-log li.k-answer { border-left-color: var(--ok); }
 #d-log li.k-you { border-left-color: var(--accent); }
 #d-log li .who { font-size: calc(11px * var(--ts)); color: var(--muted); display: block; }
@@ -2634,13 +2643,16 @@ function renderAgent(t) {
   const dl = $("#d-log"), sc = $("#d-body"), keepTop = sc.scrollTop;
   const follow = logFollow || dl.dataset.task !== t.id || sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
   logFollow = false;
+  if (dl.dataset.task !== t.id) usesOpen.clear();
   dl.dataset.task = t.id;
   // Not following: pin the first entry in view (by log index) to its spot, since the oldest entries drop off the top once the log passes 30.
   const top0 = sc.getBoundingClientRect().top;
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   logShown = shown;
-  $("#d-log").innerHTML = shown.map((e, i) => `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("");
+  const groups = mcpGroups(shown, (ag && ag.mcp_uses) || [], start > 0);
+  const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
+  $("#d-log").innerHTML = shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
@@ -2654,7 +2666,7 @@ function renderAgent(t) {
     $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
   const nm = who(t);
-  $("#d-log").insertAdjacentHTML("beforeend", mcpLines(ag, nm));
+  $("#d-log").insertAdjacentHTML("beforeend", mcpLines(ag));
   $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach", { who: nm })
     : window.t("Answer {who} — Cmd+Enter to send, paste images to attach", { who: nm });
   $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
@@ -2675,20 +2687,47 @@ function renderAgent(t) {
     sc.scrollTop = follow ? sc.scrollHeight : a ? sc.scrollTop + a.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchorOff : keepTop;
   }
 }
-// Live MCP state under the conversation: servers still connecting and calls in flight while the session works,
-// servers that failed while it is still around. Codex reports calls only, not its connections.
-function mcpLines(ag, nm) {
+// MCP servers that failed, under the conversation while the session is still around. Codex does not report these.
+function mcpLines(ag) {
   const m = ag && ag.mcp, live = ag && (ag.phase === "working" || ag.phase === "needs_you");
   if (!m || !live) return "";
-  const at = (s) => new Date(s * 1000).toLocaleTimeString(LOCALE, { timeStyle: "short" });
-  const line = (text, spin, tech) => `<li class="k-mcp${spin ? "" : " failed"}"><span class="who">${window.t("Board")}</span><div class="msg">${spin ? turning(14) + " " : ""}${esc(text)}${tech ? `<div class="tech">${esc(tech)}</div>` : ""}</div></li>`;
-  const out = [];
-  if (ag.phase === "working") {
-    if (m.connecting && m.connecting.length) out.push(line(window.t("{who} is connecting to MCP: {names}…", { who: nm, names: m.connecting.join(", ") }), true));
-    for (const c of m.calls || []) out.push(line(window.t("{who} is using MCP: {what} (since {at})", { who: nm, what: c.tool ? `${c.server} · ${c.tool}` : c.server, at: at(c.since) }), true));
+  return (m.failed || []).map((f) => `<li class="k-mcp failed"><span class="who">${window.t("Board")}</span><div class="msg">${esc(window.t("Could not connect to MCP: {name}", { name: f.name }))}${f.error ? `<div class="tech">${esc(f.error)}</div>` : ""}</div></li>`).join("");
+}
+// Puts each MCP use just before the first entry at or after its time: slot i is the run before shown[i], the last slot
+// the run after every entry. Pending entries take the page's clock, so a use after one still lands in the last slot.
+// With older entries cut, slot 0 is dropped: there is no telling where that run began.
+function mcpGroups(shown, uses, cut) {
+  const groups = Array.from({ length: shown.length + 1 }, () => []);
+  const times = shown.map((e) => Date.parse(e.at) / 1000);
+  for (const r of uses) {
+    const i = times.findIndex((x) => x >= r.at);
+    if (i === 0 && cut) continue;
+    groups[i < 0 ? shown.length : i].push(r);
   }
-  for (const f of m.failed || []) out.push(line(window.t("Could not connect to MCP: {name}", { name: f.name }), false, f.error));
-  return out.join("");
+  return groups;
+}
+// The groups the user opened, by their first row's id: the poll rebuilds the list, and they must stay open.
+const usesOpen = new Set();
+// When the session's current run began: the newest launch or reply. A note joins the run already going.
+function mcpRunStart(shown) {
+  const starts = shown.filter((e) => (e.from === "you" || e.from === "board") && e.status !== "note").map((e) => Date.parse(e.at) / 1000);
+  return Math.max(0, ...starts.filter(Number.isFinite));
+}
+// One small line for a run of MCP uses; click it to see each one. Only a use in the newest group and the current run can
+// be live, so one left open by a killed session never spins after a resume: it reads "no answer", true of a slow use too.
+function usesLine(rows, ag, newest, runAt) {
+  if (!rows.length) return "";
+  const live = (r) => r.state === "open" && newest && r.at >= runAt && (ag.phase === "working" || ag.phase === "needs_you");
+  const n = rows.length;
+  const head = ag.phase === "working" && rows.some(live) ? `${turning(14)} ${esc(window.t("Using MCP tools ({n} so far)…", { n }))}`
+    : esc(n === 1 ? window.t("Used 1 MCP tool") : window.t("Used {n} MCP tools", { n }));
+  const items = rows.map((r) => {
+    const mark = r.state === "failed" ? window.t("did not work") : live(r) ? window.t("running") : r.state === "open" ? window.t("no answer") : "";
+    const time = new Date(r.at * 1000).toLocaleTimeString(LOCALE, { timeStyle: "medium" });
+    return `<li${r.state === "failed" ? ` class="failed"` : ""}><time>${esc(time)}</time> <span class="tool">${esc(r.server)} · ${esc(r.tool)}</span>${r.what ? ` <span class="what">${esc(r.what)}</span>` : ""}${r.sub ? ` <span class="mark-word">${esc(window.t("helper"))}</span>` : ""}${mark ? ` <span class="mark-word">${esc(mark)}</span>` : ""}</li>`;
+  }).join("");
+  const g = rows[0].id;
+  return `<li class="k-uses" data-g="${esc(g)}"><details${usesOpen.has(g) ? " open" : ""}><summary>${head}</summary><ul>${items}</ul></details></li>`;
 }
 
 // Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.
@@ -3612,6 +3651,11 @@ async function sendReply(pick, keep, withImages) {
   await pollAgents();
 }
 $("#d-reply-send").onclick = () => sendReply();
+// toggle does not bubble, so this listens on the way down.
+$("#d-log").addEventListener("toggle", (ev) => {
+  const li = ev.target.closest && ev.target.closest("li.k-uses");
+  if (li) ev.target.open ? usesOpen.add(li.dataset.g) : usesOpen.delete(li.dataset.g);
+}, true);
 $("#d-log").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-qo], button[data-qsend]");
   if (!b || b.disabled) return;
