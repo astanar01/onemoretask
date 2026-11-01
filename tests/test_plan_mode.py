@@ -116,7 +116,7 @@ prompt = server.build_prompt(P, state, tasks_by["plan1"])
 folder = reports.plan_dir(board, "plan1")
 check("the prompt names the plan folder", folder in prompt)
 check("the prompt asks for the plan update command", " plan --file " in prompt)
-for word in ("search_graph", "brief.md", "design.md", "plan.md", "fresh reviewers", "no history", "Build this plan"):
+for word in ("search_graph", "brief.md", "design.md", "plan.md", "## Context", "memory tools", "fresh reviewers", "no history", "Build this plan"):
     check(f"the prompt says {word}", word in prompt)
 check("the prompt does not carry the answer-only brief", "Answer only (this task" not in prompt)
 check("the prompt keeps the sandbox rule", "sandbox where the project folder is read-only" in prompt)
@@ -127,7 +127,7 @@ codex_prompt = server.build_prompt(P, state, tasks_by["plan1"], model="gpt-5.4")
 check("a Codex session gets its own way to start reviewers", "spawn_agent" in codex_prompt)
 check("the task's sandbox is on for a plan card", server.answer_only_task(P, "plan1"))
 remind = server.plan_reminder(P, tasks_by["plan1"])
-check("a reply repeats the folder and the command", folder in remind and " plan --file " in remind and "plan.md" in remind, remind)
+check("a reply repeats the folder and the command", folder in remind and " plan --file " in remind and "plan.md" in remind and "## Context" in remind, remind)
 
 
 # --- the guard

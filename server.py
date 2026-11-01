@@ -664,7 +664,10 @@ def plan_lines(report, folder, on_codex=False):
             "1. **explore**: at once post the goal and a first tree. Find the real code before asking anything: use "
             "the code map tools when this session has them (`search_graph`, `search_code`, `get_code_snippet`, "
             "`trace_path`, `get_architecture` from codebase-memory-mcp, loaded with ToolSearch), else search and "
-            "read. Post each file you find to the pane right away. Then ask the user what only they can decide, "
+            "read. Post each file you find to the pane right away. Gather what the build will need as you go, not "
+            "only what the plan needs: the project's rules and conventions, past decisions and mistakes in this area "
+            "(project docs, and memory tools when this session has them), how to run and test it. Then ask the user "
+            "what only they can decide, "
             "through `question` reports with options, a few at a time, and redraw the tree from each answer. "
             f"Never ask what the code already answers. Save the agreed direction in `{folder}/brief.md`: goal, what "
             "is out of scope, constraints, the options weighed, the choice and why.",
@@ -678,8 +681,11 @@ def plan_lines(report, folder, on_codex=False):
             f"report as text; you save the findings in `{folder}/review.md` and post them as `risk` nodes. Fix what "
             "is clear, ask the user about trade-offs, then re-run a reviewer once if you changed a lot. Never "
             "review it yourself instead: if you cannot start a fresh reviewer, say so on the card.",
-            f"4. **ready**: write `{folder}/plan.md`, ordered steps a new session can follow with no other context: "
-            "for each step the files, the change and the test that proves it. Set the phase to ready, then post "
+            f"4. **ready**: write `{folder}/plan.md`, which a new session can follow with no other context. It opens "
+            "with `## Context`, all you gathered: the files to read first and why (every `look` file), the rules and "
+            "conventions to keep, the past decisions and mistakes that matter, how to run and test, what was ruled "
+            "out and the choices the user made. Then the ordered steps: for each step the files, the change and the "
+            "test that proves it. Set the phase to ready, then post "
             "`done` with the plan's outline and the choices the user made. Mention \"Build this plan\"."]
 
 
@@ -689,7 +695,7 @@ def plan_reminder(p, t):
     return (f"Reminder: this is a plan card. Change no project file: Markdown documents only, in "
             f"`{reports.plan_dir(p.board, t['id'])}`. Keep the card's live pane current with `{report} plan --file "
             f"<update.json>` (the report script with no arguments prints the JSON it takes). The final document is "
-            "plan.md; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
+            "plan.md, opening with `## Context`: all the next session needs to know; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
 
 
 # Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.
