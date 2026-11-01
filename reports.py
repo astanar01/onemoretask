@@ -274,6 +274,141 @@ def decision_message(d):
     return f"Decision: {d['query']} -> {d['options'][d['chosen']]['label']}"
 
 
+PLAN_PHASES = ("explore", "draft", "review", "ready")
+PLAN_KINDS = ("goal", "question", "decision", "option", "task", "risk", "note")
+PLAN_STATUSES = ("open", "working", "decided", "done", "dropped")
+PLAN_DOS = ("look", "change", "add")
+PLAN_MAX = 400  # nodes, and files: a runaway session must not grow what every poll sends
+
+
+def plan_path(board, task_id):
+    """A plan card's live state (goal, phase, tree, files), merged from each `report.py plan`. Apart from the card's
+    log: a plan session posts it often, and each entry there would wake the card and resend the whole log."""
+    return _path(board, task_id)[:-len(".json")] + ".plan.json"
+
+
+def plan_dir(board, task_id):
+    """Where a plan card keeps its Markdown documents, the one place in the project such a card may write."""
+    _path(board, task_id)  # checks the id: this path goes into a prompt and a hook
+    return os.path.join(board, "plans", task_id)
+
+
+def read_plan(board, task_id):
+    try:
+        with open(plan_path(board, task_id), encoding="utf-8") as f:
+            plan = json.load(f)
+    except (FileNotFoundError, ValueError):
+        plan = None
+    if not isinstance(plan, dict):
+        plan = {}
+    return {"goal": str(plan.get("goal") or ""), "phase": str(plan.get("phase") or ""),
+            "nodes": plan.get("nodes") if isinstance(plan.get("nodes"), list) else [],
+            "files": plan.get("files") if isinstance(plan.get("files"), list) else []}
+
+
+def _plan_text(v, cap):
+    return str(v or "").strip()[:cap]
+
+
+def _plan_enum(item, key, allowed):
+    v = item.get(key)
+    if v is not None and v not in allowed:
+        raise ValueError(f'"{key}" is one of {", ".join(allowed)}, not {v!r}')
+    return v
+
+
+def _plan_list(patch, key):
+    v = patch.get(key) or []
+    if not isinstance(v, list):
+        raise ValueError(f'"{key}" needs a list')
+    return v
+
+
+def merge_plan(plan, patch):
+    """`plan` with a `report.py plan` update applied, so a session sends only what changed. A node or file with a known
+    id or path keeps the fields the update leaves out. ValueError (naming the field) on a bad update; nothing is kept."""
+    if not isinstance(patch, dict):
+        raise ValueError("a plan update is a JSON object")
+    known = {"goal", "phase", "nodes", "files", "drop", "drop_files"}
+    if set(patch) - known:
+        raise ValueError(f"unknown field {sorted(set(patch) - known)[0]!r}; use {', '.join(sorted(known))}")
+    now = datetime.now(timezone.utc).isoformat()
+    nodes = {n["id"]: n for n in plan["nodes"] if isinstance(n, dict) and n.get("id")}
+    for n in _plan_list(patch, "nodes"):
+        nid = _plan_text(n.get("id"), 80) if isinstance(n, dict) else ""
+        if not nid:
+            raise ValueError('every node needs an "id"')
+        _plan_enum(n, "kind", PLAN_KINDS)
+        _plan_enum(n, "status", PLAN_STATUSES)
+        was = nodes.get(nid, {})
+        label = _plan_text(n.get("label"), 240) or was.get("label")
+        if not label:
+            raise ValueError(f'new node {nid!r} needs a "label"')
+        nodes[nid] = {"id": nid, "parent": _plan_text(n["parent"], 80) if "parent" in n else was.get("parent", ""),
+                      "kind": n.get("kind") or was.get("kind") or "task", "label": label,
+                      "status": n.get("status") or was.get("status") or "open",
+                      "detail": _plan_text(n["detail"], 800) if "detail" in n else was.get("detail", ""), "at": now}
+    gone = {_plan_text(x, 80) for x in _plan_list(patch, "drop")}
+    while True:  # a dropped node takes its branch with it
+        more = {i for i, n in nodes.items() if n.get("parent") in gone} - gone
+        if not more:
+            break
+        gone |= more
+    for i in gone:
+        nodes.pop(i, None)
+    for nid in nodes:
+        seen, cur = {nid}, nodes[nid].get("parent")
+        while cur in nodes:
+            if cur in seen:
+                raise ValueError(f'node {nid!r}: its "parent" chain goes round in a circle')
+            seen.add(cur)
+            cur = nodes[cur].get("parent")
+    files = {f["path"]: f for f in plan["files"] if isinstance(f, dict) and f.get("path")}
+    for f in _plan_list(patch, "files"):
+        path = _plan_text(f.get("path"), 300) if isinstance(f, dict) else ""
+        if not path:
+            raise ValueError('every file needs a "path"')
+        _plan_enum(f, "do", PLAN_DOS)
+        was = files.get(path, {})
+        files[path] = {"path": path, "do": f.get("do") or was.get("do") or "look",
+                       "why": _plan_text(f["why"], 300) if "why" in f else was.get("why", ""), "at": now}
+    for x in _plan_list(patch, "drop_files"):
+        files.pop(_plan_text(x, 300), None)
+    if len(nodes) > PLAN_MAX or len(files) > PLAN_MAX:
+        raise ValueError(f"a plan holds at most {PLAN_MAX} nodes and {PLAN_MAX} files; drop some first")
+    return {"goal": _plan_text(patch["goal"], 300) if "goal" in patch else plan["goal"],
+            "phase": _plan_enum(patch, "phase", PLAN_PHASES) or plan["phase"],
+            "nodes": list(nodes.values()), "files": list(files.values())}
+
+
+def update_plan(board, task_id, patch):
+    path = plan_path(board, task_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with _Locked(path):  # two updates at once (a session and its subagent) must both land
+        plan = merge_plan(read_plan(board, task_id), patch)
+        _write_json(path, plan)
+    return plan
+
+
+def plan_docs(board, task_id):
+    """The card's plan documents, oldest first, as {name, at, text}. Bad UTF-8 shows as replacement characters, so one
+    bad byte cannot hide a document, and each is cut at 200 KB."""
+    folder = plan_dir(board, task_id)
+    try:
+        names = [n for n in os.listdir(folder) if n.lower().endswith(".md")]
+    except OSError:
+        return []
+    docs = []
+    for name in names:
+        try:
+            with open(os.path.join(folder, name), "rb") as f:
+                text = f.read(200_000).decode("utf-8", "replace")
+            docs.append({"name": name, "at": os.path.getmtime(os.path.join(folder, name)), "text": text})
+        except OSError:
+            continue  # removed between the listing and the read
+    return sorted(docs, key=lambda d: (d["at"], d["name"]))
+
+
 def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None,
            parts=None):
     path = _path(board, task_id)

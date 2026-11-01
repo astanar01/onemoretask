@@ -37,6 +37,14 @@ resumes such a session repeats the rule (delegate_reminder), since the brief is 
 (task field `answerOnly`) gets a brief to investigate and report back on the card without changing
 files or committing.
 
+A task ticked "Plan first" (task field `planMode`, always with `answerOnly`, so all of that card's locks apply) gets
+plan_lines instead: explore the idea with the user and write brief, design and plan documents in
+<board>/plans/<task>/ (the only place branch_guard lets it write), checked by fresh reviewers who see only the document.
+It feeds the card's live pane with `report.py plan` (reports.merge_plan, <board>/agent_reports/<task>.plan.json). The
+page asks GET /api/plan every 2 s while the card is open (plan_view: state, documents, the latest code lookups from the
+transcript), kept apart from /api/agents so a chatty session does not resend every card log. "Build this plan" on the
+card makes a new card from plan.md, in the page.
+
 A task ticked "Use a worktree" (task field `worktree`, on by default: a missing key counts as on; never for "Answer
 only") gets its own git worktree at launch: launch makes
 <repo>/.claude/worktrees/<title-slug>-<task id> on a branch of the same name (make_worktree; the folder is kept out of
@@ -560,7 +568,10 @@ def build_prompt(p, state, t, wt=None, model=""):
     # The board may live outside this project's tree, so the command carries absolute paths.
     report = report_cmd(p, t["id"])
     answer_only = bool(t.get("answerOnly"))
-    if answer_only:
+    plan_mode = bool(t.get("planMode"))
+    if plan_mode:
+        lines += ["", *plan_lines(report, reports.plan_dir(p.board, t["id"]), codex.is_model(model))]
+    elif answer_only:
         lines += ["", *answer_only_lines(report)]
     if t.get("delegate"):
         lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only, codex.is_model(model))]
@@ -575,7 +586,8 @@ def build_prompt(p, state, t, wt=None, model=""):
                      " (the board keeps them out of git), and never commit a change it makes to a skill file. "
                      "Unless this card's task is the review itself, do not mention the weekly skill review on the "
                      "card (not due, due, or skipped): the board shows when it is due.")
-    work = ("Change no files and make no commits." if answer_only else
+    work = ("Write only the plan documents: change no other file and make no commits." if plan_mode else
+            "Change no files and make no commits." if answer_only else
             f"Commit your work in the worktree, on branch {wt['branch']}; never push unless the task or the user tells "
             "you to." if wt else
             "Work in the project folder itself: do not create a git worktree or a branch for this task (the card has "
@@ -597,17 +609,87 @@ def answer_only_lines(report):
             "Merge button, so a merge line in the recap misleads the user.",
             "- Work out what was asked and answer it: what you found, what you would change and where (file:line), "
             "the options and your recommendation.",
-            "- Your shell commands run in a sandbox where the project folder is read-only: run the report command "
+            sandbox_line(report),
+            f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
+            "what to do next.",
+            "- " + ANSWER_ONLY_WORK]
+
+
+def sandbox_line(report):
+    return ("- Your shell commands run in a sandbox where the project folder is read-only: run the report command "
             "exactly as given and on its own (it runs outside the sandbox). Anything chained to it (`; echo ...`, "
             "`&& ...`, `| ...`) keeps it inside, and so does a message with a backtick, `$(`, a `<` or a heredoc "
             "(decision JSON too); the board then refuses the write. Write such a message to a file "
             f"outside the project with the Write tool, then post it with `{report} done --file <that file>` in "
             "place of the text. Scratch files go in $TMPDIR. That includes the "
             "task-observer log in the project: only its new-observation.sh runs outside the sandbox, so write and "
-            "change its files with the Write and Edit tools, and skip a log step that needs a shell write there.",
-            f'- Put the full answer in the `{report} done "..."` message; the user reads it on the card and decides '
-            "what to do next.",
-            "- " + ANSWER_ONLY_WORK]
+            "change its files with the Write and Edit tools, and skip a log step that needs a shell write there.")
+
+
+# Based on google/elephant-goldfish-model: an Elephant who knows everything writes the plan, a Goldfish who sees only
+# the document attacks it, and the person decides the trade-offs.
+def plan_lines(report, folder, on_codex=False):
+    fresh = ("spawn_agent with `fork_turns: \"none\"`" if on_codex else "the Agent tool")
+    return ["Plan mode (the user ticked \"Plan first\" on this card): turn the idea in the notes into a plan good "
+            "enough to build from. Do NOT build it.",
+            "- You write NO code: no code file anywhere (not even a scratch script or a trial in a temp folder), no "
+            "edits to the project, no commits, no installs. You only look things up and write Markdown. Code in a "
+            "plan is short snippets inside its documents. This holds for any subagents too, and for every reply: if "
+            "the user says \"go ahead\", finish the plan and post `done`; the \"Build this plan\" button on the card "
+            "starts the card that does the work. The board refuses other file writes and git writes.",
+            f"- Write your Markdown documents with the Write and Edit tools in `{folder}` (the only folder you may "
+            "write in; make no other kind of file). They show on the card as you save them.",
+            sandbox_line(report),
+            "",
+            f"The card has a live pane that draws your plan. Feed it with `{report} plan --file <update.json>` (write "
+            f"the JSON in $TMPDIR with the Write tool; a short update with no quote in it can go inline as "
+            f"`{report} plan '<json>'`). Send only what changed, and send it early and often: as soon as you learn "
+            "something, not at the end of a phase. It alerts nobody and stays out of the conversation. The JSON:",
+            '{"goal": "the goal in one line", "phase": "explore|draft|review|ready",',
+            ' "nodes": [{"id": "q1", "parent": "g1", "kind": "goal|question|decision|option|task|risk|note", "label": '
+            '"short", "status": "open|working|decided|done|dropped", "detail": "one or two lines"}],',
+            ' "files": [{"path": "repo/relative/path.py", "do": "look|change|add", "why": "short"}],',
+            ' "drop": ["node id, takes its branch with it"], "drop_files": ["path"]}',
+            "- A node with a known id keeps the fields you leave out: to close a question send "
+            '{"nodes": [{"id": "q1", "status": "decided"}]}. Ids are yours; keep them stable.',
+            "- The tree is goal > sub-goals > questions and tasks. A fork is a `decision` node with one `option` "
+            "child per choice: `decided` on the winner, `dropped` on the others, the reason in its detail. Findings "
+            "from a review are `risk` nodes under what they threaten. In plan mode use these nodes, not `decision` "
+            "reports.",
+            "- `files` is every file that matters, kept current: `look` = must be read to build this, `change` = "
+            "will be edited, `add` = will be made. Move a file from look to change as soon as you know. File "
+            "names belong here even when card messages must avoid them.",
+            "",
+            "Work in these phases, setting `phase` as you enter each one:",
+            "1. **explore**: at once post the goal and a first tree. Find the real code before asking anything: use "
+            "the code map tools when this session has them (`search_graph`, `search_code`, `get_code_snippet`, "
+            "`trace_path`, `get_architecture` from codebase-memory-mcp, loaded with ToolSearch), else search and "
+            "read. Post each file you find to the pane right away. Then ask the user what only they can decide, "
+            "through `question` reports with options, a few at a time, and redraw the tree from each answer. "
+            f"Never ask what the code already answers. Save the agreed direction in `{folder}/brief.md`: goal, what "
+            "is out of scope, constraints, the options weighed, the choice and why.",
+            f"2. **draft**: write `{folder}/design.md` from the brief, one section at a time: how it works, what "
+            "changes in which file, the data, the edge cases, how it will be tested. Ask the user only about real "
+            "trade-offs.",
+            f"3. **review**: you know too much to see the holes, so start fresh reviewers with {fresh}, with no history "
+            "of this chat. Give each ONLY the document's path and what to look for. Run at least two: one asks \"could "
+            "someone build this from the document alone? what is missing, unclear or assumed?\"; one checks every "
+            "file, function and claim in it against the real code (naming the same code map tools). Have them "
+            f"report as text; you save the findings in `{folder}/review.md` and post them as `risk` nodes. Fix what "
+            "is clear, ask the user about trade-offs, then re-run a reviewer once if you changed a lot. Never "
+            "review it yourself instead: if you cannot start a fresh reviewer, say so on the card.",
+            f"4. **ready**: write `{folder}/plan.md`, ordered steps a new session can follow with no other context: "
+            "for each step the files, the change and the test that proves it. Set the phase to ready, then post "
+            "`done` with the plan's outline and the choices the user made. Mention \"Build this plan\"."]
+
+
+def plan_reminder(p, t):
+    """Appended to a card reply: a session started again from a recap has only this, not plan_lines."""
+    report = report_cmd(p, t["id"])
+    return (f"Reminder: this is a plan card. Change no project file: Markdown documents only, in "
+            f"`{reports.plan_dir(p.board, t['id'])}`. Keep the card's live pane current with `{report} plan --file "
+            f"<update.json>` (the report script with no arguments prints the JSON it takes). The final document is "
+            "plan.md; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
 
 
 # Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.
@@ -2149,6 +2231,62 @@ def mcp_state(session_id):
 
 FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
 TIMER_TOOLS = ("ScheduleWakeup", "Monitor", "CronCreate")
+_lookup_memo = {}  # transcript path -> ((mtime, size), lookups)
+LOOKUPS_SHOWN = 12
+
+
+def _lookup_row(name, inp):
+    """What a tool call looked up, as {tool, what}, or None for a call that is not code exploration."""
+    if name.startswith("mcp__codebase-memory") and name.rsplit("__", 1)[-1] != "index_repository":
+        what = next((inp[k] for k in ("query", "name_pattern", "pattern", "qualified_name", "function_name", "semantic_query")
+                     if inp.get(k)), "")
+        return {"tool": "map", "what": name.rsplit("__", 1)[-1] + (f": {what}" if what else "")}
+    if name in ("Read", "Grep", "Glob"):
+        what = inp.get("file_path") or inp.get("pattern") or ""
+        return what and {"tool": "read" if name == "Read" else "search", "what": what}
+    return None
+
+
+def plan_lookups(session_id):
+    """The session's latest code lookups, newest first, read from its transcript: what the plan pane shows while the
+    agent explores, so the pane moves even between its plan updates. Subagents' lookups are left out."""
+    path = transcript_path(session_id) if session_id else None
+    if not path:
+        return []
+    st = os.stat(path)
+    memo = _lookup_memo.get(path)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    rows = []
+    for e in transcript_tail(path):
+        content = (e.get("message") or {}).get("content") if e.get("type") == "assistant" else None
+        for c in content if isinstance(content, list) else []:
+            if isinstance(c, dict) and c.get("type") == "tool_use" and isinstance(c.get("input"), dict):
+                row = _lookup_row(str(c.get("name", "")), c["input"])
+                if row:
+                    rows.append({**row, "what": str(row["what"])[:200], "at": _ts(e["timestamp"])})
+    rows = rows[-LOOKUPS_SHOWN:][::-1]
+    _lookup_memo[path] = ((st.st_mtime, st.st_size), rows)
+    return rows
+
+
+def plan_view(p, task_id, sig=""):
+    """What a plan card's pane draws: the live state, the documents and the latest lookups, or {"same": True} when
+    nothing changed since the page's `sig`, because an open card asks every 2 s."""
+    t = _find_task(p, task_id)
+    if not t.get("planMode"):
+        raise LookupError("this task is not a plan card")
+    session = (WATCH.snapshot(p.id).get(task_id) or {}).get("sessionId")
+    try:
+        looked = plan_lookups(session)
+    except OSError:
+        looked = []
+    plan, docs = reports.read_plan(p.board, task_id), reports.plan_docs(p.board, task_id)
+    out = {**plan, "docs": docs, "lookups": looked, "dir": reports.plan_dir(p.board, task_id)}
+    now = hashlib.sha1(json.dumps(out, sort_keys=True).encode()).hexdigest()
+    return {"same": True} if now == sig else {**out, "sig": now}
+
+
 _fresh_memo = {}  # transcript path -> ((mtime, size, card log length), result)
 _QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 # `git [-C dir | -c k=v | --flag]... commit` as a command of its own (not words inside a report), env vars allowed
@@ -2947,7 +3085,9 @@ def board_tail(p, task_id):
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     extra += delegate_reminder(t)
-    if t and t.get("answerOnly"):
+    if t and t.get("planMode"):
+        extra += "\n\n" + plan_reminder(p, t)
+    elif t and t.get("answerOnly"):
         extra += "\n\n" + ANSWER_ONLY_WORK
     # Every reply restates the setting: it may have been switched since the session's first brief.
     # False (not missing) means the user switched it off, so a session briefed with it on stops.
@@ -4432,6 +4572,9 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/prompt":
             tid = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
             self._errors(lambda: self._json(200, task_prompt(project(pid), tid)))
+        elif path == "/api/plan":
+            q = parse_qs(urlsplit(self.path).query)
+            self._errors(lambda: self._json(200, plan_view(project(pid), q.get("t", [""])[0], q.get("sig", [""])[0])))
         elif path in ("/api/task-git", "/api/task-diff"):
             q = parse_qs(urlsplit(self.path).query)
             tid = q.get("t", [""])[0]

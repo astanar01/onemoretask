@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-01
+
+- New tick on a new card: "Plan first". Claude talks through your idea, asks you questions and writes a plan, and changes nothing in your project. While it works, you watch a tree of goals and choices grow beside the chat, with the list of files it found. When the plan is ready, "Build this plan" starts a new card that follows it.
+
 ## 2026-10-31
 
 - The board now clears out old memory notes about files that are gone, without asking you each time. Open "Memory clean-up" in the menu to see what went and why, and to bring any note back. Notes marked as key decisions wait for your say. Nothing can go on its own until the board has watched for 90 days.

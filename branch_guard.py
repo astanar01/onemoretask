@@ -12,13 +12,15 @@ guard against a habit, not a sandbox.
 On an answer-only card (tasks.json "answerOnly", read on every call, so the card's tick counts as it is now) it also
 refuses Edit / Write / NotebookEdit on a file inside a git work tree or the session's folder (the task-observer folders
 excepted) and every git command that is not a read. Shell redirects and scripts are left to the read-only sandbox
-server.answer_only_sandbox puts the session's shell in.
+server.answer_only_sandbox puts the session's shell in. A plan card (tasks.json "planMode", always answer-only too) is
+held tighter: see plan_may_write.
 """
 import json
 import os
 import shlex
 import subprocess
 import sys
+import tempfile
 
 SEPARATORS = {";", "&&", "||", "|", "&", "\n", "(", ")"}
 # Options of `git checkout` that start or move a branch whatever follows them.
@@ -208,13 +210,32 @@ def git_write(command, cwd):
     return None
 
 
-def answer_only(board, task_id):
+def task_flag(board, task_id, flag):
     try:
         with open(os.path.join(board, "tasks.json"), encoding="utf-8") as f:
             tasks = json.load(f).get("tasks") or []
     except (OSError, ValueError, AttributeError):
         return False
-    return any(isinstance(t, dict) and t.get("id") == task_id and t.get("answerOnly") for t in tasks)
+    return any(isinstance(t, dict) and t.get("id") == task_id and t.get(flag) for t in tasks)
+
+
+def answer_only(board, task_id):
+    return task_flag(board, task_id, "answerOnly")
+
+
+def plan_may_write(board, task_id, path, cwd):
+    """A plan card writes no code, anywhere: only Markdown in its own plan folder or the task-observer log, and the
+    throwaway .json / .txt / .md messages for the report script in a temp folder."""
+    full = os.path.realpath(os.path.join(cwd, os.path.expanduser(path)))
+    ext = os.path.splitext(full)[1].lower()
+    if ext == ".md":
+        folder = os.path.realpath(os.path.join(board, "plans", task_id))
+        if full.startswith(folder + os.sep) or any(os.sep + d + os.sep in full for d in OBSERVER_DIRS[:2]):
+            return True
+    if ext not in (".json", ".txt", ".md") or edit_blocked(full, cwd):  # a project can itself sit in a temp folder
+        return False
+    temps = {tempfile.gettempdir(), "/tmp", os.environ.get("TMPDIR"), os.environ.get("CLAUDE_JOB_DIR")}
+    return any(full.startswith(os.path.realpath(d) + os.sep) for d in temps if d)
 
 
 def edit_blocked(path, cwd):
@@ -261,7 +282,12 @@ def main():
         return
     if tool in EDIT_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path")
-        if path and answer_only(args[1], args[2]) and edit_blocked(path, cwd):
+        if path and task_flag(args[1], args[2], "planMode"):
+            if not plan_may_write(args[1], args[2], path, cwd):
+                deny(f"Blocked by the task board: a plan card writes no code, only Markdown documents in its plan "
+                     f"folder, not {path}. Describe the change in the plan; the \"Build this plan\" button starts the "
+                     "card that makes it.")
+        elif path and answer_only(args[1], args[2]) and edit_blocked(path, cwd):
             deny(f"Blocked by the task board: no file edits on an answer-only card ({path}). " + NEW_CARD)
         return
     if tool != "Bash":

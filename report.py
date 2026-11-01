@@ -17,6 +17,15 @@ tree, each hanging off the option chosen before it, and redraws it as new ones a
 "chosen" is the option's index (null while still open); "by" is "agent" or "you"; 2 to 6 options.
 Posting a decision again with the same "query" replaces the earlier one (an open one becomes decided).
 
+    python3 report.py [--board DIR] <task_id> plan -   < update.json   (or a JSON string, or --file <path>)
+
+A plan update feeds a plan card's live pane. Send only what changed; a known id or path keeps the fields left out:
+{"goal": "...", "phase": "explore|draft|review|ready",
+ "nodes": [{"id": "q1", "parent": "g1", "kind": "goal|question|decision|option|task|risk|note", "label": "...",
+            "status": "open|working|decided|done|dropped", "detail": "..."}],
+ "files": [{"path": "server.py", "do": "look|change|add", "why": "..."}], "drop": ["node id"], "drop_files": ["path"]}
+It does not go in the card's conversation and alerts nobody.
+
 A question can list its choices with `--option "<short label>"` (repeatable, 2 to 6, all different);
 the card shows one button per choice that sends it as the answer. Only for `question`.
 A question with several parts gives each part as `--part "<its question>"` followed by that part's
@@ -63,7 +72,7 @@ for a in it:
         msg_file = next(it, None) or sys.exit("--file needs a file")
     else:
         args.append(a)
-if len(args) != (2 if msg_file else 3) or args[1] not in STATUSES + ("decision",):
+if len(args) != (2 if msg_file else 3) or args[1] not in STATUSES + ("decision", "plan"):
     sys.exit(__doc__)
 if msg_file:
     try:
@@ -79,7 +88,7 @@ try:
     reports._path("", task_id)
 except ValueError as e:
     sys.exit(str(e))
-if status != "decision" and not message.strip():
+if status not in ("decision", "plan") and not message.strip():
     sys.exit(f"{status} needs a message")
 if options:
     if status != "question":
@@ -105,6 +114,16 @@ if status == "decision":
         sys.exit(f"decision: {e}")
     message, status = reports.decision_message(decision), "progress"
 board = board or reports.board_dir(reports.project_root())
+if status == "plan":
+    try:
+        plan = reports.update_plan(board, task_id, json.loads(message))
+    except (ValueError, TypeError) as e:
+        sys.exit(f"plan: {e}")
+    except PermissionError as e:
+        sys.exit(f"Not posted: the board refused the write ({e}). Run this report command alone, nothing chained to "
+                 "it, and pass the update with --file <a file outside the project>.")
+    print(f"plan of task {task_id}: {len(plan['nodes'])} nodes, {len(plan['files'])} files")
+    sys.exit(0)
 mismatch = None if lang else reports.language_mismatch(board, task_id, message)
 if mismatch:
     sys.exit(f"Not posted: this report is in {mismatch[0]}, but the user's latest message on the card is in "
