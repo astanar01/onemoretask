@@ -362,7 +362,23 @@ with open(reports.mcp_path(p.board, "t8"), "w", encoding="utf-8") as f:
 check([r["id"] for r in reports.read_mcp(p.board, "t8")] == ["ok"], "a row missing its fields is left out")
 real_write, reports._write_json = reports._write_json, lambda *a: (_ for _ in ()).throw(OSError("disk full"))
 check(server.keep_mcp_uses(p.board, "t7", [], [row]) == [row], "a failed save still shows the row")
+check(server.keep_mcp_uses(p.board, "t7", [row], []) == [row], "a second failed save does no harm")
 reports._write_json = real_write
+check(reports.read_mcp(p.board, "t7") == [], "nothing saved while saving fails")
+server.keep_mcp_uses(p.board, "t7", [row], [])
+check(reports.read_mcp(p.board, "t7") == [row], "a failed save is tried again with no new row", reports.read_mcp(p.board, "t7"))
+writes = []
+real_write, reports._write_json = reports._write_json, lambda *a: writes.append(a)
+server.keep_mcp_uses(p.board, "t7", [row], [])
+reports._write_json = real_write
+check(writes == [], "once saved, it is not written again", writes)
+real_dump, reports.json.dump = reports.json.dump, lambda *a, **k: (_ for _ in ()).throw(OSError("disk full"))
+server.keep_mcp_uses(p.board, "t6", [], [row])
+reports.json.dump = real_dump
+left = [n for n in os.listdir(os.path.dirname(reports.mcp_path(p.board, "t6"))) if n.endswith(".tmp")]
+check(left == [], "a save cut short leaves no stray file", left)
+server.keep_mcp_uses(p.board, "t6", [row], [])
+check(reports.read_mcp(p.board, "t6") == [row], "... and the next poll saves it")
 
 # The whole trip: a card with a chat, a board restart, then the chat removed from disk.
 set_columns(t1="todo")

@@ -2355,6 +2355,9 @@ def mcp_uses(paths):
     return sorted(rows.values(), key=lambda r: r["at"])[-MCP_USES_SHOWN:]
 
 
+_mcp_unsaved = set()  # (board, task id) whose rows could not be saved yet
+
+
 def keep_mcp_uses(board, task_id, had, fresh):
     """A card's rows once `fresh` (what its chats say now) joins `had`, saved when they changed. A row seen once stays
     with the time first seen: a chat can be removed, and a Codex log gives old calls its last write time after a restart."""
@@ -2366,11 +2369,13 @@ def keep_mcp_uses(board, task_id, had, fresh):
         elif mine["state"] == "open" and r["state"] != "open":
             rows[r["id"]] = {**mine, "state": r["state"]}
     out = sorted(rows.values(), key=lambda r: r["at"])[-MCP_USES_SHOWN:]
-    if out != had:
+    key = (board, task_id)
+    if out != had or key in _mcp_unsaved:
         try:
             reports.write_mcp(board, task_id, out)
+            _mcp_unsaved.discard(key)
         except OSError:
-            pass  # the next change tries again; the page still shows them
+            _mcp_unsaved.add(key)  # the next poll tries again; the page still shows them
     return out
 
 

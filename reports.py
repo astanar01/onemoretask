@@ -201,8 +201,12 @@ class _Locked:
 
 def _write_json(path, obj):
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f, indent=2, ensure_ascii=False)
+    except OSError:  # a full disk: the MCP rows retry each poll, and must not leave a file each time
+        os.unlink(tmp)
+        raise
     for tries in range(40 if fcntl is None else 1, 0, -1):
         try:
             return os.replace(tmp, path)
