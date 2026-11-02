@@ -3046,6 +3046,13 @@ class Watcher:
                 except FileNotFoundError:
                     pass
             with self.lock:
+                # Recap saved and no session left (a new task closed this card first): nothing to close, so a move
+                # to done must not read as "writing the recap" for good.
+                if closed and not s and said and said[-1].get("status") == "recap" and key not in self.closing:
+                    try:
+                        os.remove(marker)
+                    except FileNotFoundError:
+                        pass
                 # Closed again after a reopen: that new session goes too once it stops, unless it waits on a question.
                 close = closed and s and not busy and phase != "working" and key not in self.closing and (
                     os.path.exists(marker) and key not in self.close_failed

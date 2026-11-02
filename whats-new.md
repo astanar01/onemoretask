@@ -3,6 +3,7 @@
 ## 2026-11-02
 
 - The small "Used 5 MCP tools" line now stays in a card's chat for good, even when the card is done or the board starts again. Click it to see when each tool was used.
+- When you start a new card and tick "Close the old card", the old card now goes to Done. If it still has work to merge, it stays in Review so you don't lose sight of it.
 
 ## 2026-11-01
 

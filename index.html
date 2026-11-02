@@ -1009,7 +1009,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <p id="fresh-intro">Claude writes a short summary of this card's work, and a new card starts from it.</p>
   <label for="fresh-text">What should the new task do?</label>
   <textarea id="fresh-text" placeholder="Optional"></textarea>
-  <label class="toggle"><input type="checkbox" id="fresh-close"> Close the old session</label>
+  <label class="toggle" title="The old card stops and moves to done. A card with work still to merge stays where it is."><input type="checkbox" id="fresh-close"> Close the old card</label>
   <p id="fresh-msg" role="status"></p>
   <div class="actions"><button class="btn" id="fresh-no">Cancel</button><button class="btn primary" id="fresh-yes">Create</button></div>
 </div></div>
@@ -2487,6 +2487,8 @@ async function createFresh() {
     if (res.model && [...$("#d-model").options].some((o) => o.value === res.model)) answerPick[nt.id] = res.model;
     if (res.effort && [...$("#d-effort").options].some((o) => o.value === res.effort)) effortPick[nt.id] = res.effort;
     touch(nt);
+    // Unmerged work stays in sight in Review: the box is ticked by default on a good fit, so it must not hide it.
+    if (close && old && !(agents[id] && agents[id].worktree)) moveTask(id, doneCol(), null);
     closeFresh(); render();
     openDetail(nt.id);
     const c = document.querySelector(`.card[data-id="${nt.id}"]`);

@@ -38,13 +38,19 @@ CASES = {
     # Reopened, finished again, and the new recap failed: the session is still there, with work after the old recap.
     "later": ("done", {"phase": "finished", "sessionId": "s2", "closed": True,
                        "log": [SAID, RECAP, {"from": "claude", "status": "done", "at": AT, "session": "a2", "message": "More"}]}, {}, [BTN]),
+    # An answer-only card whose reply asks for work: the "Create new task" dialog, with the close box.
+    "asks": ("rev", {"phase": "finished", "fresh_start": {"fit": "good", "reasons": []},
+                     "log": [SAID, {"from": "you", "status": "reply", "at": AT, "message": "Do it"}]}, {}, ["Create new task", "Mark as done"]),
+    "keep": ("rev", {"phase": "finished", "log": [SAID]}, {}, None),
+    "unmerged": ("rev", {"phase": "finished", "worktree": True, "log": [SAID]}, {"worktree": {"path": "/x", "branch": "b"}}, None),
 }
 TASKS, AGENTS = [], {}
 for i, (tid, (col, ag, extra, _)) in enumerate(CASES.items()):
     TASKS.append({"id": tid, "title": f"Case {tid}", "notes": "", "priority": "", "tags": [], "column": col, "parent": None,
                   "order": i, "created": AT, "updated": AT, "agent": {"id": tid, "started": AT, **extra}})
     AGENTS[tid] = {"id": tid, "state": "idle", "reason": "", **ag}
-spawned = []
+TASKS[list(CASES).index("asks")]["answerOnly"] = True
+spawned, saved = [], {}
 NOTES = 'Continues the card "Case recap" (recap).\n\n## Goal\nDo the thing.'
 
 
@@ -90,6 +96,8 @@ class Stub(SimpleHTTPRequestHandler):
             if spawned[-1]["taskId"] == "later":
                 return self.send_json({"ok": True, "title": "Follow-up: Case later", "tags": [], "notes": "old", "model": "", "older_recap": True})
             return self.send_json({"ok": True, "title": "Follow-up: Case recap", "tags": ["ui"], "notes": NOTES, "model": ""})
+        if self.path.split("?")[0] == "/api/tasks":
+            saved.update({x["id"]: x["column"] for x in json.loads(body)["tasks"]})
         return self.send_json({"ok": True})
 
     do_PUT = do_POST
@@ -172,6 +180,26 @@ await ev(`document.querySelector('#fresh-yes').click()`);
 for (let i = 0; i < 50; i++) { await wait(100); if (await ev(`!document.querySelector('#fresh-modal').classList.contains('open')`) === true) break; }
 await wait(200);
 out.laterStatus = await ev(`document.querySelector('#status').textContent`);
+const finishDialog = async (tick) => {
+  await ev(`document.querySelector('#fresh-close').checked = ${tick}`);
+  await ev(`document.querySelector('#fresh-yes').click()`);
+  for (let i = 0; i < 50; i++) { await wait(100); if (await ev(`!document.querySelector('#fresh-modal').classList.contains('open')`) === true) break; }
+  await wait(200);
+};
+// The close box decides where the old card goes.
+await ev(`openDetail('asks')`);
+await wait(150);
+await ev(`document.querySelector('#d-next-actions button').click()`);
+await wait(100);
+out.asks = await ev(`({ shown: getComputedStyle(document.querySelector('#fresh-close').closest('label')).display !== 'none', ticked: document.querySelector('#fresh-close').checked,
+  label: document.querySelector('#fresh-close').closest('label').textContent.trim() })`);
+await shot('close-box');
+await finishDialog(true);
+await ev(`openFresh(task('keep'))`); await wait(100); await finishDialog(false);
+await ev(`openFresh(task('unmerged'))`); await wait(100); await finishDialog(true);
+out.cols = await ev(`Object.fromEntries(['asks', 'keep', 'unmerged'].map((k) => [k, task(k).column]))`);
+await shot('moved');
+await wait(1500);   // the page saves a moment after a change
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -226,6 +254,10 @@ def main():
           res["made"], {"notes": "Now add sound\n\n" + NOTES, "tags": ["ui"], "column": "todo", "open": True})
     check("ordinary dialog unchanged", res["plain"], {
         "intro": "Claude writes a short summary of this card's work, and a new card starts from it.", "closeShown": True})
+    check("answer-only dialog offers closing the old card", res["asks"], {"shown": True, "ticked": True, "label": "Close the old card"})
+    want_cols = {"asks": "done", "keep": "rev", "unmerged": "rev"}
+    check("close ticked goes to done; unticked or unmerged stays in Review", res["cols"], want_cols)
+    check("the move reaches the server, whose watcher acts on it", {k: saved.get(k) for k in want_cols}, want_cols)
     print(f"\n{passes} passed, {fails} failed  (screenshots in {TMP})")
     return 1 if fails else 0
 
