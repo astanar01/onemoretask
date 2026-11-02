@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-02
+
+- The small "Used 5 MCP tools" line now stays in a card's chat for good, even when the card is done or the board starts again. Click it to see when each tool was used.
+
 ## 2026-11-01
 
 - Plan first now writes down exactly what the finished work must do. Build this plan then writes checks for each point first, shows they fail, and builds until they all pass, with a list that ticks off as it goes.

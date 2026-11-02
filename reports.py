@@ -281,6 +281,25 @@ PLAN_DOS = ("look", "change", "add")
 PLAN_MAX = 400  # nodes, and files: a runaway session must not grow what every poll sends
 
 
+def mcp_path(board, task_id):
+    """A card's MCP tool uses, so they outlive a board restart and the session's own transcript."""
+    return _path(board, task_id)[:-len(".json")] + ".mcp.json"
+
+
+def read_mcp(board, task_id):
+    try:
+        with open(mcp_path(board, task_id), encoding="utf-8") as f:
+            rows = json.load(f)
+    except (OSError, ValueError):
+        return []
+    need = {"id", "server", "tool", "what", "at", "state", "sub"}
+    return [r for r in rows if isinstance(r, dict) and need <= r.keys()] if isinstance(rows, list) else []
+
+
+def write_mcp(board, task_id, rows):
+    _write_json(mcp_path(board, task_id), rows)
+
+
 def plan_path(board, task_id):
     """A plan card's live state (goal, phase, tree, files), merged from each `report.py plan`. Apart from the card's
     log: a plan session posts it often, and each entry there would wake the card and resend the whole log."""

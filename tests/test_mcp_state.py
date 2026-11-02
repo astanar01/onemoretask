@@ -323,7 +323,7 @@ server._mcp_use_memo.clear()
 reads.clear()
 server.WATCH.poll()
 rec = server.WATCH.snapshot(p.id).get("t2") or {}
-check(rec.get("mcp_uses") == [], "after a restart a finished card has no rows", rec.get("mcp_uses"))
+check([r["id"] for r in rec.get("mcp_uses") or []] == ["r1"], "after a restart a finished card keeps its rows", rec.get("mcp_uses"))
 check(removed not in reads, "after a restart a finished card's chat is not read", reads)
 check(path in reads, "... while an open card's chat still is", reads)
 set_columns(t2="todo")
@@ -335,6 +335,46 @@ reads.clear()
 server.WATCH.poll()
 check(path in reads, "a finished card whose session is still there is still read", reads)
 server._mcp_calls = real_calls
+
+# ---- rows stay once seen, whatever happens to the chat they came from
+row = {"id": "k1", "server": "s", "tool": "t", "what": "", "at": 100.0, "state": "open", "sub": False}
+kept = lambda had, fresh: server.keep_mcp_uses(p.board, "t9", had, fresh)
+check(kept([], [row]) == [row], "a new row is kept")
+check(reports.read_mcp(p.board, "t9") == [row], "... and saved")
+check(kept([row], []) == [row], "the chat gone: the row stays")
+later = kept([row], [{**row, "at": 999.0, "state": "done"}])
+check(later[0]["state"] == "done" and later[0]["at"] == 100.0, "a result updates the state, the time stays as first seen", later)
+check(reports.read_mcp(p.board, "t9")[0]["state"] == "done", "... and is saved")
+check(kept(later, [{**row, "state": "open"}])[0]["state"] == "done", "a copy with no result does not undo the result")
+mt = os.path.getmtime(reports.mcp_path(p.board, "t9"))
+os.utime(reports.mcp_path(p.board, "t9"), (mt - 100, mt - 100))
+same = reports.read_mcp(p.board, "t9")
+kept(same, [])
+check(os.path.getmtime(reports.mcp_path(p.board, "t9")) == mt - 100, "no change: nothing is written")
+many = [{**row, "id": f"m{i}", "at": float(i)} for i in range(server.MCP_USES_SHOWN + 5)]
+check(len(kept([], many)) == server.MCP_USES_SHOWN, "the cap still holds")
+check(kept([], many)[-1]["id"] == many[-1]["id"], "... and drops the oldest")
+with open(reports.mcp_path(p.board, "t8"), "w", encoding="utf-8") as f:
+    f.write("{broken")
+check(reports.read_mcp(p.board, "t8") == [], "a broken file reads as no rows")
+with open(reports.mcp_path(p.board, "t8"), "w", encoding="utf-8") as f:
+    json.dump([{"id": "ok", "at": 1.0, "server": "s", "tool": "t", "what": "", "state": "done", "sub": False}, {"id": "bad"}, 7], f)
+check([r["id"] for r in reports.read_mcp(p.board, "t8")] == ["ok"], "a row missing its fields is left out")
+real_write, reports._write_json = reports._write_json, lambda *a: (_ for _ in ()).throw(OSError("disk full"))
+check(server.keep_mcp_uses(p.board, "t7", [], [row]) == [row], "a failed save still shows the row")
+reports._write_json = real_write
+
+# The whole trip: a card with a chat, a board restart, then the chat removed from disk.
+set_columns(t1="todo")
+server.WATCH.poll()
+before = (server.WATCH.snapshot(p.id).get("t1") or {}).get("mcp_uses") or []
+check(bool(before), "an open card has rows from its chat", before)
+os.remove(path)
+server.WATCH.cache.clear()
+server._mcp_use_memo.clear()
+server.WATCH.poll()
+rec = server.WATCH.snapshot(p.id).get("t1") or {}
+check([r["id"] for r in rec.get("mcp_uses") or []] == [r["id"] for r in before], "restart with the chat gone: the rows stay", rec.get("mcp_uses"))
 
 print("ALL OK" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

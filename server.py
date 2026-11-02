@@ -2355,6 +2355,25 @@ def mcp_uses(paths):
     return sorted(rows.values(), key=lambda r: r["at"])[-MCP_USES_SHOWN:]
 
 
+def keep_mcp_uses(board, task_id, had, fresh):
+    """A card's rows once `fresh` (what its chats say now) joins `had`, saved when they changed. A row seen once stays
+    with the time first seen: a chat can be removed, and a Codex log gives old calls its last write time after a restart."""
+    rows = {r["id"]: r for r in had}
+    for r in fresh:
+        mine = rows.get(r["id"])
+        if not mine:
+            rows[r["id"]] = r
+        elif mine["state"] == "open" and r["state"] != "open":
+            rows[r["id"]] = {**mine, "state": r["state"]}
+    out = sorted(rows.values(), key=lambda r: r["at"])[-MCP_USES_SHOWN:]
+    if out != had:
+        try:
+            reports.write_mcp(board, task_id, out)
+        except OSError:
+            pass  # the next change tries again; the page still shows them
+    return out
+
+
 FRESH_START_TOKENS = 55000 + 1500  # a fresh card's prompt (46k-62k measured) plus a ~1k recap
 TIMER_TOOLS = ("ScheduleWakeup", "Monitor", "CronCreate")
 _lookup_memo = {}  # transcript path -> ((mtime, size), lookups)
@@ -2998,11 +3017,13 @@ class Watcher:
                 spent = tokens(paths) if paths is not None else None
             except OSError:
                 spent = None
-            # A finished card keeps the rows it had: reading every old chat after a board restart cost 6 s (4 GB).
+            # A finished card keeps the rows it has: reading every old chat after a board restart cost 6 s (4 GB).
+            had = old[key].get("mcp_uses") or [] if key in old else reports.read_mcp(p.board, t["id"])
             try:
-                uses = (old.get(key) or {}).get("mcp_uses") or [] if closed and not s else mcp_uses(paths or [])
+                fresh_uses = [] if closed and not s else mcp_uses(paths or [])
             except OSError:
-                uses = []
+                fresh_uses = []
+            uses = keep_mcp_uses(p.board, t["id"], had, fresh_uses)
             # A sha lands on the card only after its commit, so the answer can change only when the log grows.
             done = self.committed.get((p.id, t["id"]))
             if phase != "working" and (not done or done[0] != len(log)):
