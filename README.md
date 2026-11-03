@@ -45,8 +45,10 @@ when it is done, or send some or all to To Do as one milestone card with subtask
 
 Tick **Plan first** on a new card. Claude looks through the code, asks you what only you can decide, and writes a
 brief, a spec with numbered points (each says how it will be checked) and a plan in `<board>/plans/<card>/`, changing
-nothing else. Fresh reviewers who see only the document then look for holes (the method of Google's
-[Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model)). A pane beside the chat draws it live: the
+nothing else. Before planning, the card questions the idea: it quotes your notes, weighs other ways to read them and
+makes the best case against its own direction. Fresh reviewers who see only the document then look for holes (the
+method of Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model)), a challenger attacks
+the approach itself, and a fresh builder checks the final plan before it is ready. A pane beside the chat draws it live: the
 phase, the tree of goals and choices, the files to look at and change, and what Claude just looked up. Press a document's
 name to read it in the pane. **Build this plan** then starts a card from the finished plan and moves the plan card to
 done. That card writes a failing test for each point of the spec, then the code until they all pass, ticking a task list

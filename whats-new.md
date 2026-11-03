@@ -3,6 +3,7 @@
 ## 2026-11-03
 
 - Setting up the board now gets the newest code search helper, and swaps an old one for it. The old one kept stopping in the middle of a task, which made cards say "Could not connect to MCP".
+- Plan first now stops to ask if the idea is the right one before it plans, and a fresh helper tries hard to prove the plan wrong. Before it says it is ready, another fresh helper reads the plan as if it had to build it.
 
 ## 2026-11-02
 
