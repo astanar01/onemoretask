@@ -151,6 +151,90 @@ remind = server.plan_reminder(P, tasks_by["plan1"])
 check("a reply repeats the folder and the command", folder in remind and " plan --file " in remind and "plan.md" in remind and "## Context" in remind, remind)
 check("S6 the plan reminder names ## Tasks", "## Tasks" in remind, remind)
 
+# --- a better Plan first (card mw0hu788f5w4d): PFn = its spec point Sn
+
+
+def element(lines, start):
+    found = [x for x in lines if x.startswith(start)]
+    return found[0] if found else ""
+
+
+def has_all(text, words):
+    missing = [w for w in words if w not in text]
+    return not missing, missing
+
+
+def before(text, a, b):
+    return a in text and b in text and text.index(a) < text.index(b)
+
+
+PL = server.plan_lines("R", "/b/plans/plan1")
+PL_CODEX = server.plan_lines("R", "/b/plans/plan1", on_codex=True)
+explore, review, ready = (element(PL, s) for s in ("1. **explore**", "3. **review**", "4. **ready**"))
+review_cx, ready_cx = element(PL_CODEX, "3. **review**"), element(PL_CODEX, "4. **ready**")
+check("PF1 explore asks for ## The ask with its five parts", *has_all(explore, [
+    "open `/b/plans/plan1/brief.md` with `## The ask`", "the card's notes quoted as written",
+    "the goal in your own words", "each with the assumption it rests on",
+    "which reading the code and facts support", "the strongest case against the direction you lean to"]))
+check("PF2 the notes' wording is one reading, not favoured",
+      "the notes' own wording is one reading; do not favour it" in explore)
+check("PF3 a winning case against changes the lean", "If that case beats your lean, change the lean" in explore)
+check("PF4 readings that build different things go to the user",
+      "Readings that would build different things go to the user as a `question`" in explore)
+check("PF5 ## The ask comes before the first question", "Before your first question" in explore
+      and before(explore, "## The ask", "Then ask the user what only they can decide"))
+check("PF6 ## The ask is a few lines on a small card", "a few lines for a small card" in explore)
+check("PF7 the agreed direction goes below ## The ask",
+      "Save the agreed direction in `/b/plans/plan1/brief.md`, below `## The ask`" in explore)
+check("PF8 a challenger gets only brief.md and spec.md", *has_all(review, [
+    "Also start a challenger with the Agent tool, given only",
+    "`/b/plans/plan1/brief.md` and `/b/plans/plan1/spec.md`", "the strongest case against the chosen approach",
+    "whether that case beats the plan"]))
+check("PF9 a challenger win goes to the user", "If it does, or it would undo a choice the user made, ask the user "
+      "with a `question` report; never swap the approach on your own" in review)
+check("PF10 otherwise why the plan stands goes under ## Challenger",
+      *has_all(review, ["under `## Challenger` in", "why the plan stands"]))
+check("PF11 every reviewer hands its report back as a file", *has_all(review, [
+    "cat > \"$TMPDIR/plan1-review-<name>.md\" <<'EOF'", "not a script",
+    "replies with only that file's absolute path", "how to hand back its report"]))
+check("PF11b the write rule allows reviewer report files",
+      "apart from $TMPDIR for scratch files and reviewer reports" in element(PL, "- Write your Markdown documents"))
+check("PF12 the old text-reply wording is gone", "report as text" not in "\n".join(PL))
+check("PF13 a failed write falls back to text, noted as partial",
+      *has_all(review, ["If the write fails, it replies in text and says so", "may be partial"]))
+check("PF14 a cut reply is recovered", "ask for the rest from the last line seen" in review)
+check("PF15 the existing review asks stay (guard)", *has_all(review, [
+    "start fresh reviewers with", "no history", "proven by its check", "is each point one thing"]))
+check("PF16 a builder gets only plan.md and spec.md", *has_all(ready, [
+    "start one builder with the Agent tool, given only", "`/b/plans/plan1/plan.md` and `/b/plans/plan1/spec.md`",
+    "guess or ask", "in a file as above"]))
+check("PF16b the builder check comes before ready", "Keep the phase at `review` until this check is done" in ready
+      and before(ready, "start one builder", "Then set the phase to ready")
+      and "(`ready` only when step 4 says)" in element(PL, "Work in these phases"))
+check("PF16c builder findings go under ## Builder check", "under `## Builder check` in" in ready)
+check("PF17 done lists the choices made without asking", "every choice you made without asking" in ready)
+check("PF18 Codex starts the challenger and builder with spawn_agent",
+      "Also start a challenger with spawn_agent with `fork_turns: \"none\"`" in review_cx
+      and "start one builder with spawn_agent with `fork_turns: \"none\"`" in ready_cx
+      and "the Agent tool" not in review_cx and "the Agent tool" not in ready_cx)
+check("PF19 the reminder names the new steps", *has_all(remind, [
+    "## The ask", "spec.md", "S1", "challenger", "plan1-review-", "absolute path", "builder", "plan.md and spec.md"]))
+# Lengths measured on the unchanged code at commit 8a48392 (main, before this card): 6012 and 420.
+PLAN_LINES_BEFORE, REMINDER_BEFORE = 6012, 420
+plan_len = len("\n".join(PL))
+remind_len = len(remind.replace(reports.plan_dir(P.board, "plan1"), "").replace(server.report_cmd(P, "plan1"), ""))
+check("PF20 the added text stays short (guard)",
+      plan_len <= PLAN_LINES_BEFORE + 2800 and remind_len <= REMINDER_BEFORE + 550, (plan_len, remind_len))
+news = [x for x in open(os.path.join(ROOT, "whats-new.md"), encoding="utf-8").read().splitlines()
+        if x.startswith("- ") and "a fresh helper tries hard to prove the plan wrong" in x]
+check("PF22 whats-new.md has the line for this change", len(news) == 1, news)
+readme = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read()
+start = readme.find("### Plan one idea before building it")
+end = readme.find("\n### ", start + 4) if start >= 0 else -1
+section = readme[start:end if end >= 0 else len(readme)] if start >= 0 else ""
+check("PF23 the README says the idea is questioned, challenged and checked",
+      *has_all(section, ["questions the idea", "challenger", "fresh builder"]))
+
 # --- the Build card's prompt
 built = server.build_prompt(P, state, tasks_by["build1"])
 check("S7 a card with a good buildOf gets build lines naming the plan folder", "Build mode:" in built and folder in built, built)
