@@ -635,6 +635,7 @@ def sandbox_line(report):
 # the document attacks it, and the person decides the trade-offs.
 def plan_lines(report, folder, on_codex=False):
     fresh = ("spawn_agent with `fork_turns: \"none\"`" if on_codex else "the Agent tool")
+    card = os.path.basename(folder)  # the plan folder is <board>/plans/<card id> (reports.plan_dir)
     return ["Plan mode (the user ticked \"Plan first\" on this card): turn the idea in the notes into a plan good "
             "enough to build from. Do NOT build it.",
             "- You write NO code: no code file anywhere (not even a scratch script or a trial in a temp folder), no "
@@ -643,7 +644,8 @@ def plan_lines(report, folder, on_codex=False):
             "the user says \"go ahead\", finish the plan and post `done`; the \"Build this plan\" button on the card "
             "starts the card that does the work. The board refuses other file writes and git writes.",
             f"- Write your Markdown documents with the Write and Edit tools in `{folder}` (the only folder you may "
-            "write in; make no other kind of file). They show on the card as you save them.",
+            "write in, apart from $TMPDIR for scratch files and reviewer reports; make no other kind of file). They "
+            "show on the card as you save them.",
             sandbox_line(report),
             "",
             f"The card has a live pane that draws your plan. Feed it with `{report} plan --file <update.json>` (write "
@@ -665,16 +667,23 @@ def plan_lines(report, folder, on_codex=False):
             "will be edited, `add` = will be made. Move a file from look to change as soon as you know. File "
             "names belong here even when card messages must avoid them.",
             "",
-            "Work in these phases, setting `phase` as you enter each one:",
+            "Work in these phases, setting `phase` as you enter each one (`ready` only when step 4 says):",
             "1. **explore**: at once post the goal and a first tree. Find the real code before asking anything: use "
             "the code map tools when this session has them (`search_graph`, `search_code`, `get_code_snippet`, "
             "`trace_path`, `get_architecture` from codebase-memory-mcp, loaded with ToolSearch), else search and "
             "read. Post each file you find to the pane right away. Gather what the build will need as you go, not "
             "only what the plan needs: the project's rules and conventions, past decisions and mistakes in this area "
-            "(project docs, and memory tools when this session has them), how to run and test it. Then ask the user "
-            "what only they can decide, "
+            "(project docs, and memory tools when this session has them), how to run and test it. "
+            f"Before your first question, open `{folder}/brief.md` with `## The ask`, a few lines for a small card: "
+            "the card's notes quoted as written; the goal in your own words; two or three readings of the notes, "
+            "each with the assumption it rests on (the notes' own wording is one reading; do not favour it); which "
+            "reading the code and facts support; and the strongest case against the direction you lean to, a real "
+            "one, not a strawman. If that case beats your lean, change the lean: the earlier lines stand and the "
+            "conclusion follows them. Readings that would build different things go to the user as a `question`. "
+            "Then ask the user what only they can decide, "
             "through `question` reports with options, a few at a time, and redraw the tree from each answer. "
-            f"Never ask what the code already answers. Save the agreed direction in `{folder}/brief.md`: goal, what "
+            f"Never ask what the code already answers. Save the agreed direction in `{folder}/brief.md`, below "
+            "`## The ask`: goal, what "
             "is out of scope, constraints, the options weighed, the choice and why.",
             f"2. **draft**: write `{folder}/spec.md` from the brief, one section at a time. Number every point the "
             "finished work must meet (S1, S2, ...): one thing a person can check, in plain sentences. Give each point "
@@ -682,11 +691,22 @@ def plan_lines(report, folder, on_codex=False):
             "prove it. Then: how it works, what changes in which file, the data, the edge cases. Ask the user only "
             "about real trade-offs.",
             f"3. **review**: you know too much to see the holes, so start fresh reviewers with {fresh}, with no history "
-            "of this chat. Give each ONLY the document's path and what to look for. Run at least two: one asks \"could "
+            "of this chat. Give each ONLY the paths it needs, what to look for and how to hand back its report "
+            "(below). Run at least two: one asks \"could "
             "someone build this from the document alone? what is missing, unclear or assumed?\"; one checks every "
             "file, function and claim in it against the real code (naming the same code map tools). Also have one "
-            "ask: can each point be proven by its check, and is each point one thing? Have them "
-            f"report as text; you save the findings in `{folder}/review.md` and post them as `risk` nodes. Fix what "
+            "ask: can each point be proven by its check, and is each point one thing? "
+            f"Also start a challenger with {fresh}, given only `{folder}/brief.md` and `{folder}/spec.md`: it makes "
+            "the strongest case against the chosen approach (a simpler way, another reading of the notes quoted in "
+            "`## The ask`, a reason it will not solve the problem) and says whether that case beats the plan. If it "
+            "does, or it would undo a choice the user made, ask the user with a `question` report; never swap the "
+            "approach on your own. Otherwise write under "
+            f"`## Challenger` in `{folder}/review.md` why the plan stands. Each reviewer writes its full report with "
+            f"one shell command, `cat > \"$TMPDIR/{card}-review-<name>.md\" <<'EOF'` (plain text, not a script), and "
+            "replies with only that file's absolute path, with `$TMPDIR` expanded: a text reply gets cut. If the "
+            "write fails, it replies in text and says so, and you note in `review.md` that its report may be "
+            "partial. Read those files; if a reply is cut anyway, ask for the rest from the last line seen. "
+            f"Save the findings in `{folder}/review.md` and post them as `risk` nodes. Fix what "
             "is clear, ask the user about trade-offs, then re-run a reviewer once if you changed a lot. Never "
             "review it yourself instead: if you cannot start a fresh reviewer, say so on the card.",
             f"4. **ready**: write `{folder}/plan.md`, which a new session can follow with no other context. It opens "
@@ -694,8 +714,14 @@ def plan_lines(report, folder, on_codex=False):
             "conventions to keep, the past decisions and mistakes that matter, how to run and test, what was ruled "
             "out and the choices the user made. Then `## Tasks`: the Implementation Task List, ordered `T1`, `T2`, ... "
             "Each task gives the files, the change and the spec points it meets. The Build card writes the tests from "
-            "the spec before any code, so write no test code here. Set the phase to ready, then post "
-            "`done` with the plan's outline and the choices the user made. Mention \"Build this plan\"."]
+            "the spec before any code, so write no test code here. "
+            f"Keep the phase at `review` until this check is done: start one builder with {fresh}, given only "
+            f"`{folder}/plan.md` and `{folder}/spec.md`, as the Build card gets them. It reads them as the Build "
+            "card would and lists every place it would have to guess or ask, in a file as above. Fix plan.md (and "
+            "spec.md when a point changes), ask the user only about real trade-offs, and add the findings under "
+            f"`## Builder check` in `{folder}/review.md`. Then set the phase to ready and post `done` with the plan's "
+            "outline, the choices the user made, and every choice you made without asking (risks accepted in "
+            "`review.md` included), so the user can overrule them. Mention \"Build this plan\"."]
 
 
 def build_source(t):
@@ -757,7 +783,11 @@ def plan_reminder(p, t):
     return (f"Reminder: this is a plan card. Change no project file: Markdown documents only, in "
             f"`{reports.plan_dir(p.board, t['id'])}`. Keep the card's live pane current with `{report} plan --file "
             f"<update.json>` (the report script with no arguments prints the JSON it takes). The final document is "
-            "plan.md, opening with `## Context`: all the next session needs to know, then `## Tasks`; when it is finished post `done`: the \"Build this plan\" button on the card starts the work.")
+            "plan.md, opening with `## Context`: all the next session needs to know, then `## Tasks`; when it is finished post `done`: the \"Build this plan\" button on the card starts the work. "
+            "Steps: `brief.md` opens with `## The ask` (the notes quoted, readings, the case against); `spec.md` "
+            "holds the numbered points (S1, S2, ...); review adds a challenger; each reviewer writes its report to "
+            f"`$TMPDIR/{t['id']}-review-<name>.md` and replies with the absolute path; before `done`, a fresh "
+            "builder reads plan.md and spec.md and you fix what it would have to guess.")
 
 
 # Restated on every reply (board_tail): the go-ahead comes many turns after the first brief.

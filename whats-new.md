@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-03
+
+- Plan first now stops to ask if the idea is the right one before it plans, and a fresh helper tries hard to prove the plan wrong. Before it says it is ready, another fresh helper reads the plan as if it had to build it.
+
 ## 2026-11-02
 
 - The small "Used 5 MCP tools" line now stays in a card's chat for good, even when the card is done or the board starts again. Click it to see when each tool was used.
