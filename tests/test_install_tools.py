@@ -32,6 +32,7 @@ class InstallTools(unittest.TestCase):
         self.calls = []
         self.downloads = []
         self.which = {}
+        self.versions = {}
         self.failing = set()
         self.port = False
         self.platform = ("linux", "amd64")
@@ -74,12 +75,13 @@ class InstallTools(unittest.TestCase):
         cmm_asset = it.asset_name("codebase-memory-mcp", os_name, arch)
         mun_asset = it.asset_name("muninn", os_name, arch)
         sha = lambda b: hashlib.sha256(b).hexdigest()
+        cmm_rel = "DeusData/codebase-memory-mcp/releases/download/" + it.VERSIONS["codebase-memory-mcp"]["tag"] + "/"
+        mun_rel = "scrypster/muninndb/releases/download/" + it.VERSIONS["muninn"]["tag"] + "/"
         self.files = {
-            "DeusData/codebase-memory-mcp/releases/download/v0.11.0/" + cmm_asset: cmm_bytes,
-            "DeusData/codebase-memory-mcp/releases/download/v0.11.0/checksums.txt":
-                f"{cmm_sum or sha(cmm_bytes)}  {cmm_asset}\n".encode(),
-            "scrypster/muninndb/releases/download/v0.11.0/" + mun_asset: MUNINN,
-            "scrypster/muninndb/releases/download/v0.11.0/checksums.txt": f"{sha(MUNINN)}  {mun_asset}\n".encode(),
+            cmm_rel + cmm_asset: cmm_bytes,
+            cmm_rel + "checksums.txt": f"{cmm_sum or sha(cmm_bytes)}  {cmm_asset}\n".encode(),
+            mun_rel + mun_asset: MUNINN,
+            mun_rel + "checksums.txt": f"{sha(MUNINN)}  {mun_asset}\n".encode(),
         }
 
     def fake_download(self, url, dest):
@@ -92,7 +94,14 @@ class InstallTools(unittest.TestCase):
         self.calls.append(call)
         if " ".join(call) in self.failing:
             return subprocess.CompletedProcess(cmd, 1, "", "boom")
-        out = "tool 1.2.3\n" if cmd[1:] == ["--version"] else ""
+        out = ""
+        if cmd[1:] == ["--version"]:
+            # A path in self.versions answers with its own version; bytes on disk pick the answer for files.
+            out = self.versions.get(cmd[0], "tool 1.2.3\n")
+            if os.path.isfile(cmd[0]) and self.read(cmd[0]) in self.versions:
+                out = self.versions[self.read(cmd[0])]
+            if out is None:
+                return subprocess.CompletedProcess(cmd, 1, "", "dyld: bad")
         return subprocess.CompletedProcess(cmd, 0, out, "")
 
     def main(self, *extra):
@@ -159,6 +168,71 @@ class InstallTools(unittest.TestCase):
         self.assertFalse(any("muninndb" in u or "codebase-memory" in u for u in self.downloads))
         self.assertIn("Kept your own muninn (version tool 1.2.3)", out)
         self.assertEqual(self.servers()["codebase-memory-mcp"]["command"], "/opt/cmm/codebase-memory-mcp")
+
+    def old_cmm(self, version="codebase-memory-mcp 0.8.1\n"):
+        os.makedirs(self.bin, exist_ok=True)
+        cmm = os.path.join(self.bin, "codebase-memory-mcp")
+        with open(cmm, "wb") as f:
+            f.write(b"old")
+        self.versions[b"old"] = version
+        return cmm
+
+    def test_older_code_search_replaced_with_backup(self):
+        cmm = self.old_cmm()
+        out = self.main()
+        self.assertEqual(self.read(cmm), CMM)
+        self.assertEqual(self.read(cmm + "-0.8.1.bak"), b"old")
+        self.assertTrue(any("codebase-memory" in u for u in self.downloads))
+        self.assertIn("Updated codebase-memory-mcp from codebase-memory-mcp 0.8.1 to tool 1.2.3", out)
+        self.assertNotIn("codebase-memory-mcp", it.FAILED)
+        self.assertEqual(self.servers()["codebase-memory-mcp"]["command"], cmm)
+
+    def test_code_search_at_or_above_pin_kept(self):
+        pin = it.VERSIONS["codebase-memory-mcp"]["tag"].lstrip("v")
+        for have in (pin, "9.0.0"):
+            with self.subTest(have=have):
+                self.downloads.clear()
+                cmm = self.old_cmm(f"codebase-memory-mcp {have}\n")
+                out = self.main()
+                self.assertEqual(self.read(cmm), b"old")
+                self.assertFalse(any("codebase-memory" in u for u in self.downloads))
+                self.assertIn(f"Kept your own codebase-memory-mcp (version codebase-memory-mcp {have})", out)
+
+    def test_muninn_never_replaced_for_age(self):
+        os.makedirs(self.bin)
+        mine = os.path.join(self.bin, "muninn")
+        with open(mine, "wb") as f:
+            f.write(b"mine")
+        self.versions[b"mine"] = "muninn 0.0.1\n"
+        self.main()
+        self.assertEqual(self.read(mine), b"mine")
+        self.assertFalse(any("muninndb" in u for u in self.downloads))
+
+    def test_old_code_search_put_back_when_new_one_does_not_run(self):
+        cmm = self.old_cmm()
+        self.versions[CMM] = None
+        out = self.main()
+        self.assertEqual(self.read(cmm), b"old")
+        self.assertFalse(os.path.exists(cmm + "-0.8.1.bak"))
+        self.assertIn("put your old one (codebase-memory-mcp 0.8.1) back", out)
+        self.assertNotIn("codebase-memory-mcp", it.FAILED)  # no retry download on every board start
+
+    def test_old_code_search_in_folder_we_cannot_write_kept(self):
+        path = os.path.join(self.home, "nowhere", "codebase-memory-mcp")  # folder does not exist: not writable
+        self.which["codebase-memory-mcp"] = path
+        self.versions[path] = "codebase-memory-mcp 0.8.1\n"
+        out = self.main()
+        self.assertIn("older than", out)
+        self.assertIn("can't be replaced — kept it", out)
+        self.assertFalse(any("codebase-memory" in u for u in self.downloads))
+        self.assertEqual(self.servers()["codebase-memory-mcp"]["command"], path)
+
+    def test_dry_run_names_the_replace(self):
+        cmm = self.old_cmm()
+        out = self.main("--dry-run")
+        self.assertIn(f"Would replace your codebase-memory-mcp (codebase-memory-mcp 0.8.1) at {cmm}", out)
+        self.assertEqual(self.read(cmm), b"old")
+        self.assertEqual(self.downloads, [])
 
     def test_mcp_entries_not_clobbered(self):
         mine = {"type": "stdio", "command": "/my/muninn", "args": []}

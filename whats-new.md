@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-03
+
+- Setting up the board now gets the newest code search helper, and swaps an old one for it. The old one kept stopping in the middle of a task, which made cards say "Could not connect to MCP".
+
 ## 2026-11-02
 
 - The small "Used 5 MCP tools" line now stays in a card's chat for good, even when the card is done or the board starts again. Click it to see when each tool was used.

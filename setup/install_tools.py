@@ -2,7 +2,8 @@
 
 Usage: python3 setup/install_tools.py [--bin-dir DIR] [--claude-dir DIR] [--dry-run]
 install.sh and install.ps1 run this. It never fails the install: every problem prints a "Note: ... skipped"
-line and the script still exits 0. A tool you already have is kept as is. After main(), FAILED names the steps a
+line and the script still exits 0. A tool you already have is kept as is, except a codebase-memory-mcp older than
+its pinned tag, which is replaced (the old one kept beside it as <path>-<version>.bak). After main(), FAILED names the steps a
 later run may fix (a failed download or plugin command); setup/run_setup.py runs it again then.
 Skip it all with ONEMORETASK_NO_TOOLS=1.
 """
@@ -12,6 +13,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -22,8 +24,9 @@ import urllib.request
 import zipfile
 
 VERSIONS = {
-    "codebase-memory-mcp": {"repo": "DeusData/codebase-memory-mcp", "tag": "v0.11.0",
-                            "asset": "codebase-memory-mcp-{os}-{arch}", "archive": True},
+    # replace_older: a copy older than tag is swapped for tag (0.8.1 crashed in its background re-index, upstream #773).
+    "codebase-memory-mcp": {"repo": "DeusData/codebase-memory-mcp", "tag": "v0.12.1",
+                            "asset": "codebase-memory-mcp-{os}-{arch}", "archive": True, "replace_older": True},
     "muninn": {"repo": "scrypster/muninndb", "tag": "v0.11.0",
                "asset": "muninn-{os}-{arch}", "archive": False},
 }
@@ -88,6 +91,18 @@ def version_of(path):
     return lines[-1].strip() if p.returncode == 0 and lines else None
 
 
+def version_tuple(text):
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def older_than_pin(name, have):
+    """True when name's spec asks to replace older copies and have (a --version line) is below its tag."""
+    spec = VERSIONS[name]
+    mine, pin = version_tuple(have), version_tuple(spec["tag"])
+    return bool(spec.get("replace_older") and mine and pin and mine < pin)
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -121,23 +136,36 @@ def install_binary(name, bin_dir, dry):
     exe = exe_name(name, tag[0] if tag else "")
     target = os.path.join(bin_dir, exe)
     own = shutil.which(name) or (target if os.path.isfile(target) else None)
+    spec = VERSIONS[name]
+    old = backup = None
     if own:
-        print(f"Kept your own {name} (version {version_of(own) or 'unknown'}) at {own}")
-        return own
+        have = version_of(own)
+        if not older_than_pin(name, have):
+            print(f"Kept your own {name} (version {have or 'unknown'}) at {own}")
+            return own
+        if not tag or not os.access(os.path.dirname(own), os.W_OK):
+            print(f"Note: your {name} at {own} ({have}) is older than {spec['tag']} but can't be replaced — kept it.")
+            return own
+        target, old = own, have
+        backup = f"{own}-{'.'.join(map(str, version_tuple(have)))}.bak"
     if not tag:
         print(f"Note: no {name} build for this computer ({platform.system()} {platform.machine()}) — skipped.")
         return None
-    spec = VERSIONS[name]
     asset = asset_name(name, *tag)
     base = f"https://github.com/{spec['repo']}/releases/download/{spec['tag']}/"
     if dry:
-        print(f"Would download {name} {spec['tag']} ({asset}) to {target}")
+        if old:
+            print(f"Would replace your {name} ({old}) at {target} with {spec['tag']}")
+        else:
+            print(f"Would download {name} {spec['tag']} ({asset}) to {target}")
         return target
-    os.makedirs(bin_dir, exist_ok=True)
+    dest_dir = os.path.dirname(target)
+    os.makedirs(dest_dir, exist_ok=True)
     tmps = []
 
     def tmp():
-        fd, p = tempfile.mkstemp(prefix=f".{name}-", dir=bin_dir)
+        # Same folder as target, so os.replace is a rename: a running copy keeps its old file.
+        fd, p = tempfile.mkstemp(prefix=f".{name}-", dir=dest_dir)
         os.close(fd)
         tmps.append(p)
         return p
@@ -162,6 +190,8 @@ def install_binary(name, bin_dir, dry):
                 print(f"Note: {asset} has no {exe} inside — {name} skipped.")
                 return None
         os.chmod(binary, 0o755)
+        if backup:
+            shutil.copy2(target, backup)
         os.replace(binary, target)
     except Exception as e:
         print(f"Note: could not install {name} ({e}) — skipped.")
@@ -176,6 +206,11 @@ def install_binary(name, bin_dir, dry):
         run(["xattr", "-cr", target])
         run(["codesign", "--force", "--sign", "-", target])
     version = version_of(target)
+    if not version and backup and os.path.exists(backup):
+        os.replace(backup, target)
+        # Not in FAILED: the old copy works, and a retry on every board start would download it each time.
+        print(f"Note: {name} {spec['tag']} does not run here — put your old one ({old}) back.")
+        return target
     if not version:
         print(f"Note: {name} was put in {target} but does not run — skipped.")
         FAILED.append(name)
@@ -183,7 +218,10 @@ def install_binary(name, bin_dir, dry):
         with contextlib.suppress(OSError):
             os.remove(target)
         return None
-    print(f"Installed {name} (version {version}) in {target}")
+    if old:
+        print(f"Updated {name} from {old} to {version} in {target} (the old one is kept as {backup})")
+    else:
+        print(f"Installed {name} (version {version}) in {target}")
     return target
 
 

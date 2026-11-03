@@ -1,10 +1,11 @@
 """The code map finds every function in a real file, except the known gap: a function defined inside another function.
 
 Measured 2026-10-31 on v0.8.1, v0.11.0 and v0.12.1: 232 of the 243 functions in server.py; the 11 missing are all nested,
-and methods such as __init__ are found (label Method). This fails if a release loses anything else. It also fails when a
+and methods such as __init__ are found (label Method). Rechecked 2026-11-03 on 0.12.1, which pages query answers by 200 rows. This fails if a release loses anything else. It also fails when a
 release closes the gap: then the rule in claude/rules/cmm-rules.md is out of date and can go.
 
-Indexes a copy in a temp HOME, so the real graph is not touched. Skipped without the binary.
+Indexes a copy in a temp HOME and its own runtime dir, so the real graph and the running daemon are not touched.
+Skipped without the binary.
 Run: python3 tests/test_cmm_coverage.py  (stdlib only)."""
 import ast
 import json
@@ -43,7 +44,12 @@ class CodeMapCoverage(unittest.TestCase):
             repo = os.path.join(tmp, "repo")
             os.makedirs(repo)
             shutil.copy(os.path.join(ROOT, "server.py"), repo)
-            env = dict(os.environ, HOME=tmp, XDG_CACHE_HOME=os.path.join(tmp, ".cache"))
+            # From 0.12 one daemon per account serves every session and refuses a client with another cache dir
+            # ("active account daemon uses a different cache directory"). A private runtime dir gives this test its own;
+            # it must be short (a 67-character path failed with "secure CLI coordination could not be created").
+            run_dir = tempfile.mkdtemp(prefix="cbm", dir="/tmp")
+            self.addCleanup(shutil.rmtree, run_dir, True)
+            env = dict(os.environ, HOME=tmp, XDG_CACHE_HOME=os.path.join(tmp, ".cache"), CBM_RUNTIME_DIR=run_dir)
             for args in (["init", "-q"], ["add", "-A"],
                          ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
                 subprocess.run(["git", "-C", repo, *args], check=True, env=env)
@@ -56,13 +62,20 @@ class CodeMapCoverage(unittest.TestCase):
 
             index = cli("index_repository", {"repo_path": repo})
             project = re.search(r'"project"\s*:\s*"([^"]+)"', index).group(1)
-            out = cli("query_graph", {"project": project, "query": "MATCH (f) WHERE (f:Function OR f:Method) "
-                                                                   "AND f.file_path='server.py' RETURN f.start_line"})
-            # v0.8 prints JSON; later versions print one value per row.
-            try:
-                found = {int(row[0]) for row in json.loads(out)["rows"]}
-            except ValueError:
-                found = {int(v) for v in re.findall(r'^\s+"?(\d+)"?\s*$', out, re.M)}
+            query = "MATCH (f) WHERE (f:Function OR f:Method) AND f.file_path='server.py' RETURN f.start_line"
+            found, offset = set(), 0
+            while True:
+                out = cli("query_graph", {"project": project, "query": query, "offset": offset})
+                # v0.8 prints JSON with every row; 0.12 prints one value per row, 200 rows a page.
+                try:
+                    found |= {int(row[0]) for row in json.loads(out)["rows"]}
+                    break
+                except ValueError:
+                    rows = re.findall(r'^\s+"?(\d+)"?\s*$', out, re.M)
+                    found |= {int(v) for v in rows}
+                if not rows or not re.search(r"^has_more: true", out, re.M):
+                    break
+                offset += len(rows)
             with open(os.path.join(repo, "server.py"), encoding="utf-8") as f:
                 defs = definitions(f.read())
             missing = [(name, nested) for lines, name, nested in defs if not lines & found]
