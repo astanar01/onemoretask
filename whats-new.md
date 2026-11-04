@@ -1,5 +1,10 @@
 # What's new
 
+## 2026-11-04
+
+- In the Observations window you can now have the full skill review run on its own, on the days and at the time you pick, even when the board is closed.
+- Claude's helpers no longer fail to start when you open the board from its icon instead of a terminal. That failure also made cards say "Could not connect to MCP".
+
 ## 2026-11-03
 
 - Setting up the board now gets the newest code search helper, and swaps an old one for it. The old one kept stopping in the middle of a task, which made cards say "Could not connect to MCP".

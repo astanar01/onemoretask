@@ -702,7 +702,15 @@ const I18N = {
     "The board needs 90 days of watching first, so nothing goes on its own before {date}.": "Le tableau doit d’abord observer pendant 90 jours : rien ne part tout seul avant le {date}.",
     "Last check: {date}, {n} notes.": "Dernière vérification : {date}, {n} notes.",
     "The first check runs a minute after the board starts.": "La première vérification a lieu une minute après le démarrage du tableau.",
-    "Could not load the memory clean-up.": "Impossible de charger le nettoyage de la mémoire."
+    "Could not load the memory clean-up.": "Impossible de charger le nettoyage de la mémoire.",
+    "Run the full review on its own": "Lancer la relecture complète toute seule",
+    "Your computer starts the full review on these days, even with the board closed. Claude stages the changes for you to check.": "Votre ordinateur lance la relecture complète ces jours-là, même tableau fermé. Claude prépare les changements pour que vous les vérifiiez.",
+    "Time": "Heure",
+    "The schedule is gone from this computer: turn it on again": "La planification n’est plus sur cet ordinateur : réactivez-la",
+    "Last run: {date}": "Dernier passage : {date}",
+    "Not run yet": "Pas encore lancée",
+    "Pick at least one day": "Choisissez au moins un jour",
+    "Could not save the schedule: {err}": "Impossible d’enregistrer la planification : {err}"
   } /* fr-end */
 };
 

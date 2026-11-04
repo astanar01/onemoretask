@@ -295,6 +295,13 @@ body.view-plan #search { visibility: hidden; }
 #obs-note { margin: 0 0 10px; color: var(--muted); }
 #obs-note:empty, #obs-due-line:empty { display: none; }
 #obs-due-line { margin: 0 0 10px; color: var(--muted); }
+#obs-sched { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 10px; }
+#obs-sched .toggle { margin: 0; }
+#obs-sched-days { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+#obs-sched-days label { display: inline-flex; align-items: center; gap: 3px; font-size: calc(12px * var(--ts)); }
+#obs-sched-days input { margin: 0; accent-color: var(--accent); }
+#obs-sched-msg { color: var(--muted); font-size: calc(12px * var(--ts)); }
+#obs-sched:not(.on) #obs-sched-days, #obs-sched:not(.on) #obs-sched-time { opacity: .55; }
 #obs-list, #cl-body { flex: 1; min-height: 0; overflow-y: auto; margin: 8px 0 14px; }
 .obs-group + .obs-group { margin-top: 14px; }
 .obs-group h4 { margin: 0; font-size: calc(13px * var(--ts)); }
@@ -1021,6 +1028,12 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <label class="toggle"><input type="checkbox" id="obs-all"> Select all</label>
   <div id="obs-list"></div>
   <p id="obs-due-line"></p>
+  <div id="obs-sched" style="display:none">
+    <label class="toggle" title="Your computer starts the full review on these days, even with the board closed. Claude stages the changes for you to check."><input type="checkbox" id="obs-sched-on"> Run the full review on its own</label>
+    <span id="obs-sched-days"></span>
+    <input type="time" id="obs-sched-time" value="09:07" aria-label="Time">
+    <span id="obs-sched-msg" role="status"></span>
+  </div>
   <div class="actions"><select id="obs-model" title="Model for the Claude session"></select><span class="grow"></span><button class="btn" id="obs-close">Close</button><button class="btn" id="obs-review" title="Claude checks every open observation against every skill and asks you on the card which changes to make">Run full review</button><button class="btn primary" id="obs-apply">Apply</button></div>
 </div></div>
 <div id="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-title"><div class="box">
@@ -3819,7 +3832,53 @@ function openObs() {
   renderObs();
   loadDefaultModel().then(() => { $("#obs-model option[value='']").textContent = $("#d-model option[value='']").textContent; });
   loadObservations(true);
+  loadSchedule();
 }
+
+// The scheduled full review (review_schedule.py): the computer's own scheduler runs it, the board only sets it.
+let sched = null;
+const dayShort = (i) => new Date(2024, 0, 1 + i).toLocaleDateString(LOCALE, { weekday: "short" });   // 2024-01-01 is a Monday
+async function loadSchedule() {
+  const pid = P;
+  let d = null;
+  try {
+    const r = await fetch(api("/api/review-schedule"), { cache: "no-store" });
+    if (r.ok) d = await r.json();   // a 404 means the server runs older code: the row stays hidden
+  } catch (e) { /* hidden */ }
+  if (pid !== P) return;
+  sched = d;
+  renderSchedule();
+}
+// Shown once the server answered and the review can run (task-observer installed), like Run full review.
+const showSchedule = () => { $("#obs-sched").style.display = sched && obs.data && obs.data.installed ? "" : "none"; };
+function renderSchedule(msg) {
+  const box = $("#obs-sched");
+  showSchedule();
+  if (!sched) return;
+  box.classList.toggle("on", !!sched.on);
+  $("#obs-sched-on").checked = !!sched.on;
+  $("#obs-sched-days").innerHTML = [0, 1, 2, 3, 4, 5, 6].map((i) =>
+    `<label><input type="checkbox" data-d="${i}"${sched.days.includes(i) ? " checked" : ""}>${esc(dayShort(i))}</label>`).join("");
+  $("#obs-sched-time").value = sched.time;
+  $("#obs-sched-msg").textContent = msg != null ? msg
+    : sched.missing ? t("The schedule is gone from this computer: turn it on again")
+    : !sched.on ? "" : sched.lastRun ? t("Last run: {date}", { date: sched.lastRun }) : t("Not run yet");
+}
+async function saveSchedule() {
+  const days = [...document.querySelectorAll("#obs-sched-days input:checked")].map((e) => +e.dataset.d);
+  const on = $("#obs-sched-on").checked;
+  if (on && !days.length) { renderSchedule(t("Pick at least one day")); return; }
+  try {
+    sched = await post(api("/api/review-schedule"), { p: P, on, days, time: $("#obs-sched-time").value || "09:07" });
+    renderSchedule();
+  } catch (e) {
+    renderSchedule(t("Could not save the schedule: {err}", { err: e.message }));
+  }
+}
+$("#obs-sched").addEventListener("change", (e) => {
+  // Days and time only matter while it is on; changing them while off just waits for the switch.
+  if (e.target.id === "obs-sched-on" || $("#obs-sched-on").checked) saveSchedule();
+});
 function closeObs() { $("#obs-modal").classList.remove("open"); }
 // The task and observations windows start under the header, which wraps to more rows on narrow windows.
 new ResizeObserver(() => document.documentElement.style.setProperty("--hdr-h", $("header").getBoundingClientRect().bottom + "px")).observe($("header"));
@@ -3907,6 +3966,7 @@ function renderObsFoot() {
   $("#obs-apply").textContent = t("Apply ({n})", { n });
   $("#obs-apply").disabled = !n;
   $("#obs-review").disabled = !(obs.data && obs.data.installed);
+  showSchedule();
   const due = reviewDue();
   $("#obs-due-line").textContent = !due ? "" : due.reviewDays != null
     ? t("Skill review due: last run {date} ({n} days ago)", { date: due.lastReview, n: due.reviewDays })

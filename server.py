@@ -166,6 +166,8 @@ import codex
 import memory_cleanup
 import observations
 import reports
+import review_schedule
+import shell_env
 
 WINDOWS = os.name == "nt"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -4768,6 +4770,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._errors(lambda: self._json(200, unpushed_commits(project(pid))))
         elif path == "/api/observations":
             self._errors(lambda: self._json(200, observations.list_observations(project(pid).path)))
+        elif path == "/api/review-schedule":
+            self._errors(lambda: self._json(200, review_schedule.status(project(pid).path)))
         elif path == "/api/changelog":
             self._errors(lambda: self._json(200, app_changelog()))
         elif path == "/api/memory-cleanup":
@@ -4812,7 +4816,8 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
                   "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy", "/api/push", "/api/autofill", "/api/which-project",
-                  "/api/task/move", "/api/claude-version", "/api/plan/suggest", "/api/memory-cleanup")
+                  "/api/task/move", "/api/claude-version", "/api/plan/suggest", "/api/memory-cleanup",
+                  "/api/review-schedule")
         if not self._host_ok():
             return
         if path not in routes:
@@ -4840,6 +4845,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"ok": True})
             elif path == "/api/memory-cleanup":
                 self._json(200, memory_cleanup.act(body["id"], body["action"]))
+            elif path == "/api/review-schedule":
+                folder = project(body["p"]).path
+                if body.get("on"):
+                    self._json(200, review_schedule.install(folder, body.get("days") or [], body.get("time") or ""))
+                else:
+                    self._json(200, review_schedule.remove(folder))
             elif path == "/api/agent":
                 self._json(200, launch(project(body["p"]), body["taskId"], body.get("model") or "",
                                        body.get("effort") or ""))
@@ -4971,8 +4982,14 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    global PERMISSION_MODE, SERVER_ARGS
+    global PERMISSION_MODE, SERVER_ARGS, CLAUDE_CMD
     SERVER_ARGS = sys.argv[1:]
+    # Opened from a desktop launcher or a login item, the board has the system's short PATH, and every session it
+    # starts then fails to start MCP servers run by node/npx (shell_env). Take the login shell's PATH first.
+    added = shell_env.fix_path()
+    if added:
+        CLAUDE_CMD = claude_cmd()
+        print(f"Took the PATH of your login shell ({len(added)} more folders), so sessions find node/npx.")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--project", help="open this folder's board (default with none remembered: the current git repo)")
