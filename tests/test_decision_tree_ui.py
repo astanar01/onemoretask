@@ -291,6 +291,18 @@ for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
 }
 return { ts: getComputedStyle(document.documentElement).getPropertyValue('--ts').trim(), n: rs.length, relaid: tsPos() !== before, overlaps };
 })()`);
+// A not-taken option is dimmed in the tree, but its hover zoom must be fully opaque, or the tree shows through it.
+// Read with the fade-in animation finished, in the same task, so no redraw can drop the zoom first.
+out.offZoom = await ev(`(() => {
+const o = document.querySelector('#d-dtree .dt-opt.off');
+if (!o) return { found: false };
+dtZoom(o);
+const z = document.querySelector('.dt-zoom');
+z.getAnimations().forEach((a) => a.finish());
+const res = { found: true, isOff: z.classList.contains('off'), zoom: getComputedStyle(z).opacity, tree: getComputedStyle(o).opacity };
+dtZoom(null);
+return res;
+})()`);
 // Hover zoom on a box whose text is too long for the tree's short strip: the copy must leave the strip and show
 // every line inside the window. The long text is set on the box in the page only, then the tree is drawn again.
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 600, deviceScaleFactor: 1, mobile: false });
@@ -350,12 +362,14 @@ if (shots) {
   await ev(`document.documentElement.dataset.theme = 'dark'; true`);
   await sleep(400);
   await shot('dtree-dark-open');
-  await ev(`document.querySelector('#d-dtree .dt-head').click(); true`);
+  await ev(`dtZoom(document.querySelector('#d-dtree .dt-opt.off')); document.querySelector('.dt-zoom').getAnimations().forEach((a) => a.finish()); true`);
+  await shot('dtree-dark-offzoom');
+  await ev(`dtZoom(null); document.querySelector('#d-dtree .dt-head').click(); true`);
   await sleep(500);
   await shot('dtree-dark-shut');
   await ev(`document.querySelector('#d-dtree .dt-head').click(); delete document.documentElement.dataset.theme; true`);
   await sleep(400);
-  out.shotsTaken = ['dtree-open', 'dtree-summary', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
+  out.shotsTaken = ['dtree-open', 'dtree-summary', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-offzoom', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
 }
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -451,7 +465,7 @@ def main():
         return 1
     check("panel opened on Conversation", res["open"])
     for k in ("p1", "sum", "sumBack", "sumFresh", "p2", "fold0", "foldMid", "foldEnd", "hoverShut", "foldRedraw", "foldReload", "unfoldMid", "unfoldEnd",
-              "ts", "zoom", "p3"):
+              "ts", "offZoom", "zoom", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
             return 1
@@ -522,6 +536,11 @@ def main():
     check("text size picker set --ts to 1.3 (setup)", t["ts"], "1.3")
     check("text size change redid the tree layout without a poll", t["relaid"])
     check(f"no two tree boxes overlap after a text size change ({t['n']} boxes)", t["overlaps"], [])
+
+    o = res["offZoom"]
+    check("a not-taken option is in the tree (setup)", (o["found"], o.get("isOff")), (True, True))
+    check(f"a not-taken option stays dimmed in the tree (opacity {o.get('tree')})", o.get("tree"), "0.5")
+    check(f"hover zoom of a not-taken option is fully opaque (opacity {o.get('zoom')})", o.get("zoom"), "1")
 
     z = res["zoom"]
     for tag, r in zip(("long node", "option"), z[:2]):

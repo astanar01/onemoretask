@@ -491,7 +491,7 @@ body.view-plan #search { visibility: hidden; }
 .dt-why { font-size: calc(10px * var(--ts)); color: var(--muted); }
 .dt-opt.on { color: var(--ok); }
 .dt-opt.on .dt-label { font-weight: 700; }
-.dt-opt.off { opacity: .5; }
+.dt-opt.off:not(.dt-zoom) { opacity: .5; }
 .dt-edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
 .dt-edge.on, .dt-edge.path { stroke: var(--ok); stroke-width: 2.5; }
 .dt-edge.dash { stroke: var(--muted); stroke-dasharray: 5 4; }

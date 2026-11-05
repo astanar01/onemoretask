@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-05
+
+- In the Decisions tree, the choices Claude did not pick now get a solid box when you point at them, so you can read them.
+
 ## 2026-11-04
 
 - In the Observations window you can now have the full skill review run on its own, on the days and at the time you pick, even when the board is closed.
