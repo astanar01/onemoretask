@@ -4436,15 +4436,22 @@ function renderDecisionTree(log) {
   dtKey = key; dtSeen = first + "\n" + ds.length;
   const COL = 184, GAP = 8;
   nodes.forEach((n, i) => { n.el = els[i]; n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; n.x = n.depth * COL; });
-  const lay = (n, top) => {
-    if (!n.kids.length) { n.y = top; return top + n.h + GAP; }
-    let cur = top;
-    n.kids.forEach((c) => (cur = lay(c, cur)));
-    const a = n.kids[0], b = n.kids[n.kids.length - 1];
-    n.y = Math.max(top, (a.y + a.h / 2 + b.y + b.h / 2) / 2 - n.h / 2);
-    return Math.max(cur, n.y + n.h + GAP);
+  // Each depth is its own column, so a box only has to clear the boxes above it in that column. The chosen option
+  // lines up with its question, so the chosen path is one straight line and the tree is only as tall as its columns.
+  // (Stacking whole subtrees made it as tall as every box in the tree put end to end.)
+  const next = [];
+  const lay = (n, cy) => {
+    n.y = Math.max(cy - n.h / 2, next[n.depth] ?? -Infinity);
+    next[n.depth] = n.y + n.h + GAP;
+    if (!n.kids.length) return;
+    const c = n.y + n.h / 2, on = n.kids.findIndex((k) => k.on), span = (ks) => ks.reduce((s, k) => s + k.h + GAP, 0);
+    let y = on >= 0 ? c - span(n.kids.slice(0, on)) - n.kids[on].h / 2 : c - (span(n.kids) - GAP) / 2;
+    n.kids.forEach((k) => { lay(k, y + k.h / 2); y = k.y + k.h + GAP; });
   };
-  const height = lay(root, 0) - GAP;
+  lay(root, 0);
+  const top = Math.min(...nodes.map((n) => n.y));
+  nodes.forEach((n) => (n.y -= top));
+  const height = Math.max(...nodes.map((n) => n.y + n.h));
   let width = 0, paths = "";
   nodes.forEach((n) => {
     n.el.style.left = n.x + "px"; n.el.style.top = n.y + "px";
@@ -4457,6 +4464,8 @@ function renderDecisionTree(log) {
   wrap.style.width = width + "px"; wrap.style.height = height + "px";
   wrap.insertAdjacentHTML("afterbegin", `<svg width="${width}" height="${height}" aria-hidden="true">${paths}</svg>`);
   scroller.scrollLeft = grew ? scroller.scrollWidth : keepLeft;
+  // Taller than its box: show the chosen path's row, which starts at the first question.
+  scroller.scrollTop = parseFloat(getComputedStyle(scroller).paddingTop) + root.y + root.h / 2 - scroller.clientHeight / 2;
 }
 $("#d-dtree").addEventListener("click", (e) => {
   const b = e.target.closest(".dt-head");

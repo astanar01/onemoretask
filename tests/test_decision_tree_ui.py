@@ -221,6 +221,17 @@ return {
   optOn: document.querySelectorAll('#d-dtree .dt-opt.on').length,
   optOff: document.querySelectorAll('#d-dtree .dt-opt.off').length,
   edges: [...document.querySelectorAll('#d-dtree .dt-edge')].map((e) => ({ tag: e.tagName.toLowerCase(), on: e.classList.contains('on') })),
+  // The chosen path (question -> chosen option -> next question): each such edge starts and ends at the same height.
+  chosenRise: [...document.querySelectorAll('#d-dtree .dt-edge.on, #d-dtree .dt-edge.path')].map((e) => {
+    const n = (e.getAttribute('d').match(/-?[\\d.]+/g) || []).map(Number); return Math.abs(n[1] - n[n.length - 1]); }),
+  // Height: the tree against its tallest column (boxes sharing one left x, stacked with the 8px gap).
+  wrapH: dtWrap ? dtWrap.offsetHeight : 0,
+  colMax: (() => { const cols = new Map(); for (const e of [...dtNodes, ...dtOpts]) cols.set(e.style.left, (cols.get(e.style.left) || -8) + e.offsetHeight + 8);
+    return Math.max(0, ...cols.values()); })(),
+  overlaps: (() => { const rs = [...dtNodes, ...dtOpts].map(dtR); let k = 0;
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) { const a = rs[i], b = rs[j];
+      if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) k++; }
+    return k; })(),
   dtreeAnywhere: document.querySelectorAll('.dtree').length,
   logTexts: [...document.querySelectorAll('#d-log > li')].map((li) => li.textContent),
 };
@@ -303,6 +314,17 @@ const res = { found: true, isOff: z.classList.contains('off'), zoom: getComputed
 dtZoom(null);
 return res;
 })()`);
+const LONG = `[0, 1, 2, 0, 2, 1, 0].map((c, i) => { const why = 'a reason long enough to wrap onto a few lines in the tree';
+  return { decision: { query: 'Step ' + i + '?', chosen: c, by: 'agent', why, options: ['One', 'Two', 'Three'].map((l) => ({ label: l, why })) } }; })`;
+// A long chain like a real card's (7 decisions, 3 options with a why each): drawn in the page from a made-up log,
+// measured, then the real log is drawn again.
+out.tall = await ev(`(() => {
+const saved = dtLog;
+dtKey = null; renderDecisionTree(${LONG});
+const r = ${MEASURE};
+dtKey = null; renderDecisionTree(saved);
+return r;
+})()`);
 // Hover zoom on a box whose text is too long for the tree's short strip: the copy must leave the strip and show
 // every line inside the window. The long text is set on the box in the page only, then the tree is drawn again.
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 600, deviceScaleFactor: 1, mobile: false });
@@ -346,6 +368,10 @@ if (shots) {
   await ev(`openDetail('t1'); showTab('conversation'); true`);
   await sleep(600);
   await shot('dtree-open');
+  await ev(`window.__dtSaved = dtLog; dtKey = null; renderDecisionTree(${LONG}); true`);
+  await sleep(200);
+  await shot('dtree-long');
+  await ev(`dtKey = null; renderDecisionTree(window.__dtSaved); true`);
   await ev(`showTab('summary'); true`);
   await sleep(400);
   await shot('dtree-summary');
@@ -369,7 +395,7 @@ if (shots) {
   await shot('dtree-dark-shut');
   await ev(`document.querySelector('#d-dtree .dt-head').click(); delete document.documentElement.dataset.theme; true`);
   await sleep(400);
-  out.shotsTaken = ['dtree-open', 'dtree-summary', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-offzoom', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
+  out.shotsTaken = ['dtree-open', 'dtree-long', 'dtree-summary', 'dtree-mid', 'dtree-shut', 'dtree-dark-open', 'dtree-dark-offzoom', 'dtree-dark-shut'].map((n) => `${shots}/${n}.png`);
 }
 out.errors = errors;
 console.log(JSON.stringify(out));
@@ -426,6 +452,12 @@ def layout_checks(tag, m, n_opts):
     check(f"{tag} head text is bigger and bolder than before ({h.get('fontPx')}px, weight {h.get('weight')})",
           (h.get("fontPx") or 0) >= 12 and (h.get("weight") or 0) >= 600)
     check(f"{tag} chevron sits on the title's row inside the head button", h.get("svgInRow"))
+    check(f"{tag} no two tree boxes overlap", m["overlaps"], 0)
+    check(f"{tag} the chosen path is one straight line (rise per edge {m['chosenRise']})",
+          len(m["chosenRise"]) > 0 and max(m["chosenRise"]) <= 0.5)
+    # Old layout stacked every subtree, so the tree was as tall as all its leaf boxes end to end.
+    check(f"{tag} tree is at most twice as tall as its tallest column ({m['wrapH']} <= 2 x {m['colMax']})",
+          0 < m["wrapH"] <= 2 * m["colMax"] + 1)
 
 
 def main():
@@ -465,7 +497,7 @@ def main():
         return 1
     check("panel opened on Conversation", res["open"])
     for k in ("p1", "sum", "sumBack", "sumFresh", "p2", "fold0", "foldMid", "foldEnd", "hoverShut", "foldRedraw", "foldReload", "unfoldMid", "unfoldEnd",
-              "ts", "offZoom", "zoom", "p3"):
+              "ts", "offZoom", "tall", "zoom", "p3"):
         if isinstance(res.get(k), dict) and "exc" in res[k]:
             print(f"FAIL measuring {k} threw: {res[k]['exc']}")
             return 1
@@ -541,6 +573,10 @@ def main():
     check("a not-taken option is in the tree (setup)", (o["found"], o.get("isOff")), (True, True))
     check(f"a not-taken option stays dimmed in the tree (opacity {o.get('tree')})", o.get("tree"), "0.5")
     check(f"hover zoom of a not-taken option is fully opaque (opacity {o.get('zoom')})", o.get("zoom"), "1")
+
+    m = res["tall"]
+    check("long chain: 7 query nodes (setup)", len(m["nodes"]), 7)
+    layout_checks("long chain", m, [3] * 7)
 
     z = res["zoom"]
     for tag, r in zip(("long node", "option"), z[:2]):

@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-08
+
+- The Decisions tree is much shorter now. The picked choices sit on one straight line, with the other choices close around them.
+
 ## 2026-11-05
 
 - In the Decisions tree, the choices Claude did not pick now get a solid box when you point at them, so you can read them.
