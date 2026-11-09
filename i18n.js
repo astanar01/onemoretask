@@ -68,6 +68,7 @@ const I18N = {
     "Effort": "Effort",
     "No auto mode: permission prompts need claude attach": "Pas de mode auto : les demandes d’autorisation passent par claude attach",
     "Haiku (manual)": "Haiku (manuel)",
+    "{model} (manual)": "{model} (manuel)",
     "Send to Claude": "Envoyer à Claude",
     "Subtasks": "Sous-tâches",
     "Technical details": "Détails techniques",

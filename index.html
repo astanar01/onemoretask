@@ -2577,25 +2577,46 @@ function sendModel(t) {
 }
 const effortName = (e) => ({ low: window.t("Low"), medium: window.t("Medium"), high: window.t("High"), xhigh: window.t("Extra high"), max: window.t("Max") })[e] || e;
 const CLAUDE_SUBMODELS = [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "haiku", name: "Haiku" }];
+// The full model behind each short name ({opus: "claude-opus-5-5"}), from the server's daily probe; empty until it answers.
+let claudeVersions = {};
+// A model as people read it: "Opus 5.5" for a short name or a full id, the display name for an OpenAI one.
+function modelName(m) {
+  if (!m) return "";
+  if (isCodexModel(m)) return (codexList.find((x) => x.id === m) || {}).name || m;
+  const k = m.toLowerCase(), base = k.replace(/\[1m\]$/, "");
+  return prettyModel(claudeVersions[base] ? claudeVersions[base] + k.slice(base.length) : m);
+}
+// The static Claude options in the pickers (the observation picker copies the session one when it opens).
+function labelClaudeModels() {
+  for (const sel of ["#d-model", "#d-review-model"])
+    for (const { id } of CLAUDE_SUBMODELS) {
+      const o = $(`${sel} option[value='${id}']`);
+      if (o) o.textContent = sel === "#d-model" && id === "haiku" ? window.t("{model} (manual)", { model: modelName(id) }) : modelName(id);
+    }
+}
 // The session's family: the card's agent once sent, else the session model picker.
 const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
 // The subagent pick only counts when it matches the session's family (the server ignores a mismatched one).
 const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === runsCodex(t) ? t.subagentModel : "";
-const subModelName = (t) => { const m = subModel(t); return ((runsCodex(t) ? codexList : CLAUDE_SUBMODELS).find((x) => x.id === m) || { name: m }).name; };
+const subModelName = (t) => modelName(subModel(t));
 function renderSubmodel(t) {
   const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
-  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(modelName(m.id))}</option>`).join("");
   $("#d-submodel").value = subModel(t);
 }
-async function loadCodexModels() {
+async function loadCodexModels(tries = 0) {
   let list = CODEX_MODELS;
   try {
     const r = await fetch("/api/codex-models", { cache: "no-store" });
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
     if (res && typeof res.claude === "boolean") clis = { claude: res.claude, codex: !!res.codex };
+    if (res && res.claude_models) claudeVersions = res.claude_models;
   } catch (e) { /* built-in list */ }
   codexList = list;
+  labelClaudeModels();
+  // The first probe takes a few seconds per name: ask again until every name has its version.
+  if (clis.claude && tries < 6 && CLAUDE_SUBMODELS.some((m) => !claudeVersions[m.id])) setTimeout(() => loadCodexModels(tries + 1), 15000);
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
   // The saved picks may be OpenAI models that had no option until now.
@@ -2644,7 +2665,7 @@ function renderAgent(t) {
   const launch = !t.agent && launchOf(t);
   const mdl = (t.agent && t.agent.model) || (launch && launch.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
   const eff = (t.agent && t.agent.effort) || (launch && launch.effort) || "";
-  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(isCodexModel(mdl) ? mdl : mdl[0].toUpperCase() + mdl.slice(1))}` : ""}${eff ? ` · ${esc(effortName(eff))}` : ""}</span>
+  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(modelName(mdl))}` : ""}${eff ? ` · ${esc(effortName(eff))}` : ""}</span>
       <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
@@ -3025,7 +3046,7 @@ function renderTech(t) {
   if (g.tag) rows.push([window.t("Release"), code(g.tag)]);
   if (t.agent) {
     rows.push([window.t("Session"), code("claude attach " + ((ag && ag.id) || t.agent.id))]);
-    rows.push([window.t("Model"), esc(t.agent.model || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
+    rows.push([window.t("Model"), esc(modelName(t.agent.model) || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
     if (t.agent.effort) rows.push([window.t("Effort"), esc(effortName(t.agent.effort))]);
     rows.push([window.t("Started"), esc(fmt(t.agent.started))]);
     if (t.delegate) rows.push([window.t("Subagents"), window.t("allowed") + (subModel(t) ? ` (${esc(subModelName(t))})` : "")]);

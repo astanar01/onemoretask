@@ -1045,22 +1045,72 @@ def settings_model(path):
     return None
 
 
+def _probe_model(alias=None):
+    """The full model id a launch gets (with --model alias, or with none), from one tiny session; None on failure."""
+    # No tools, MCP or project dir, to keep the probe cheap; the model is all we read.
+    r = run_claude(["-p", *(["--model", alias] if alias else []), "--strict-mcp-config", "--mcp-config",
+                    '{"mcpServers":{}}', "--disable-slash-commands", "--tools", "", "--output-format", "json",
+                    "--max-turns", "1", "Reply: ok"], cwd=tempfile.gettempdir(), timeout=180)
+    models = list(json.loads(r.stdout).get("modelUsage") or {})
+    return models[0] if models else None
+
+
 def _probe_account_default():
     global _default_probing
     try:
-        # No tools, MCP or project dir, to keep the probe cheap; the model is all we read.
-        r = run_claude(["-p", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-                        "--disable-slash-commands", "--tools", "", "--output-format", "json", "--max-turns", "1",
-                        "Reply: ok"], cwd=tempfile.gettempdir(), timeout=180)
-        models = list(json.loads(r.stdout).get("modelUsage") or {})
-        if models:
+        model = _probe_model()
+        if model:
             os.makedirs(os.path.dirname(DEFAULT_CACHE), exist_ok=True)
             with open(DEFAULT_CACHE, "w", encoding="utf-8") as fh:
-                json.dump({"model": models[0], "at": time.time()}, fh)
+                json.dump({"model": model, "at": time.time()}, fh)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
         print("default model probe:", e)
     finally:
         _default_probing = False
+
+
+CLAUDE_ALIASES = ("fable", "opus", "sonnet", "haiku")
+ALIAS_CACHE = os.path.expanduser("~/.config/task_board/claude_models.json")
+_alias_lock = threading.Lock()
+_alias_probing = False
+
+
+def _probe_aliases():
+    global _alias_probing
+    try:
+        found = {}
+        for a in CLAUDE_ALIASES:
+            try:
+                m = _probe_model(a)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
+                print("model probe", a + ":", e)
+                continue
+            if m:
+                found[a] = m
+        if found:
+            os.makedirs(os.path.dirname(ALIAS_CACHE), exist_ok=True)
+            with open(ALIAS_CACHE, "w", encoding="utf-8") as fh:
+                json.dump({"models": found, "at": time.time()}, fh)
+    finally:
+        _alias_probing = False
+
+
+def claude_versions():
+    """{alias: full model id} for the short names the pickers offer, e.g. {"opus": "claude-opus-5-5"}.
+    Read from a day-old cache; a stale or missing cache starts one background probe and returns what it has."""
+    try:
+        with open(ALIAS_CACHE, encoding="utf-8") as fh:
+            cached = json.load(fh)
+    except (OSError, ValueError):
+        cached = {}
+    global _alias_probing
+    if time.time() - cached.get("at", 0) > DEFAULT_TTL and os.path.exists(CLAUDE_CMD[-1]):
+        with _alias_lock:
+            if not _alias_probing:
+                _alias_probing = True
+                threading.Thread(target=_probe_aliases, daemon=True).start()
+    models = cached.get("models")
+    return models if isinstance(models, dict) else {}
 
 
 def default_model(p):
@@ -1083,8 +1133,9 @@ def default_model(p):
 
 
 def codex_models():
-    """GET /api/codex-models: the OpenAI models the pickers offer for Codex, and which CLIs are installed."""
-    return {"models": codex.models(), "claude": os.path.exists(CLAUDE_CMD[-1]),
+    """GET /api/codex-models: the OpenAI models the pickers offer for Codex, which CLIs are installed,
+    and the versions behind Claude's short model names."""
+    return {"models": codex.models(), "claude": os.path.exists(CLAUDE_CMD[-1]), "claude_models": claude_versions(),
             "codex": codex.installed()}
 
 

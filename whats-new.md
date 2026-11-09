@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-09
+
+- The model lists now show each model's number, like Opus 5.5 or Fable 5.2, so you know which one you pick.
+
 ## 2026-11-08
 
 - The Decisions tree is much shorter now. The picked choices sit on one straight line, with the other choices close around them.

@@ -366,10 +366,26 @@ server.list_sessions = lambda cwd: []
 print("ok  handback: a Codex review of a Claude task resumes the Claude session with the findings; card follows it")
 
 # ---- (f) the model list route
+probes = []
+def fake_probe(alias=None):
+    probes.append(alias)
+    if alias == "sonnet":
+        raise subprocess.TimeoutExpired("claude", 180)
+    return "claude-%s-9-9" % alias
+server._probe_model = fake_probe
+cmd, server.CLAUDE_CMD = server.CLAUDE_CMD, [sys.executable]  # an existing file: Claude Code counts as installed
 res = server.codex_models()
-assert res["models"] == codex.MODELS and isinstance(res["claude"], bool) and res["codex"] is True, res
-cmd, server.CLAUDE_CMD = server.CLAUDE_CMD, ["/nonexistent/claude"]
+assert res["models"] == codex.MODELS and res["claude"] is True and res["codex"] is True, res
+assert res["claude_models"] == {}, res  # no cache yet: the probe starts in the background
+for _ in range(100):
+    if not server._alias_probing:
+        break
+    time.sleep(0.05)
+got = server.codex_models()["claude_models"]
+assert got == {"fable": "claude-fable-9-9", "opus": "claude-opus-9-9", "haiku": "claude-haiku-9-9"}, got
+assert probes == ["fable", "opus", "sonnet", "haiku"], probes  # one probe per name; a fresh cache is not probed again
+server.CLAUDE_CMD = ["/nonexistent/claude"]
 assert server.codex_models()["claude"] is False, server.codex_models()
 server.CLAUDE_CMD = cmd
-print("ok  codex_models (GET /api/codex-models) returns codex.models() and which CLIs are installed")
+print("ok  codex_models (GET /api/codex-models) returns codex.models(), which CLIs are installed, and Claude's versions")
 print("PASS")
