@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-11
+
+- Sending only a picture, with no words, no longer makes the box where you write to Claude vanish until you reload the page.
+
 ## 2026-11-09
 
 - The model lists now show each model's number, like Opus 5.5 or Fable 5.2, so you know which one you pick.

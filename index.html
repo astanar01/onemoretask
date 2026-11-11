@@ -3657,7 +3657,9 @@ async function sendReply(pick, keep, withImages) {
   $("#d-reply-send").disabled = true;
   const busy = agents[t.id] && agents[t.id].phase === "working";
   setStatus(busy ? window.t("Sending note…") : window.t("Sending reply…"));
-  const images = chose && !withImages ? [] : replyImages, pm = addPending(t, busy ? "note" : "reply", text, images), pid = P;
+  // The server logs an images-only message with this text; the pending copy must match it or it never clears
+  // (and hides the reply box until a reload).
+  const images = chose && !withImages ? [] : replyImages, pm = addPending(t, busy ? "note" : "reply", text || "See the attached images.", images), pid = P;
   if (!chose) setReplyDraft(t.id, "");
   if (images.length) { replyImages = []; renderReplyImages(); }
   if (mainTab !== "conversation") showTab("conversation");   // the new message shows where the history is
@@ -3671,6 +3673,7 @@ async function sendReply(pick, keep, withImages) {
   }
   try {
     const res = await post("/api/agent/reply", { p: P, taskId: t.id, text, images });
+    if (typeof res.message === "string") pm.message = res.message;
     pm.state = "sent";
     setStatus(res.queued ? window.t("Note sent — Claude reads it as soon as it can") : window.t("Reply sent — Claude is back at work"));
   } catch (e) {

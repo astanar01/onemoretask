@@ -4959,9 +4959,10 @@ class Handler(SimpleHTTPRequestHandler):
                 p = project(body["p"])
                 images = [n for n in body.get("images", [])
                           if os.path.exists(reports.image_path(reports.log_images(p.board), n))]
-                queued = reply(p, body["taskId"],
-                               body["text"].strip() or ("See the attached images." if images else "Go ahead."), images)
-                self._json(200, {"ok": True, "queued": queued})
+                text = body["text"].strip() or ("See the attached images." if images else "Go ahead.")
+                queued = reply(p, body["taskId"], text, images)
+                # The page keeps its copy pending until the log holds this exact text.
+                self._json(200, {"ok": True, "queued": queued, "message": text})
         self._errors(handle)
         WATCH.wake.set()  # a reply, answer or move may restart a session: look now, not at the next idle pass
 
