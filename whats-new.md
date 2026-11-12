@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-12
+
+- When Claude checks the work and finds things to fix, buttons show under what it found: "Fix everything", "Fix finding 1", "Fix finding 2" and so on. Press one to have it fixed.
+
 ## 2026-11-11
 
 - Sending only a picture, with no words, no longer makes the box where you write to Claude vanish until you reload the page.

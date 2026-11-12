@@ -214,9 +214,10 @@ budget, and runs a small test on each finding. The card shows **Code review** wh
 Pick the reviewer next to the button (in Next action or Changes): the task's own model, another Claude
 model, or an OpenAI model, which runs the review in Codex.
 
-Reply to have the reviewer fix the findings. When the other agent reviewed (Codex on Claude's work, or
+Reply to have the reviewer fix the findings, or press a button under them (in Conversation and in
+Summary): **Fix everything**, **Fix finding 1**, **Fix finding 2**, … sends that label as your reply. When the other agent reviewed (Codex on Claude's work, or
 the reverse), **Send findings to Claude** (or Codex) hands them back to the session that did the work,
-with your reply box text as the word on which to fix.
+with your reply box text as the word on which to fix; the fix buttons then go that way too.
 
 ### 10. Finish
 

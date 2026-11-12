@@ -2337,6 +2337,40 @@ function qChoices(shown, i) {
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qo="${k}"${live ? ` title="${esc(window.t("Send this as your answer"))}"` : " disabled"}>${picked ? "✓ " : ""}${esc(String(o))}</button>`;
   }).join("")}</div>`;
 }
+// The code review's findings report: the reviewer's first "done" after the last review start (later ones report fixes).
+const reviewReport = (log) => { const r = log.findLastIndex((x) => x.status === "review"); return r < 0 ? -1 : log.findIndex((x, k) => k > r && x.from !== "you" && x.status === "done"); };
+// "Finding 2 (major): title" lines that open a finding (bullets follow), one per number. A bare
+// "Finding 1 (major): fixed" is a status line about an earlier review, not a finding to fix.
+function reviewFindings(text) {
+  const lines = String(text || "").split("\n"), out = [];
+  lines.forEach((raw, i) => {
+    const m = raw.replace(/^\s*#{1,3} /, "").match(/^(?:\*\*)?Finding (\d+)\b(?:\W*?(?:critical|major|high|minor|medium|low|nit)\b)?[^\w*]*(?:\*\*)?\s*(.*?)(?:\*\*)?\s*$/i);
+    if (m && /^\s*([-*]|\d+\.) /.test(lines.slice(i + 1).find((x) => x.trim()) || "") && !out.some((f) => f.n === m[1])) out.push({ n: m[1], title: m[2] });
+  });
+  return out;
+}
+// "Fix everything" / "Fix finding N" under a code review's findings. A click sends the label as your reply; a later
+// "you" entry answers them (the matching label is marked). `later` = what came after the report.
+function fixChoices(e, later) {
+  const fs = reviewFindings(e.message);
+  if (!fs.length) return "";
+  const ans = later.find((x) => x.from === "you"), said = ans ? String(ans.message || "").trim() : null;
+  const opts = [...(fs.length > 1 ? [[window.t("Fix everything"), window.t("Fix every finding of this review")]] : []),
+    ...fs.map((f) => [window.t("Fix finding {n}", { n: f.n }), f.title.replace(/\*\*|`/g, "")])];
+  return `<div class="qopts fixopts">${opts.map(([l, tip]) => {
+    const picked = said !== null && (said === l || said.endsWith(": " + l));
+    return `<button type="button" class="btn${picked ? " picked" : ""}" data-fix="${esc(l)}" title="${esc(tip)}"${ans ? " disabled" : ""}>${picked ? "✓ " : ""}${esc(l)}</button>`;
+  }).join("")}</div>`;
+}
+// A fix button: a review by the other agent goes back to the worker (as "Send findings to …" does); otherwise the
+// reviewer, which the card follows, gets the reply and makes the fix.
+function fixPick(b) {
+  const t = task(openId), ag = t && agents[t.id];
+  if (!t || !b || b.disabled) return;
+  document.querySelectorAll("button[data-fix]").forEach((x) => (x.disabled = true));   // no double send
+  if (ag && ag.handback && claudeReviewed(ag) && replyOpen(t)) sendFindingsBack(t, b.dataset.fix);
+  else sendReply(b.dataset.fix);
+}
 // A many-part question: parts from report.py --part, or an older message's typed "1. question / - a) choice"
 // list. One row of choices per part and one send button; picks live in qPicks since polls re-render the log.
 const qPicks = {};
@@ -2686,9 +2720,10 @@ function renderAgent(t) {
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   logShown = shown;
+  const rr = reviewReport(log);
   const groups = mcpGroups(shown, (ag && ag.mcp_uses) || [], start > 0);
   const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
-  $("#d-log").innerHTML = shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
+  $("#d-log").innerHTML = shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span><div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
@@ -2709,7 +2744,7 @@ function renderAgent(t) {
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
   $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
-  if (recapping) $("#d-log").querySelectorAll("button[data-qsend]").forEach((b) => (b.disabled = true));
+  if (recapping) $("#d-log").querySelectorAll("button[data-qsend], button[data-fix]").forEach((b) => (b.disabled = true));
   if (recapping) {
     $("#d-reply").placeholder = window.t("Writing the recap — you can send once it is posted.");
     $("#d-reply-send").textContent = window.t("Writing recap…");
@@ -3142,7 +3177,9 @@ function renderSummary(t) {
   // Verification: the latest code review's findings, if a review ran after the report.
   const vh = $("#d-sum-verify-h"), vb = $("#d-sum-verify");
   const finding = lastReview >= 0 && [...log.slice(lastReview + 1)].reverse().find((e) => e.from !== "you" && e.status === "done");
-  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>`; }
+  const fi = finding ? log.lastIndexOf(finding) : -1;
+  const fix = fi >= 0 && fi === reviewReport(log) && replyOpen(t) ? fixChoices(finding, log.slice(fi + 1).concat(pending[t.id] || [])) : "";
+  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>${fix}`; }
   else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">${window.t("Code review started {at}; no findings posted yet.", { at: esc(fmt(log[lastReview].at)) })}</div>`; }
   else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">${window.t("No code review yet. Start one from the Changes tab.")}</div>`; }
   $("#d-sum-repo").innerHTML = repoStatusHtml(t, g);
@@ -3527,12 +3564,14 @@ async function startReview(t) {
 }
 $("#d-review").onclick = () => { const t = task(openId); if (t) startReview(t); };
 // The reply box text (if any) says which findings to fix; the server logs the same line, which clears the pending one.
-async function sendFindingsBack(t) {
+// pick: a fix button's label, sent instead of the reply box (whose draft stays put).
+async function sendFindingsBack(t, pick) {
   const ag = agents[t.id], to = ag && ag.handback;
   if (!to) return;
-  const typed = $("#d-reply").value.trim(), text = typed || "Fix the findings you agree with; say which ones you skip and why.";
+  const chose = typeof pick === "string", typed = chose ? "" : $("#d-reply").value.trim();
+  const text = (chose ? pick.trim() : typed) || "Fix the findings you agree with; say which ones you skip and why.";
   const pm = addPending(t, "reply", `Sent the review findings back to ${to}: ${text}`, []), pid = P;
-  setReplyDraft(t.id, "");
+  if (!chose) setReplyDraft(t.id, "");
   setStatus(window.t("Sending the findings to {name}…", { name: to }));
   refreshAgent(t); render();
   try {
@@ -3695,6 +3734,8 @@ $("#d-log").addEventListener("toggle", (ev) => {
   const li = ev.target.closest && ev.target.closest("li.k-uses");
   if (li) ev.target.open ? usesOpen.add(li.dataset.g) : usesOpen.delete(li.dataset.g);
 }, true);
+$("#d-log").addEventListener("click", (ev) => fixPick(ev.target.closest("button[data-fix]")));
+$("#d-sum-verify").addEventListener("click", (ev) => fixPick(ev.target.closest("button[data-fix]")));
 $("#d-log").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-qo], button[data-qsend]");
   if (!b || b.disabled) return;
