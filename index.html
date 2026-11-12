@@ -502,6 +502,8 @@ body.view-plan #search { visibility: hidden; }
 .qparts .qopts { margin-top: 4px; }
 .qpq { font-weight: 600; font-size: calc(13px * var(--ts)); }
 .qparts .btn.picked:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.fixopts .qsend { margin-top: 8px; }
+.fixopts .btn.picked:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .qsend { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: calc(12px * var(--ts)); }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
@@ -2349,27 +2351,61 @@ function reviewFindings(text) {
   });
   return out;
 }
-// "Fix everything" / "Fix finding N" under a code review's findings. A click sends the label as your reply; a later
-// "you" entry answers them (the matching label is marked). `later` = what came after the report.
+// "Fix everything" / "Fix finding N" under a code review's findings: buttons you pick (several at once), then Send.
+// Picks live in fixSel (key -> Set of finding numbers) since polls re-render; Conversation and Summary share them.
+// A later "you" entry answers them: its first line names the picks, which stay marked on the disabled buttons.
+const fixSel = {}, fixNums = {};
+const fixText = (nums, all) => all ? window.t("Fix everything") : nums.length === 1 ? window.t("Fix finding {n}", { n: nums[0] }) : window.t("Fix findings {list}", { list: nums.join(", ") });
+// The finding numbers an answer asked to fix (all of them for "Fix everything"); the handback line has a prefix.
+function fixAsked(said, nums) {
+  const line = said.split("\n")[0].trim();
+  if (line.endsWith(window.t("Fix everything"))) return nums;
+  for (const pre of [window.t("Fix findings {list}", { list: "\u0000" }), window.t("Fix finding {n}", { n: "\u0000" })].map((x) => x.split("\u0000")[0])) {
+    const k = line.lastIndexOf(pre);
+    if (k >= 0) return line.slice(k + pre.length).match(/\d+/g) || [];
+  }
+  return [];
+}
 function fixChoices(e, later) {
   const fs = reviewFindings(e.message);
   if (!fs.length) return "";
-  const ans = later.find((x) => x.from === "you"), said = ans ? String(ans.message || "").trim() : null;
-  const opts = [...(fs.length > 1 ? [[window.t("Fix everything"), window.t("Fix every finding of this review")]] : []),
-    ...fs.map((f) => [window.t("Fix finding {n}", { n: f.n }), f.title.replace(/\*\*|`/g, "")])];
-  return `<div class="qopts fixopts">${opts.map(([l, tip]) => {
-    const picked = said !== null && (said === l || said.endsWith(": " + l));
-    return `<button type="button" class="btn${picked ? " picked" : ""}" data-fix="${esc(l)}" title="${esc(tip)}"${ans ? " disabled" : ""}>${picked ? "✓ " : ""}${esc(l)}</button>`;
-  }).join("")}</div>`;
+  const key = qKey(e), nums = (fixNums[key] = fs.map((f) => f.n));
+  const ans = later.find((x) => x.from === "you"), asked = ans ? fixAsked(String(ans.message || ""), nums) : null;
+  const sel = asked ? new Set(asked) : fixSel[key] || new Set(), all = nums.every((n) => sel.has(n));
+  const opts = [...(fs.length > 1 ? [["all", window.t("Fix everything"), window.t("Fix every finding of this review"), all]] : []),
+    ...fs.map((f) => [f.n, window.t("Fix finding {n}", { n: f.n }), f.title.replace(/\*\*|`/g, ""), sel.has(f.n)])];
+  const btns = opts.map(([v, l, tip, on]) => `<button type="button" class="btn${on ? " picked" : ""}" data-fix="${esc(v)}" title="${esc(tip)}" aria-pressed="${on}"${ans ? " disabled" : ""}>${on && ans ? "✓ " : ""}${esc(l)}</button>`).join("");
+  const send = ans ? "" : `<div class="qsend"><button type="button" class="btn primary" data-fixsend title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${sel.size ? "" : " disabled"}>${esc(window.t("Send"))}</button><span>${esc(window.t("{n} of {m} picked", { n: sel.size, m: nums.length }))}</span></div>`;
+  return `<div class="fixopts" data-fixkey="${esc(key)}"><div class="qopts">${btns}</div>${send}</div>`;
 }
-// A fix button: a review by the other agent goes back to the worker (as "Send findings to …" does); otherwise the
-// reviewer, which the card follows, gets the reply and makes the fix.
+// Repaint every copy (Conversation, Summary) of one review's buttons from fixSel.
+function paintFix(key) {
+  const sel = fixSel[key] || new Set(), nums = fixNums[key] || [];
+  document.querySelectorAll(".fixopts").forEach((w) => {
+    if (w.dataset.fixkey !== key) return;
+    w.querySelectorAll("button[data-fix]").forEach((b) => { const on = b.dataset.fix === "all" ? nums.every((n) => sel.has(n)) : sel.has(b.dataset.fix); b.classList.toggle("picked", on); b.setAttribute("aria-pressed", on); });
+    const s = w.querySelector("[data-fixsend]");
+    if (s) { s.disabled = !sel.size || $("#d-reply-send").disabled; s.nextElementSibling.textContent = window.t("{n} of {m} picked", { n: sel.size, m: nums.length }); }
+  });
+}
+// A fix button toggles that finding ("Fix everything": all of them, or none once all are picked); Send sends the picks.
+// A review by the other agent goes back to the worker (as "Send findings to …" does); otherwise the reviewer, which
+// the card follows, gets the reply and makes the fix.
 function fixPick(b) {
-  const t = task(openId), ag = t && agents[t.id];
-  if (!t || !b || b.disabled) return;
-  document.querySelectorAll("button[data-fix]").forEach((x) => (x.disabled = true));   // no double send
-  if (ag && ag.handback && claudeReviewed(ag) && replyOpen(t)) sendFindingsBack(t, b.dataset.fix);
-  else sendReply(b.dataset.fix);
+  const t = task(openId), ag = t && agents[t.id], w = b && b.closest(".fixopts");
+  if (!t || !b || b.disabled || !w) return;
+  const key = w.dataset.fixkey, nums = fixNums[key] || [], sel = (fixSel[key] = fixSel[key] || new Set());
+  if (b.dataset.fix === "all") { const all = nums.every((n) => sel.has(n)); nums.forEach((n) => (all ? sel.delete(n) : sel.add(n))); }
+  else if (b.dataset.fix != null) sel.has(b.dataset.fix) ? sel.delete(b.dataset.fix) : sel.add(b.dataset.fix);
+  if (b.dataset.fixsend == null) return paintFix(key);
+  const picked = nums.filter((n) => sel.has(n));
+  if (!picked.length || $("#d-reply-send").disabled) return;
+  const extra = $("#d-reply").value.trim(), text = fixText(picked, nums.length > 1 && picked.length === nums.length) + (extra ? "\n\n" + extra : "");
+  if (extra) setReplyDraft(t.id, "");
+  document.querySelectorAll(".fixopts button").forEach((x) => (x.disabled = true));   // no double send
+  // A failed send gives back only the typed extra: the picks stay in fixSel.
+  if (ag && ag.handback && claudeReviewed(ag) && replyOpen(t)) sendFindingsBack(t, text, extra);
+  else sendReply(text, extra);
 }
 // A many-part question: parts from report.py --part, or an older message's typed "1. question / - a) choice"
 // list. One row of choices per part and one send button; picks live in qPicks since polls re-render the log.
@@ -2744,7 +2780,7 @@ function renderAgent(t) {
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
   $("#d-reply").disabled = $("#d-reply-send").disabled = $("#d-reply-attach").disabled = recapping;
-  if (recapping) $("#d-log").querySelectorAll("button[data-qsend], button[data-fix]").forEach((b) => (b.disabled = true));
+  if (recapping) $("#d-log").querySelectorAll("button[data-qsend], .fixopts button").forEach((b) => (b.disabled = true));
   if (recapping) {
     $("#d-reply").placeholder = window.t("Writing the recap — you can send once it is posted.");
     $("#d-reply-send").textContent = window.t("Writing recap…");
@@ -3564,8 +3600,8 @@ async function startReview(t) {
 }
 $("#d-review").onclick = () => { const t = task(openId); if (t) startReview(t); };
 // The reply box text (if any) says which findings to fix; the server logs the same line, which clears the pending one.
-// pick: a fix button's label, sent instead of the reply box (whose draft stays put).
-async function sendFindingsBack(t, pick) {
+// pick: the fix buttons' text, sent instead of the reply box; keep: what goes back in the box if the send fails.
+async function sendFindingsBack(t, pick, keep) {
   const ag = agents[t.id], to = ag && ag.handback;
   if (!to) return;
   const chose = typeof pick === "string", typed = chose ? "" : $("#d-reply").value.trim();
@@ -3580,7 +3616,8 @@ async function sendFindingsBack(t, pick) {
     setStatus(window.t("{name} is fixing the review findings", { name: to }));
   } catch (e) {
     dropPending(t, pm);
-    if (typed && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, typed, pid);
+    const back = chose ? keep : typed;
+    if (back && !getReplyDraft(t.id, pid)) setReplyDraft(t.id, back, pid);
     setStatus(window.t("Could not send the findings back: {error}", { error: window.t(e.message) }), true);
   }
   refreshAgent(t); render();
@@ -3734,8 +3771,8 @@ $("#d-log").addEventListener("toggle", (ev) => {
   const li = ev.target.closest && ev.target.closest("li.k-uses");
   if (li) ev.target.open ? usesOpen.add(li.dataset.g) : usesOpen.delete(li.dataset.g);
 }, true);
-$("#d-log").addEventListener("click", (ev) => fixPick(ev.target.closest("button[data-fix]")));
-$("#d-sum-verify").addEventListener("click", (ev) => fixPick(ev.target.closest("button[data-fix]")));
+$("#d-log").addEventListener("click", (ev) => fixPick(ev.target.closest(".fixopts button")));
+$("#d-sum-verify").addEventListener("click", (ev) => fixPick(ev.target.closest(".fixopts button")));
 $("#d-log").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-qo], button[data-qsend]");
   if (!b || b.disabled) return;

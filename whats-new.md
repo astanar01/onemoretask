@@ -2,7 +2,7 @@
 
 ## 2026-11-12
 
-- When Claude checks the work and finds things to fix, buttons show under what it found: "Fix everything", "Fix finding 1", "Fix finding 2" and so on. Press one to have it fixed.
+- When Claude checks the work and finds things to fix, buttons show under what it found: "Fix everything", "Fix finding 1", "Fix finding 2" and so on. Pick the ones you want, then press Send to have them fixed.
 
 ## 2026-11-11
 

@@ -272,6 +272,7 @@ const I18N = {
     "Fix everything": "Tout corriger",
     "Fix every finding of this review": "Corriger tous les constats de cette relecture",
     "Fix finding {n}": "Corriger le constat {n}",
+    "Fix findings {list}": "Corriger les constats {list}",
     "The {who} session that did the work gets the review's findings and fixes them. Text in the reply box says which ones; empty = the ones it agrees with": "La session {who} qui a fait le travail reçoit les constats de la relecture et les corrige. Le texte de la zone de réponse indique lesquels ; vide = ceux qu’elle approuve",
     "Run app": "Lancer l’app",
     "Starts the app from this task's worktree so you can try the changes. Claude works out how the first time; after that the board does it alone": "Lance l’app depuis le worktree de cette tâche pour que vous puissiez essayer les modifications. Claude trouve comment la première fois ; ensuite le tableau le fait seul",

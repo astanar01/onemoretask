@@ -1,8 +1,9 @@
 """A code review's findings get one button per finding plus "Fix everything", in Conversation and in Summary.
 
-A click sends the label as the reply (to the reviewer the card follows), or through /api/agent/handback when the
-review was by the other agent. Once you answered, the buttons stay, disabled, with your pick marked; a later fix
-report gets none, and neither does a bare "Finding 1 (major): fixed" status line from a second review.
+You pick several (Fix everything picks all, a second click none), then Send: one reply naming the picks (plus any
+typed reply box text) goes to the reviewer the card follows, or through /api/agent/handback when the review was by
+the other agent. Picks show in both places. Once you answered, the buttons stay, disabled, with your picks marked;
+a later fix report gets none, and neither does a bare "Finding 1 (major): fixed" status line from a second review.
 Drives the real index.html + i18n.js in headless Chrome over raw CDP, with /api faked by a stub server on a free port
 (never the live board, never .task_board).
 
@@ -44,6 +45,11 @@ Finding 2 (minor): the x on a kind only hides it
 - Fix: say so in the tooltip.
 - Proof: Not reproduced — confidence medium.
 
+Finding 3 (minor): the empty list shows no hint
+
+- Where: `resources/js/kinds.js:30`
+- Fix: show "no kinds yet".
+
 Checked and fine: the 32-letter limit.
 
 Which findings should I fix?"""
@@ -84,7 +90,7 @@ IDS = ["c1", "c2", "c3", "c4"]
 AGENTS = {
     "c1": agent("c1", BASE + [entry("claude", "done", FINDINGS)]),
     "c2": agent("c2", BASE + [entry("claude", "done", FINDINGS)], handback="Claude"),
-    "c3": agent("c3", BASE + [entry("claude", "done", FINDINGS), entry("you", "reply", "Fix finding 1"),
+    "c3": agent("c3", BASE + [entry("claude", "done", FINDINGS), entry("you", "reply", "Fix findings 1, 3\n\nKeep it small"),
                               entry("claude", "done", "Finding 1 (major): fixed\n\n- Commit: def5678\n- Proof: test passes")]),
     "c4": agent("c4", BASE + [entry("claude", "done", FINDINGS), entry("you", "reply", "Fix everything"),
                               entry("claude", "done", "All fixed."),
@@ -192,29 +198,40 @@ for (let i = 0; i < 100 && ready !== true; i++) {
   ready = await ev(`typeof polledOnce !== 'undefined' && polledOnce && state.tasks.length > 0 && Object.keys(agents).length > 0`);
 }
 const res = { ready };
-// Each button: [label, disabled, picked], in Conversation and in Summary.
+// Each button: [label, disabled, picked], in Conversation and in Summary; send: [disabled, count line] or null.
 const look = `({ conv: [...document.querySelectorAll('#d-log button[data-fix]')].map((b) => [b.textContent, b.disabled, b.classList.contains('picked')]),
   sum: [...document.querySelectorAll('#d-sum-verify button[data-fix]')].map((b) => [b.textContent, b.disabled, b.classList.contains('picked')]),
+  send: [...document.querySelectorAll('#d-log [data-fixsend], #d-sum-verify [data-fixsend]')].map((b) => [b.disabled, b.nextElementSibling.textContent]),
   tips: [...document.querySelectorAll('#d-log button[data-fix]')].map((b) => b.title) })`;
+const click = async (sel, k = 0) => { await ev(`document.querySelectorAll(${JSON.stringify(sel)})[${k}].click()`); await sleep(50); };
 const open = async (c) => { await ev(`closeDetail && closeDetail()`); await ev(`openDetail('${c}'); renderSummary(task('${c}'))`); await sleep(150); };
 for (const c of ['c3', 'c4']) { await open(c); res[c] = await ev(look); }
 await open('c1');
 res.c1 = await ev(look);
+// Fix everything picks all, a second click none.
+await ev(`showTab('summary')`);
+await click('#d-sum-verify button[data-fix]', 0); res.c1all = await ev(look);
+await click('#d-sum-verify button[data-fix]', 0); res.c1none = await ev(look);
+// Pick 1 and 2 (not 3): in Summary for 1, in Conversation for 2; both places show both.
+await click('#d-sum-verify button[data-fix]', 1); await click('#d-log button[data-fix]', 2);
+res.c1picked = await ev(look);
+await ev(`renderAgent(task('c1')); renderSummary(task('c1'))`); res.c1redraw = await ev(look);
 if (shot) { await ev(`showTab('summary')`); await sleep(200);
   await ev(`$('#d-sum-verify .fixopts').scrollIntoView({ block: 'center' })`); await sleep(150);
   const r = await ev(`(() => { const f = [...document.querySelectorAll('#d-sum-verify .finding')].pop().getBoundingClientRect(), b = $('#d-sum-verify .fixopts').getBoundingClientRect(); return { x: f.x, y: f.y, w: f.width, h: b.bottom - f.y }; })()`);
   const s = await send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.w + 24, height: r.h + 24, scale: 1 } });
   writeFileSync(shot, Buffer.from(s.result.data, 'base64')); }
-// Click "Fix finding 2" in the Summary box: a reply to the reviewer, then the buttons show it as picked.
+// Send from the Summary box, with words typed in the reply box: one reply to the reviewer.
 await ev(`showTab('summary')`);
-await ev(`document.querySelectorAll('#d-sum-verify button[data-fix]')[2].click()`);
+await ev(`$('#d-reply').value = 'Keep it small'`);
+await click('#d-sum-verify [data-fixsend]');
 for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
 res.c1after = await ev(look);
 res.c1tab = await ev(`mainTab`);
 // The other agent reviewed: "Fix everything" goes back to the worker through the handback.
 await open('c2');
 res.c2 = await ev(look);
-await ev(`document.querySelector('#d-log button[data-fix]').click()`);
+await click('#d-log button[data-fix]', 0); await click('#d-log [data-fixsend]');
 for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
 res.c2after = await ev(look);
 res.errors = errors;
@@ -253,27 +270,37 @@ def main():
         print("FAIL", res["error"])
         return 1
     print("page:", INDEX)
-    three = [["Fix everything", False, False], ["Fix finding 1", False, False], ["Fix finding 2", False, False]]
+    B = lambda l, d=False, p=False: [l, d, p]
+    four = [B("Fix everything"), B("Fix finding 1"), B("Fix finding 2"), B("Fix finding 3")]
     check("page loaded and polled", res["ready"])
     check("no page errors", res["errors"], [])
-    check("review findings: buttons in Conversation", res["c1"]["conv"], three)
-    check("review findings: same buttons in Summary", res["c1"]["sum"], three)
+    check("review findings: buttons in Conversation", res["c1"]["conv"], four)
+    check("review findings: same buttons in Summary", res["c1"]["sum"], four)
+    check("nothing picked yet: Send is off in both places", res["c1"]["send"], [[True, "0 of 3 picked"]] * 2)
     check("each finding button's tooltip is its title", res["c1"]["tips"][1:],
-          ["a kind that ends with a backslash breaks the Kind menu", "the x on a kind only hides it"])
-    check("click sent one reply with the label", [x for x in POSTS if x[1] == "c1"], [["/api/agent/reply", "c1", "Fix finding 2"]])
-    check("after the click: Conversation tab, pick marked, all disabled", (res["c1tab"], res["c1after"]["conv"]),
-          ("conversation", [["Fix everything", True, False], ["Fix finding 1", True, False], ["✓ Fix finding 2", True, True]]))
-    check("after the click: Summary shows the same, disabled, pick marked", res["c1after"]["sum"],
-          [["Fix everything", True, False], ["Fix finding 1", True, False], ["✓ Fix finding 2", True, True]])
-    check("other agent's review: same buttons", res["c2"]["conv"], three)
+          ["a kind that ends with a backslash breaks the Kind menu", "the x on a kind only hides it", "the empty list shows no hint"])
+    check("Fix everything picks all", res["c1all"]["sum"], [B(x[0], False, True) for x in four])
+    check("Fix everything again picks none", (res["c1none"]["sum"], res["c1none"]["send"]), (four, [[True, "0 of 3 picked"]] * 2))
+    two = [B("Fix everything"), B("Fix finding 1", False, True), B("Fix finding 2", False, True), B("Fix finding 3")]
+    check("picks 1 and 2 show in both places, Send on", (res["c1picked"]["conv"], res["c1picked"]["sum"], res["c1picked"]["send"]),
+          (two, two, [[False, "2 of 3 picked"]] * 2))
+    check("picks survive a redraw (a poll)", res["c1redraw"]["sum"], two)
+    check("Send sent one reply naming 1 and 2, plus the typed words", [x for x in POSTS if x[1] == "c1"],
+          [["/api/agent/reply", "c1", "Fix findings 1, 2\n\nKeep it small"]])
+    done2 = [B("Fix everything", True), B("✓ Fix finding 1", True, True), B("✓ Fix finding 2", True, True), B("Fix finding 3", True)]
+    check("after Send: Conversation tab, picks marked, all disabled, no Send", (res["c1tab"], res["c1after"]["conv"], res["c1after"]["send"]),
+          ("conversation", done2, []))
+    check("after Send: Summary shows the same", res["c1after"]["sum"], done2)
+    check("other agent's review: same buttons", res["c2"]["conv"], four)
     check("other agent's review: Fix everything goes back to the worker", [x for x in POSTS if x[1] == "c2"],
           [["/api/agent/handback", "c2", "Fix everything"]])
-    check("other agent's review: pick marked after the handback", res["c2after"]["conv"][:1], [["✓ Fix everything", True, True]])
-    check("answered review + fix report: only the old, disabled buttons; none on the fix report or in Summary",
+    check("other agent's review: all marked after the handback", res["c2after"]["conv"],
+          [B("✓ " + x[0], True, True) for x in four])
+    check("answered review + fix report: only the old, disabled buttons with the picks; none on the fix report or in Summary",
           (res["c3"]["conv"], res["c3"]["sum"]),
-          ([["Fix everything", True, False], ["✓ Fix finding 1", True, True], ["Fix finding 2", True, False]], []))
+          ([B("Fix everything", True), B("✓ Fix finding 1", True, True), B("Fix finding 2", True), B("✓ Fix finding 3", True, True)], []))
     check("second review: only its report gets buttons; a bare status line gets none; one finding, no Fix everything",
-          (res["c4"]["conv"], res["c4"]["sum"]), ([["Fix finding 2", False, False]], [["Fix finding 2", False, False]]))
+          (res["c4"]["conv"], res["c4"]["sum"]), ([B("Fix finding 2")], [B("Fix finding 2")]))
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0
