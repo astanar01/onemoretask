@@ -87,5 +87,30 @@ check("same option label allowed in different parts",
           "--part", "2?", "--option", "a) no", "--option", "b) yes").returncode == 0)
 check("card_lines tells agents to use --part", '--part "1. <first question>"' in text and "1a 2b" in text)
 
+# An --image after a --part belongs to that part; one before the first --part stays on the whole message.
+PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
+shots = []
+for k in range(3):
+    shots.append(os.path.join(TMP, f"shot{k}.png"))
+    with open(shots[-1], "wb") as f:
+        f.write(PNG + bytes([k]))  # three different files, three different stored names
+r = cli("question", "Sizes?", "--image", shots[0], "--part", "1. Tables?", "--image", shots[1], "--option", "a) ok",
+        "--option", "b) no", "--part", "2. Chairs?", "--option", "a) ok", "--option", "b) no", "--image", shots[2])
+check("cli accepts part images", r.returncode == 0 and "with 3 image(s)" in r.stdout)
+e = reports.read(BOARD, "t1")[-1]
+p1, p2 = e.get("parts") or [{}, {}]
+check("message image stays on the message", len(e.get("images") or []) == 1)
+check("part 1 has its own image", len(p1.get("images") or []) == 1 and p1["images"] != e["images"])
+check("an image after part 2's options still belongs to part 2",
+      len(p2.get("images") or []) == 1 and p2["images"] not in (p1["images"], e["images"]))
+check("part images are stored files",
+      all(os.path.exists(reports.image_path(reports.log_images(BOARD), n)) for n in p1["images"] + p2["images"]))
+r = cli("question", "Q", "--part", "1?", "--option", "a", "--option", "b")
+check("a part without images has no images key", "images" not in reports.read(BOARD, "t1")[-1]["parts"][0])
+r = cli("question", "Q", "--part", "1?", "--image", os.path.join(TMP, "missing.png"), "--option", "a", "--option", "b")
+check("refused: a missing part image", r.returncode != 0 and "missing.png" in r.stderr)
+check("card_lines tells agents to put a part's image after it", "--image <file> --option" in text)
+
 print("FAILED: " + ", ".join(fails) if fails else "all question option checks passed")
 sys.exit(1 if fails else 0)

@@ -851,7 +851,9 @@ def card_lines(report, answer_only=False, simple=False):
               f'- Several decisions at once: ONE `{report} question "<intro>" --part "1. <first question>" --option '
               '"a) <label>" --option "b) <label>" --part "2. <next question>" --option ...` (1 to 8 parts). The card '
               "shows a row of choices per part and one send button; never ask the user to type letters like \"1a 2b\". "
-              "The answer comes back as one line per part: \"<part> → <option>\".",
+              "The answer comes back as one line per part: \"<part> → <option>\". A screenshot for one part goes "
+              "right after that part (`--part \"1. ...\" --image <file> --option ...`): it shows under that part's "
+              "question, not at the end.",
               "- Ask only through the report script, never a built-in question pop-up (AskUserQuestion): the pop-up "
               "stays inside the session and never reaches the card.",
               f'- `{report} decision -` when YOU choose between options (a fork in the work): pipe in JSON (a heredoc) '

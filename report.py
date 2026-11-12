@@ -32,7 +32,9 @@ A question with several parts gives each part as `--part "<its question>"` follo
 `--option`s (1 to 8 parts, 2 to 6 options each); the card shows a row of choices per part and one
 send button, and the answer arrives as one line per part: "<part> → <option>".
 
-Add `--image <file>` (repeatable) to attach screenshots; they show on the card.
+Add `--image <file>` (repeatable) to attach screenshots; they show on the card. An `--image` placed after
+a `--part` belongs to that part and shows right under its question; one before the first `--part` shows
+under the whole message.
 --board is the project's board folder; without it, the board of the git repo
 containing the current directory.
 
@@ -57,13 +59,13 @@ args, files, board, lang, options, parts, msg_file = [], [], None, None, [], [],
 it = iter(sys.argv[1:])
 for a in it:
     if a == "--image":
-        files.append(next(it, None) or sys.exit("--image needs a file"))
+        (parts[-1]["files"] if parts else files).append(next(it, None) or sys.exit("--image needs a file"))
     elif a == "--option":
         o = next(it, None)
         (parts[-1]["options"] if parts else options).append(o if o is not None else sys.exit("--option needs a label"))
     elif a == "--part":
         q = next(it, None)
-        parts.append({"q": q if q is not None else sys.exit("--part needs its question"), "options": []})
+        parts.append({"q": q if q is not None else sys.exit("--part needs its question"), "options": [], "files": []})
     elif a == "--board":
         board = next(it, None) or sys.exit("--board needs a folder")
     elif a == "--lang":
@@ -102,6 +104,7 @@ if parts:
         sys.exit("--part only goes with question")
     if options:
         sys.exit("question: put every --option after its --part")
+    part_files = [p.pop("files") for p in parts]
     try:
         parts = reports.check_parts(parts)
     except ValueError as e:
@@ -142,24 +145,33 @@ def refused(e):
              f"Write tool, then post it with exactly this, alone: {retry} --file <that file>")
 
 
-images = []
-for p in files:
-    try:
-        with open(p, "rb") as f:
-            data = f.read()
-    except OSError as e:
-        sys.exit(f"{p}: {e}")
-    try:
-        name = reports.store_image(data, reports.log_images(board))
-    except PermissionError as e:
-        refused(e)
-    except (OSError, ValueError) as e:
-        sys.exit(f"{p}: {e}")
-    if name not in images:
-        images.append(name)
+def store(paths):
+    names = []
+    for p in paths:
+        try:
+            with open(p, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            sys.exit(f"{p}: {e}")
+        try:
+            name = reports.store_image(data, reports.log_images(board))
+        except PermissionError as e:
+            refused(e)
+        except (OSError, ValueError) as e:
+            sys.exit(f"{p}: {e}")
+        if name not in names:
+            names.append(name)
+    return names
+
+
+images = store(files)
+for p, paths in zip(parts, part_files if parts else []):
+    if paths:
+        p["images"] = store(paths)  # shown under that part's question, not at the end of the message
+n_images = len(images) + sum(len(p.get("images", [])) for p in parts)
 try:
     reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
                    options=options, parts=parts)
 except PermissionError as e:
     refused(e)
-print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {len(images)} image(s)" if images else ""))
+print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {n_images} image(s)" if n_images else ""))

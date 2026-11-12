@@ -3,6 +3,7 @@
 ## 2026-11-12
 
 - When Claude checks the work and finds things to fix, buttons show under what it found: "Fix everything", "Fix finding 1", "Fix finding 2" and so on. Pick the ones you want, then press Send to have them fixed.
+- When Claude asks you several things at once, each picture now sits right under the question it is about, not all at the end.
 
 ## 2026-11-11
 

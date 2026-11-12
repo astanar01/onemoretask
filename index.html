@@ -2427,7 +2427,7 @@ function qParts(e) {
 }
 function partsHtml(e, i, parts, ans, live) {
   const said = ans ? String(ans.message || "").split("\n").map((s) => s.trim()) : null, picks = qPicks[qKey(e)] || {};
-  const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div><div class="qopts">${p.options.map((o, k) => {
+  const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div>${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
     const picked = said ? said.includes(answerLine(p, o)) : picks[pi] === k;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qp="${pi}" data-qo="${k}" aria-pressed="${picked}"${live ? "" : " disabled"}>${picked && !live ? "✓ " : ""}${esc(String(o))}</button>`;
   }).join("")}</div></div>`).join("");
@@ -3160,7 +3160,7 @@ function renderOverview(t) {
   $("#d-prompt").hidden = !t.agent;   // the server builds the prompt at launch, once the title is in
   showTab();
   const ag = agents[t.id];
-  const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => e.images || []))];
+  const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => [...(e.images || []), ...(Array.isArray(e.parts) ? e.parts.flatMap((p) => p.images || []) : [])]))];
   $("#d-imgcount").textContent = own.length + fromLog.length || "";
   const grid = thumbItems(own, fileDir("images")) + thumbItems(fromLog, fileDir("agent_reports/images"));
   if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;

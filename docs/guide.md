@@ -413,7 +413,8 @@ python3 report.py --board <project>/.task_board <task_id> decision - < decision.
   The card draws a task's decisions as one horizontal tree at the top of the Summary and Conversation tabs, each
   hanging off the option chosen before it; it redraws as decisions arrive, and a decision posted again
   with the same query replaces the earlier one.
-- `--image <file>` attaches a screenshot.
+- `--image <file>` attaches a screenshot. In a many-part question, an `--image` right after a `--part` shows
+  under that part's question instead of at the end.
 - A message plainly in another language than your latest one on the card is refused; `--lang <language>`
   posts it anyway when you asked for that language.
 
