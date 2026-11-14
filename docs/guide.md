@@ -187,6 +187,12 @@ When Claude stops to ask before running something, the card says "Claude asks pe
 command. Click **Allow**, **Allow always** or **Deny** on the card; the board answers the prompt in the
 session for you (macOS and Linux).
 
+When the project's `.mcp.json` lists MCP servers you never chose for, Claude stops before its first step and
+asks about them. The card then says "Claude found new tools in this project" with three buttons: **Use it**
+(or **Use them**), **Always use new ones** and **Don't use**. They answer Claude's own menu, so the choice is
+saved where Claude saves it (`.claude/settings.local.json`: `enabledMcpjsonServers`,
+`enableAllProjectMcpServers`, `disabledMcpjsonServers`) and is not asked again.
+
 ### 8. Reply on the card
 
 Answer questions or ask for changes. The reply resumes the same session.

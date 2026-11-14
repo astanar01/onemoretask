@@ -27,7 +27,7 @@ except ImportError:  # Windows
 
 SCREEN = re.compile(r"\x1b\[[0-9;?<>=]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]")
 # A permission prompt or question menu on screen: Enter would answer it, so don't type.
-DIALOG = re.compile(r"Esc to cancel|Do you want to|❯\s*1\.")
+DIALOG = re.compile(r"Esc to cancel|Do you want to|❯\s*1\.|Esc to reject all|MCP servers? found in this project")
 # Shown while a typed message waits in the queue. Ctrl+X Ctrl+S sends it now: a running shell command moves to the
 # background (not killed; Claude is told when it ends) and a reply being written stops where it is.
 SEND_NOW = re.compile(r"to send now")
@@ -186,6 +186,68 @@ def answer_prompt(session_id, choice, expect, cmd=("claude",)):
         # A queued tool call shows its own prompt right after the key; an identical one redraws the same box.
         notes = ([AGAIN] if request_shown(expect, shown) else []) + ([ONCE] if once else [])
         return True, "; ".join(notes)
+
+
+# The approval a session shows before it starts when the project's .mcp.json holds servers nobody chose for yet. It is
+# an arrow-key menu, not numbered: one server gets USE / USE_ALL / "Continue without…" (focus starts on the last); several
+# get a ticked checkbox list, then ENABLE ("Esc to reject all", and no "all future" line).
+MCP_ONE = "New MCP server found in this project"
+MCP_MANY = "new MCP servers found in this project"
+USE, USE_ALL, SKIP = ("Use this MCP server", "Use this and all future MCP servers in this project",
+                      "Continue without using this MCP server")
+ENABLE = "Enable selected"
+UP, DOWN, ESC = b"\x1b[A", b"\x1b[B", b"\x1b"
+
+
+def mcp_dialog(shown):
+    """'one' / 'many' when the MCP server approval is on screen, else ''."""
+    return "one" if MCP_ONE in shown else "many" if MCP_MANY in shown else ""
+
+
+def focused(shown):
+    """The menu line the pointer is on, from a full screen or a partial redraw: the text after the last ❯."""
+    at = shown.rfind("❯")
+    if at < 0:
+        return ""
+    line = re.sub(r"^\s*\[[^\]]*\]", "", shown[at + 1:]).lstrip()
+    return " ".join(re.split(r"[\r\n]|\s{3,}", line, maxsplit=1)[0].split())  # a redraw puts the next line after spaces
+
+
+def answer_mcp(session_id, choice, names, cmd=("claude",)):
+    """Answer the MCP server approval on screen: allow = use them, always = use them and every later one in this project,
+    deny = use none. Only while it lists every name in `names` (what the card showed). Returns (answered, why); why is
+    "all-later" when `always` met the several-servers list, which has no such line: the caller saves that choice."""
+    if not pty:
+        return False, "needs a POSIX terminal"
+    with _terminal(session_id, cmd) as fd:
+        shown = screen_text(_read(fd, 4))
+        kind = mcp_dialog(shown)
+        if not kind:
+            return False, "no MCP server question on screen"
+        if not all(n in shown for n in names):
+            return False, "the question on screen is about other MCP servers"
+        if choice == "deny":
+            os.write(fd, ESC)  # one server: Esc is "Continue without"; several: "reject all"
+        else:
+            labels = [USE, USE_ALL, SKIP]
+            want = ENABLE if kind == "many" else USE_ALL if choice == "always" else USE
+            now = focused(shown)
+            # The redraw after each key shows the newly focused line; stop on the wanted one. A list wraps or stops at
+            # its ends, so a bounded walk down covers both.
+            key = (UP if labels.index(want) < labels.index(next((x for x in labels if now.startswith(x)), SKIP))
+                   else DOWN) if kind == "one" else DOWN
+            for _ in range(len(names) + 4):
+                if now.startswith(want):
+                    break
+                os.write(fd, key)
+                now = focused(screen_text(_read(fd, 1))) or now
+            if not now.startswith(want):
+                return False, f"could not reach “{want}” in the menu"
+            os.write(fd, b"\r")
+        shown = screen_text(_read(fd, 2))
+        if mcp_dialog(shown):
+            return False, "the question is still on screen after the key"
+        return True, "all-later" if kind == "many" and choice == "always" else ""
 
 
 if __name__ == "__main__":

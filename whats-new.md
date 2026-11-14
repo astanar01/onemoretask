@@ -2,6 +2,7 @@
 
 ## 2026-11-14
 
+- When a project gets new tools and Claude stops to ask if it may use them, the card now asks you too. Pick "Use it", "Always use new ones" or "Don't use" right there, with no need to open Claude yourself.
 - When a task's folder has no saved history yet, the task now shows a "Create repo" button. Click it to start one, even if you did not pick "Use a worktree".
 
 ## 2026-11-12

@@ -2961,6 +2961,16 @@ function nextAction(t, ag, g) {
     if (ag.permission) {
       const answer = (label, choice, cls, title) => act(label, cls, () => answerPermission(t, choice, ag.permission), { title });
       const note = permissionNote[t.id] && permissionNote[t.id].ask === ag.permission ? "\n" + permissionNote[t.id].note : "";
+      const mcp = mcpServers(ag.permission);
+      if (mcp) {
+        const one = mcp.split(", ").length === 1;
+        return { title: window.t("{who} found new tools in this project", { who: nm }),
+          text: (one ? window.t("The project adds an MCP server: {names}. {who} waits for your choice before it starts.", { names: mcp, who: nm })
+            : window.t("The project adds MCP servers: {names}. {who} waits for your choice before it starts.", { names: mcp, who: nm })) + note,
+          actions: answering[t.id] ? [] : [answer(one ? window.t("Use it") : window.t("Use them"), "allow", "primary", window.t("Use these MCP servers in this project")),
+            answer(window.t("Always use new ones"), "always", "sec", window.t("Use these and every MCP server this project adds later, without asking")),
+            answer(window.t("Don't use"), "deny", "ghost", window.t("Start without these MCP servers; it will not ask again for them"))], busy: !!answering[t.id] };
+      }
       return { title: window.t("{who} asks permission", { who: nm }), text: ag.permission.replace(/^Claude asks permission: /, () => window.t("It wants to run:") + " ") + "." + note,
         actions: answering[t.id] ? [] : [answer(window.t("Allow"), "allow", "primary", window.t("Let it run this once")),
           answer(window.t("Allow always"), "always", "sec", window.t("Let it run this, and stop asking about this kind of request in this session")),
@@ -3634,6 +3644,9 @@ async function sendFindingsBack(t, pick, keep) {
   refreshAgent(t); render();
   await pollAgents();
 }
+// The server's ask for the project MCP servers a session waits on (server.MCP_ASK): their names, else "".
+const MCP_ASK = "Claude asks permission: use new MCP servers: ";
+const mcpServers = (ask) => (ask || "").startsWith(MCP_ASK) ? ask.slice(MCP_ASK.length) : "";
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {
   answering[t.id] = true;
@@ -3641,7 +3654,8 @@ async function answerPermission(t, choice, ask) {
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = (choice === "deny" ? window.t("Told Claude no.") : res.once ? window.t("Allowed once: Claude does not offer \"always\" for this one.") : window.t("Allowed.")) + (res.again
+    const msg = res.mcp ? (choice === "deny" ? window.t("Started without the new MCP servers.") : window.t("Saved your choice. Claude starts now."))
+      : (choice === "deny" ? window.t("Told Claude no.") : res.once ? window.t("Allowed once: Claude does not offer \"always\" for this one.") : window.t("Allowed.")) + (res.again
       ? " " + window.t("It asks the same thing again (a second identical request): answer that one too.")
       : res.next && res.next !== ask ? " " + window.t("It now asks about something else.") : "");
     // With `again` the card keeps the same prompt, so it will not update.

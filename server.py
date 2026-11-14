@@ -2117,13 +2117,54 @@ def job_detail(job_id, field="detail"):
         return ""
 
 
+MCP_ASK = "Claude asks permission: use new MCP servers: "
+
+
+def mcp_names(session):
+    """The project MCP servers a session waits on you to approve before it starts, else []. That approval comes before
+    the session's first turn: `claude agents` gives no waitingFor, only state "blocked"; state.json `needs` reads
+    "approve 2 new project MCP servers (a, b) — attach to respond" (CLI 2.1.325, cut at 800 characters)."""
+    if not session or session.get("state") != "blocked" or is_codex(session):
+        return []
+    m = re.match(r"approve \d+ new project MCP servers? \(([^)]*)", job_detail(session.get("id"), "needs"))
+    return [n for n in (x.strip().rstrip("…") for x in m.group(1).split(",")) if n] if m else []
+
+
 def permission_ask(session):
     """What a session sitting on a permission prompt asks to do ('' if it is not on one). `claude agents` gives
     waitingFor "permission prompt"; the job's state.json has the request ("approve Bash: rm -f …")."""
+    names = mcp_names(session)
+    if names:
+        return MCP_ASK + ", ".join(names)
     if not session or "permission" not in (session.get("waitingFor") or ""):
         return ""
     need = re.sub(r"^approve\s+", "", job_detail(session.get("id"), "needs"), flags=re.I)
     return "Claude asks permission: " + (need or "a tool call (attach to see it)")
+
+
+def allow_all_mcp(path):
+    """Save "use every MCP server this project's .mcp.json adds, now and later" the way Claude's own menu does:
+    enableAllProjectMcpServers in .claude/settings.local.json at the project's root (the git top level, where the CLI
+    writes it even for a session started in a subfolder)."""
+    r = subprocess.run(["git", "-C", path, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    root = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else path
+    target = os.path.join(root, ".claude", "settings.local.json")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    try:
+        with open(target, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        cfg = {}
+    if cfg.get("enableAllProjectMcpServers") is True:
+        return
+    cfg["enableAllProjectMcpServers"] = True
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    if os.path.exists(target):
+        os.chmod(tmp, os.stat(target).st_mode & 0o777)
+    replace_file(tmp, target)
 
 
 def popup_questions(session):
@@ -3712,6 +3753,13 @@ def answer_permission(p, task_id, choice, shown):
     ask = permission_ask(session)
     if not ask or ask != shown:
         raise LookupError("the session is no longer asking that; the card will update")
+    if ask.startswith(MCP_ASK):
+        answered, why = attach.answer_mcp(info["id"], choice, mcp_names(session), CLAUDE_CMD)
+        if not answered:
+            raise LookupError(why)
+        if why == "all-later":  # the several-servers menu has no "and all future" line: save that part here
+            allow_all_mcp(p.path)
+        return {"next": "", "again": False, "once": False, "mcp": True}
     # "Bash: <command>" -> "<command>": the prompt shows the command under a "Bash command" title.
     need = re.sub(r"^\w+:\s*", "", ask.removeprefix("Claude asks permission: "))
     answered, why = attach.answer_prompt(info["id"], choice, need, CLAUDE_CMD)
