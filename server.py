@@ -1847,6 +1847,10 @@ class GitUnavailable(Exception):
     """Git cannot answer for a task right now (no git, not a repo, timeout, failed command)."""
 
 
+class NoRepo(GitUnavailable):
+    """The project folder has no repo, or one with no commit: the card offers Create repo."""
+
+
 def _git_raw(cwd, *args, ok=(0,), timeout=10):
     """Unstripped stdout of `git -C cwd args` (porcelain lines start with a space); GitUnavailable on failure.
     `ok` lists the accepted exit codes (`diff --no-index` exits 1 when the files differ)."""
@@ -1877,9 +1881,9 @@ def _task_git_place(p, t):
     """Where a task's git state lives: {cwd (folder for uncommitted changes, a work tree top, or None), ref (the
     task's commits), target_ref, target, branch, wt, live, branch_alive, shared}. GitUnavailable when git can't say."""
     if git_try(p.path, "rev-parse", "--is-inside-work-tree", timeout=5) != "true":
-        raise GitUnavailable("this project folder is not a git repo")
+        raise NoRepo("this project folder is not a git repo")
     if git_try(p.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", timeout=5) is None:
-        raise GitUnavailable("the git repo has no commits yet")
+        raise NoRepo("the git repo has no commits yet")
     current = git_try(p.path, "symbolic-ref", "--short", "-q", "HEAD", timeout=5) or git_try(
         p.path, "rev-parse", "--short", "HEAD", timeout=5)
     wt = (t.get("agent") or {}).get("worktree")
@@ -1982,6 +1986,8 @@ def task_git(p, task_id):
         out["available"] = True
     except (GitUnavailable, OSError, ValueError) as e:
         out.update(available=False, error=str(e) or "git failed", changed=[], ahead=[], behind=0, merged=False)
+        if isinstance(e, NoRepo):
+            out["norepo"] = True
         out.pop("truncated", None)
     return out
 

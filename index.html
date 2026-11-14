@@ -998,7 +998,8 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 </div></div>
 <div id="repo-modal" role="dialog" aria-modal="true" aria-labelledby="repo-title"><div class="box">
   <h3 id="repo-title">Create a local repo?</h3>
-  <p data-i18n><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out. Or send this task without a worktree: Claude then edits the project folder directly.</p>
+  <p data-i18n><b id="repo-path"></b> has no local git repo (or no first save in it yet). Worktrees need one. Create it here and save the folder's current files as its first commit? <code>.env</code> files are left out.</p>
+  <p id="repo-nowt-text" data-i18n>Or send this task without a worktree: Claude then edits the project folder directly.</p>
   <div id="repo-sizes"></div>
   <div class="actions"><button class="btn" id="repo-no">Cancel</button><button class="btn" id="repo-nowt">Send without a worktree</button><button class="btn primary" id="repo-yes">Create repo</button></div>
 </div></div>
@@ -2987,7 +2988,7 @@ function nextAction(t, ag, g) {
   if (!canFinish(t)) return { title: window.t("Waiting for {who}", { who: nm }), text: window.t("Your last message has not been answered yet."), actions: [] };
   const wt = canWorktree(t), extra = wt && !t.answerOnly ? [runApp()] : [];
   if (g === undefined || g === null) return { title: window.t("Ready for review"), text: g === null ? window.t("Checking the repository state…") : window.t("Repository state not loaded yet."), actions: [...review("primary"), ...extra] };
-  if (!g.available) return { title: window.t("Ready for review"), text: window.t("Repository state unavailable: {error}. Check the changes by hand before finishing.", { error: g.error ? window.t(g.error) : window.t("git did not answer") }), actions: [...review("primary"), ...extra, markDone("ghost")] };
+  if (!g.available) return { title: window.t("Ready for review"), text: window.t("Repository state unavailable: {error}. Check the changes by hand before finishing.", { error: g.error ? window.t(g.error) : window.t("git did not answer") }), actions: [...review("primary"), ...(g.norepo ? [act(window.t("Create repo"), "sec", () => askRepo(t, false))] : []), ...extra, markDone("ghost")] };
   const files = (g.changed || []).length, ahead = (g.ahead || []).length, has = files || ahead;
   const where = g.shared ? " " + window.t("in the project folder (shared with other tasks)") : "";
   const stray = (g.stray || []).map(s => " " + window.t("{commits} also sit on {branch}, which this card does not track: merge that branch by hand if you want them.", { commits: nCommits(s.ahead), branch: s.branch })).join("");
@@ -3224,7 +3225,7 @@ function renderSummary(t) {
 function repoStatusHtml(t, g) {
   if (g === null) return `<div class="repo-note">${window.t("Checking the repository state…")}</div>`;
   if (!g) return `<div class="repo-note">${window.t("Repository state not loaded.")}</div>`;
-  if (!g.available) return `<div class="repo-note"><b>${window.t("Repository state unavailable.")}</b> ${esc(g.error ? window.t(g.error) : window.t("git did not answer."))}</div>`;
+  if (!g.available) return `<div class="repo-note"><b>${window.t("Repository state unavailable.")}</b> ${esc(g.error ? window.t(g.error) : window.t("git did not answer."))}${repoInitBtn(g)}</div>`;
   const files = (g.changed || []).length, ahead = (g.ahead || []).length;
   const chips = `<div class="repo-chips"><span>${icon("file", 16)}${files === 1 ? window.t("1 changed file") : window.t("{n} changed files", { n: files })}${g.truncated ? "+" : ""}</span>
     <span>${icon("commit", 16)}${g.aheadKind === "own" ? (ahead === 1 ? window.t("1 commit on {branch}", { branch: esc(g.branch || "HEAD") }) : window.t("{n} commits on {branch}", { n: ahead, branch: esc(g.branch || "HEAD") })) : ahead === 1 ? window.t("1 commit ahead of {target}", { target: esc(g.target || "main") }) : window.t("{n} commits ahead of {target}", { n: ahead, target: esc(g.target || "main") })}</span>
@@ -3243,7 +3244,7 @@ function renderChanges(t) {
   if (!g || !g.available) closeDiff();
   if (g === null) { badge.textContent = "…"; note.textContent = window.t("Checking the repository state…"); list.innerHTML = ""; return; }
   if (!g) { badge.textContent = ""; note.textContent = ""; list.innerHTML = ""; return; }
-  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">${window.t("Repository state unavailable: {error}.", { error: esc(g.error ? window.t(g.error) : window.t("git did not answer")) })}</div>`; return; }
+  if (!g.available) { badge.textContent = "?"; badge.classList.add("warn"); note.textContent = ""; list.innerHTML = `<div class="ch-empty warn">${window.t("Repository state unavailable: {error}.", { error: esc(g.error ? window.t(g.error) : window.t("git did not answer")) })}${repoInitBtn(g)}</div>`; return; }
   const files = g.changed || [], ahead = g.ahead || [];
   badge.textContent = files.length + ahead.length || "0";
   note.textContent = g.shared ? window.t("Project folder on {branch} (shared with other tasks)", { branch: g.branch || "HEAD" }) : window.t("Worktree branch {branch}", { branch: g.branch }) + (g.target ? " → " + g.target : "");
@@ -3406,9 +3407,11 @@ function closeRepo(cancelled) {
   $("#repo-modal").classList.remove("open");
   if (cancelled && repoFor) setStatus(t("Not sent: no local repo"));
 }
-function askRepo(t) {
-  repoFor = t;
+// send=false: opened from a card's Create repo button; nothing is sent, the card's repo state reloads after.
+function askRepo(t, send = true) {
+  repoFor = send ? t : null;
   $("#repo-path").textContent = (projects.find((x) => x.id === P) || {}).path || window.t("This folder");
+  $("#repo-nowt").hidden = $("#repo-nowt-text").hidden = !send;
   $("#repo-no").onclick = () => closeRepo(true);
   $("#repo-nowt").onclick = async () => {
     if (!t) return closeRepo(true);
@@ -3432,7 +3435,8 @@ function askRepo(t) {
       gitInfo.at = 0;   // the chips reload with the new branch
       closeRepo(false);
       setStatus(window.t("Local repo created"));
-      if (t) await sendToClaude(t);
+      if (t && send) await sendToClaude(t);
+      else if (t) { delete taskGit[P + ":" + t.id]; loadTaskGit(t, true); }
     } catch (e) {
       setStatus(window.t("Could not create the repo: {error}", { error: window.t(e.message) }), true);
     } finally { $("#repo-yes").disabled = false; }
@@ -3455,6 +3459,13 @@ async function showRepoSizes() {
     + (r.partial ? `<div>${esc(window.t("The folder is too big to measure fully; this list may miss some."))}</div>` : "");
 }
 $("#repo-modal").addEventListener("mousedown", (e) => { if (e.target.id === "repo-modal") closeRepo(true); });
+// The Create repo button a card shows when its project folder has no repo (Changes and Summary tabs).
+const repoInitBtn = (g) => g && g.norepo ? ` <button class="btn primary repo-init">${window.t("Create repo")}</button>` : "";
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".repo-init")) return;
+  const t = task(openId);
+  if (t) askRepo(t, false);
+});
 
 
 // A card written on the wrong project's board: before Send, one Claude call compares it with every remembered

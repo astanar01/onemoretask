@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-14
+
+- When a task's folder has no saved history yet, the task now shows a "Create repo" button. Click it to start one, even if you did not pick "Use a worktree".
+
 ## 2026-11-12
 
 - When Claude checks the work and finds things to fix, buttons show under what it found: "Fix everything", "Fix finding 1", "Fix finding 2" and so on. Pick the ones you want, then press Send to have them fixed.

@@ -111,5 +111,21 @@ check("ticked left out, the rest saved", tracked,
 excl = open(os.path.join(w.path, ".git", "info", "exclude")).read()
 check("nothing outside the folder excluded", ("outside" in excl, "etc" in excl, "missing" in excl), (False, False, False))
 
+# A card in a folder with no repo (or a repo with no commit) is told so as NoRepo, so it can offer Create repo.
+def place_error(pp):
+    try:
+        server._task_git_place(pp, {"agent": {}})
+        return None
+    except server.GitUnavailable as e:
+        return type(e).__name__
+
+
+n = project("norepo", 1)
+check("no repo: NoRepo", place_error(n), "NoRepo")
+server.git_run(n.path, "init", "-q")
+check("repo without commit: NoRepo", place_error(n), "NoRepo")
+server.init_repo(n)
+check("after Create repo: no error", place_error(n), None)
+
 print("FAILED" if fails else "PASSED", f"({fails} failing)")
 sys.exit(1 if fails else 0)
