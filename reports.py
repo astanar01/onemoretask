@@ -83,8 +83,43 @@ def store_image(data, folder):
         raise ValueError("not a PNG, JPEG, GIF or WebP image")
     if len(data) > MAX_IMAGE:
         raise ValueError("image over 25 MB")
+    return _store(data, folder, hashlib.sha256(data).hexdigest()[:16] + ext)
+
+
+def safe_file_name(name):
+    """The part of an uploaded file's name kept after its hash: letters, digits and . _ - only, at most 80."""
+    base = re.split(r"[\\/]", str(name or ""))[-1]
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "file"
+    if len(base) > 80:
+        stem, dot, ext = base.rpartition(".")
+        ext = ext[:16] if dot and stem else ""
+        base = base[:80 - len(ext) - 1].rstrip("._") + "." + ext if ext else base[:80]
+    return base
+
+
+def store_file(data, folder, filename=""):
+    """Save an attachment: an image keeps the image naming (it shows as a picture), anything else is
+    saved as <hash>-<its own name> so the agent and the card both see what it is."""
+    if image_ext(data):
+        return store_image(data, folder)
+    if not data:
+        raise ValueError("the file is empty")
+    if len(data) > MAX_IMAGE:
+        raise ValueError("file over 25 MB")
+    return _store(data, folder, hashlib.sha256(data).hexdigest()[:16] + "-" + safe_file_name(filename))
+
+
+def is_image_name(name):
+    return bool(re.fullmatch(r"[0-9a-f]{16}\.(png|jpg|gif|webp)", name))
+
+
+def attached_word(names):
+    """'Images' when every attachment is a picture, else 'Files' (for the lines the agent reads)."""
+    return "Images" if all(is_image_name(n) for n in names) else "Files"
+
+
+def _store(data, folder, name):
     os.makedirs(folder, exist_ok=True)
-    name = hashlib.sha256(data).hexdigest()[:16] + ext
     path = os.path.join(folder, name)
     if not os.path.exists(path):
         # Write aside and swap in whole: a cut-off file would pass the exists() check forever.
@@ -101,8 +136,9 @@ def store_image(data, folder):
 
 
 def image_path(folder, name):
-    if not re.fullmatch(r"[0-9a-f]{16}\.(png|jpg|gif|webp)", name):
-        raise ValueError(f"bad image name {name!r}")
+    """Path of a stored attachment (an image, or another file named <hash>-<name>)."""
+    if not (is_image_name(name) or re.fullmatch(r"[0-9a-f]{16}-[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}", name)):
+        raise ValueError(f"bad file name {name!r}")
     return os.path.join(folder, name)
 
 
@@ -582,7 +618,7 @@ def notes_message(board, notes):
     for e in notes:
         parts.append(e["message"])
         if e.get("images"):
-            parts.append("Images attached (open each with the Read tool):\n" + "\n".join(
+            parts.append(f"{attached_word(e['images'])} attached (open each with the Read tool):\n" + "\n".join(
                 f"- {image_path(log_images(board), n)}" for n in e["images"]))
     parts.append("Take this into account in the work you are doing now. The user reads only the card: if it asks "
                  "you something, answer with report.py (progress, or done when you finish). " + LANGUAGE_RULE)

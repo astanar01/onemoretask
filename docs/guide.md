@@ -109,7 +109,7 @@ plus finished cards you have not opened yet. A turning arrow marks projects wher
 
 ### 2. Add a task
 
-Give it a title, notes, subtasks. You can paste images into the notes. The tags you use most show under
+Give it a title, notes, subtasks. You can paste or drop pictures and other files (a PDF, a log, a zip) into the notes. The tags you use most show under
 **Tags**; click one to add it.
 
 ### 3. Send to Claude
@@ -166,7 +166,7 @@ subagents, the skills used, the context size, the tokens used (subagents include
 
 The right side has four tabs: **Summary** (Claude's result, its commits and whether they are merged),
 **Changes** (files and commits; click one to see its diff), **Conversation** (every message, with the
-reply box) and **Images**. Claude's messages show headings, lists, tables, code boxes and quotes; each
+reply box) and **Files** (pictures and other attached files). Claude's messages show headings, lists, tables, code boxes and quotes; each
 code review finding sits in its own box with how serious it is.
 
 When Claude picks between options on its own, the choice joins one tree that runs left to right at the
@@ -444,7 +444,8 @@ Each project keeps its board in a `.task_board/` folder at the project's root:
 - **Not in git.** The board is not committed: a new board folder ignores itself, and sending a task
   lists the folder in the repo's `.git/info/exclude`. A repo that already tracks its board keeps doing so
   (`git rm -r --cached .task_board` stops that).
-- **Images** are named by a hash of their content, e.g. `3f9a1c0b7d2e4a61.png`.
+- **Images** are named by a hash of their content, e.g. `3f9a1c0b7d2e4a61.png`. Other attached files keep
+  their own name after the hash, e.g. `3f9a1c0b7d2e4a61-report.pdf`, and sit in the same folders and lists.
   PNG, JPEG, GIF and WebP, up to 25 MB each.
 - A project that already has `tools/task_board/tasks.json` keeps using that folder.
 

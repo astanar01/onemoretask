@@ -520,6 +520,9 @@ body.view-plan #search { visibility: hidden; }
 .thumbs:empty { display: none; }
 .thumb { position: relative; display: block; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--card); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.file { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 6px 8px; text-decoration: none; color: var(--text); }
+.thumb.file .fext { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .04em; }
+.thumb.file .fname { font-size: 12px; line-height: 1.25; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .thumb .x { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: calc(11px * var(--ts)); line-height: 1; padding: 3px 5px; display: none; }
 .thumb:hover .x { display: block; }
 #d-log .thumb { width: 120px; height: 80px; }
@@ -806,7 +809,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
 #d-log li .who { margin-bottom: 6px; }
 .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .img-grid .thumb { width: auto; height: 96px; }
-.img-grid:empty::before { content: "No images yet."; color: var(--muted); }
+.img-grid:empty::before { content: "Nothing attached yet."; color: var(--muted); }
 /* composer */
 .composer { display: none; flex: none; flex-direction: column; gap: 8px; padding: 10px 24px 12px; border-top: 1px solid var(--line); }
 .composer.on { display: flex; }
@@ -940,7 +943,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
           <button class="tab" role="tab" data-tab="summary">Summary</button>
           <button class="tab" role="tab" data-tab="changes">Changes <span class="badge" id="d-chcount"></span></button>
           <button class="tab" role="tab" data-tab="conversation">Conversation</button>
-                    <button class="tab" role="tab" data-tab="images">Images <span class="badge" id="d-imgcount"></span></button>
+                    <button class="tab" role="tab" data-tab="images">Files <span class="badge" id="d-imgcount"></span></button>
         </div>
         <span class="grow"></span>
         <button class="iconbtn" id="d-more" title="More actions" aria-haspopup="menu" aria-expanded="false"><span data-ico="more" data-s="18"></span></button>
@@ -954,9 +957,9 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       <div id="d-error" role="alert"><span></span><button title="Dismiss">✕</button></div>
       <div class="body" id="d-body">
         <div class="draft" id="d-draft">
-          <div class="block" id="d-notesblock"><label for="d-notes">Notes for Claude</label><textarea id="d-notes" placeholder="What should Claude do? Paste or drop images to attach them."></textarea>
+          <div class="block" id="d-notesblock"><label for="d-notes">Notes for Claude</label><textarea id="d-notes" placeholder="What should Claude do? Paste or drop pictures or files to attach them."></textarea>
             <div class="thumbs" id="d-images"></div>
-            <div class="hint" id="d-img-hint">Paste (⌘V) or drop an image to attach it — Claude gets it with the task.</div></div>
+            <div class="hint" id="d-img-hint">Paste (⌘V) or drop a picture or a file to attach it — Claude gets it with the task.</div></div>
           <div class="block" id="d-subblock">
             <label>Subtasks <span id="d-subcount"></span></label>
             <ul class="sub-list" id="d-subs"></ul>
@@ -981,7 +984,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       </div>
       <div class="composer" id="d-reply-wrap">
         <div class="cache-note" id="d-cache-note" hidden></div>
-        <div class="reply-row"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste images to attach"></textarea><button class="iconbtn" id="d-reply-attach" title="Attach an image"><span data-ico="clip" data-s="18"></span></button><button class="btn primary" id="d-reply-send">Send reply</button></div>
+        <div class="reply-row"><textarea id="d-reply" placeholder="Answer Claude — Cmd+Enter to send, paste pictures or files to attach"></textarea><button class="iconbtn" id="d-reply-attach" title="Attach a picture or a file"><span data-ico="clip" data-s="18"></span></button><button class="btn primary" id="d-reply-send">Send reply</button></div>
         <div class="thumbs" id="d-reply-images"></div>
         <div class="hint right">⌘ Enter to send</div>
       </div>
@@ -989,7 +992,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   </div>
   <div id="dock-empty">Pick a task on the left to see it here.</div>
 </div>
-<input type="file" id="d-file" accept="image/*" multiple hidden>
+<input type="file" id="d-file" multiple hidden>
 <div id="lightbox"><button class="x-close" id="lb-x" title="Close">✕</button><img alt=""></div>
 <div id="trust-modal" role="dialog" aria-modal="true" aria-labelledby="trust-title"><div class="box">
   <h3 id="trust-title">Trust this folder?</h3>
@@ -2775,8 +2778,8 @@ function renderAgent(t) {
   const busy = ag && ag.phase === "working";
   const nm = who(t);
   $("#d-log").insertAdjacentHTML("beforeend", mcpLines(ag));
-  $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste images to attach", { who: nm })
-    : window.t("Answer {who} — Cmd+Enter to send, paste images to attach", { who: nm });
+  $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste pictures or files to attach", { who: nm })
+    : window.t("Answer {who} — Cmd+Enter to send, paste pictures or files to attach", { who: nm });
   $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
   // Moved to done: no sending until the recap is posted. The server may not know of the move yet (not closed).
   const recapping = !!(ag && isDone(t) && (ag.recapping || (!ag.closed && !ag.archived)));
@@ -4252,8 +4255,15 @@ $("#cl-body").addEventListener("click", async (e) => {
 const fileDir = (sub) => (useServer ? `/files/${P}/${sub}/` : sub + "/");
 let replyImages = [];            // uploaded, waiting for Send reply
 
+// Pictures are <hash>.<ext>; any other file is <hash>-<its own name> and shows as a named tile.
+const isImageName = (n) => !/^[0-9a-f]{16}-/.test(n);
 function thumbItems(names, dir, removable) {
-  return (names || []).map((n, i) => `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="${t("Open full size")}"><img src="${dir + esc(n)}" alt="">${removable ? `<button class="x" data-i="${i}" title="${t("Remove")}">✕</button>` : ""}</a>`).join("");
+  return (names || []).map((n, i) => {
+    const x = removable ? `<button class="x" data-i="${i}" title="${t("Remove")}">✕</button>` : "";
+    if (isImageName(n)) return `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="${t("Open full size")}"><img src="${dir + esc(n)}" alt="">${x}</a>`;
+    const label = n.slice(17), ext = (label.match(/\.([A-Za-z0-9]{1,5})$/) || [, ""])[1].toUpperCase();
+    return `<a class="thumb file" href="${dir + esc(n)}" target="_blank" title="${esc(label)}"><span class="fext">${esc(ext || "FILE")}</span><span class="fname">${esc(label)}</span>${x}</a>`;
+  }).join("");
 }
 function bindRemove(box, list, after) {
   box.querySelectorAll(".x").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); list.splice(+b.dataset.i, 1); after(); }));
@@ -4263,7 +4273,7 @@ function renderImages(t) {
   box.innerHTML = thumbItems(t.images, fileDir("images"), !t.agent);
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
   $("#d-img-hint").textContent = t.agent ? window.t("Sent to Claude — the task is locked. Add anything new as a reply.")
-    : useServer ? window.t("Paste (⌘V) or drop an image to attach it — Claude gets it with the task.") : window.t("Attaching images needs server.py.");
+    : useServer ? window.t("Paste (⌘V) or drop a picture or a file to attach it — Claude gets it with the task.") : window.t("Attaching files needs server.py.");
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
@@ -4278,20 +4288,19 @@ async function uploadImage(file, kind) {
     r.onerror = () => fail(r.error);
     r.readAsDataURL(file);
   });
-  return (await post("/api/image", { p: P, kind, data })).name;
+  return (await post("/api/image", { p: P, kind, data, name: file.name || "" })).name;
 }
 
 // Into the reply when it is focused (or the only place it can go), else onto the task.
 async function attachFiles(files, toReply) {
   const t = task(openId);
-  files = files.filter((f) => f.type.startsWith("image/"));
   if (!t || !files.length) return false;
   if (!toReply && t.agent) {   // a sent task is locked; images go to the reply instead
-    if (!replyOpen(t)) { setStatus(window.t("This task was sent to Claude — attach images to a reply"), true); return true; }
+    if (!replyOpen(t)) { setStatus(window.t("This task was sent to Claude — attach files to a reply"), true); return true; }
     toReply = true;
   }
-  if (!useServer) { setStatus(window.t("Attaching images needs server.py"), true); return true; }
-  setStatus(files.length > 1 ? window.t("Uploading {n} images…", { n: files.length }) : window.t("Uploading 1 image…"));
+  if (!useServer) { setStatus(window.t("Attaching files needs server.py"), true); return true; }
+  setStatus(files.length > 1 ? window.t("Uploading {n} files…", { n: files.length }) : window.t("Uploading 1 file…"));
   try {
     for (const f of files) {
       const name = await uploadImage(f, toReply ? "log" : "task");
@@ -4299,16 +4308,16 @@ async function attachFiles(files, toReply) {
       else { t.images = t.images || []; if (!t.images.includes(name)) t.images.push(name); touch(t); }
     }
     toReply ? renderReplyImages() : (renderImages(t), render());
-    setStatus(toReply ? window.t("Image added to your reply") : window.t("Image attached to the task"));
+    setStatus(toReply ? window.t("Added to your reply") : window.t("Attached to the task"));
   } catch (e) {
-    setStatus(window.t("Image upload failed: {error}", { error: window.t(e.message) }), true);
+    setStatus(window.t("Upload failed: {error}", { error: window.t(e.message) }), true);
   }
   return true;
 }
 
 $("#overlay").addEventListener("paste", (e) => {
   const files = [...(e.clipboardData ? e.clipboardData.files : [])];
-  if (!files.some((f) => f.type.startsWith("image/"))) return;   // plain text pastes as usual
+  if (!files.length) return;   // plain text pastes as usual
   e.preventDefault();
   attachFiles(files, document.activeElement === $("#d-reply"));
 });

@@ -120,7 +120,9 @@ re-reads the whole context at full price.
 Images pasted into a card's notes save to <board>/images/ (listed on the task as
 "images"); images pasted into a reply, or attached by the agent with
 `report.py --image`, save to <board>/agent_reports/images/. The prompt and
-replies hand Claude the absolute paths so it can open them with Read.
+replies hand Claude the absolute paths so it can open them with Read. Other files
+(a PDF, a log, a zip) attach the same way and ride in the same lists, named
+<hash>-<their own name> (reports.store_file); the card shows them as a named link.
 
 Codex backend (codex.py): picking an OpenAI model (codex.is_model: gpt-…, o1/o3/o4, codex…) sends the task to OpenAI's
 Codex CLI instead: `codex exec --json` runs as a subprocess the board owns, in the project folder, and its event log
@@ -545,7 +547,7 @@ def build_prompt(p, state, t, wt=None, model=""):
             if k.get("notes"):
                 out.append(f"{'  ' * depth}  notes: {k['notes']}")
             if k.get("images"):
-                out.append(f"{'  ' * depth}  images:")
+                out.append(f"{'  ' * depth}  {reports.attached_word(k['images']).lower()}:")
                 out += image_lines(k["images"], reports.task_images(p.board), "  " * depth + "    ")
             out += subtree(k["id"], depth + 1)
         return out
@@ -564,7 +566,8 @@ def build_prompt(p, state, t, wt=None, model=""):
     if t.get("notes"):
         lines += ["", "Notes:", t["notes"]]
     if t.get("images"):
-        lines += ["", "Images pasted on this task (open each with the Read tool; they are part of the brief):",
+        lines += ["", f"{reports.attached_word(t['images'])} pasted on this task (open each with the Read tool; "
+                      "they are part of the brief):",
                   *image_lines(t["images"], reports.task_images(p.board))]
     subs = subtree(t["id"], 0)
     if subs:
@@ -3382,7 +3385,7 @@ def reply(p, task_id, text, images=(), extra=""):
         raise LookupError("no Claude session for this task")
     message = text + extra + board_tail(p, task_id)
     if images:
-        message += "\n\nImages attached to this reply (open each with the Read tool):\n" + "\n".join(
+        message += f"\n\n{reports.attached_word(images)} attached to this reply (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
     aid = resume(p, info, message)
     reports.append(p.board, task_id, "reply", text, "you", session=aid, images=list(images))
@@ -4320,7 +4323,7 @@ def reopen(p, task_id, text, images=(), handed=0):
                         "The user reopened the card with this message. It is what to do now; where it differs from the "
                         "notes above, it wins:", "", text])
     if images:
-        prompt += "\n\nImages attached to this message (open each with the Read tool):\n" + "\n".join(
+        prompt += f"\n\n{reports.attached_word(images)} attached to this message (open each with the Read tool):\n" + "\n".join(
             image_lines(images, reports.log_images(p.board)))
     aid = start_session(p, task_id, "task: " + t["title"][:60], prompt, model, t["agent"].get("effort") or "",
                         pinned_worker(t, model))
@@ -4844,10 +4847,22 @@ class Handler(SimpleHTTPRequestHandler):
             def serve():
                 p = project(m.group(1))
                 folder = reports.task_images(p.board) if m.group(2) == "images" else reports.log_images(p.board)
-                f = reports.image_path(folder, m.group(3))
+                name = m.group(3)
+                f = reports.image_path(folder, name)
                 with open(f, "rb") as fh:
-                    ext = f.rsplit(".", 1)[1]
-                    self._send(200, fh.read(), "image/" + ("jpeg" if ext == "jpg" else ext))
+                    data = fh.read()
+                if reports.is_image_name(name):
+                    ext = name.rsplit(".", 1)[1]
+                    self._send(200, data, "image/" + ("jpeg" if ext == "jpg" else ext))
+                    return
+                # Any other file: never run as a page of the board's origin (an uploaded .html could call the API).
+                ext = os.path.splitext(name)[1].lower()
+                inline = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
+                          ".md": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8",
+                          ".csv": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8"}.get(ext)
+                self._send(200, data, inline or "application/octet-stream", headers={
+                    "Content-Disposition": f'{"inline" if inline else "attachment"}; filename="{name[17:]}"',
+                    "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"})
             self._errors(serve)
         elif path == "/api/alerts/stream":
             self._alert_stream()
@@ -5022,7 +5037,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/image":
                 p = project(body["p"])
                 folder = reports.task_images(p.board) if body.get("kind") == "task" else reports.log_images(p.board)
-                self._json(200, {"name": reports.store_image(base64.b64decode(body["data"]), folder)})
+                self._json(200, {"name": reports.store_file(base64.b64decode(body["data"]), folder,
+                                                            str(body.get("name") or ""))})
             else:
                 p = project(body["p"])
                 images = [n for n in body.get("images", [])
