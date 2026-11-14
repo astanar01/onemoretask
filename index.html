@@ -2269,7 +2269,8 @@ function closeLightbox() { $("#lightbox").classList.remove("open"); $("#lightbox
 const lightboxOpen = () => $("#lightbox").classList.contains("open");
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a.thumb");
-  if (!a || e.target.closest(".x") || e.metaKey || e.ctrlKey) return;
+  // A non-picture tile is a plain link: the browser opens or saves it.
+  if (!a || a.classList.contains("file") || e.target.closest(".x") || e.metaKey || e.ctrlKey) return;
   e.preventDefault(); openLightbox(a.href);
 });
 $("#lightbox").addEventListener("click", (e) => { if (e.target.tagName !== "IMG") closeLightbox(); });
