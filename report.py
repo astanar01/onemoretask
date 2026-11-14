@@ -17,6 +17,12 @@ tree, each hanging off the option chosen before it, and redraws it as new ones a
 "chosen" is the option's index (null while still open); "by" is "agent" or "you"; 2 to 6 options.
 Posting a decision again with the same "query" replaces the earlier one (an open one becomes decided).
 
+    python3 report.py [--board DIR] <task_id> card -   < card.json   (or a JSON string, or --file <path>)
+
+A card suggests a new card for the board: {"title": "...", "notes": "...", "tags": ["..."]} (title required,
+at most 8 tags). It shows on this card with an Add it button; the new card lands on the board only when the user
+presses it. Agents cannot add cards any other way: the board owns tasks.json.
+
     python3 report.py [--board DIR] <task_id> plan -   < update.json   (or a JSON string, or --file <path>)
 
 A plan update feeds a plan card's live pane. Send only what changed; a known id or path keeps the fields left out:
@@ -74,7 +80,7 @@ for a in it:
         msg_file = next(it, None) or sys.exit("--file needs a file")
     else:
         args.append(a)
-if len(args) != (2 if msg_file else 3) or args[1] not in STATUSES + ("decision", "plan"):
+if len(args) != (2 if msg_file else 3) or args[1] not in STATUSES + ("decision", "plan", "card"):
     sys.exit(__doc__)
 if msg_file:
     try:
@@ -90,7 +96,7 @@ try:
     reports._path("", task_id)
 except ValueError as e:
     sys.exit(str(e))
-if status not in ("decision", "plan") and not message.strip():
+if status not in ("decision", "plan", "card") and not message.strip():
     sys.exit(f"{status} needs a message")
 if options:
     if status != "question":
@@ -116,6 +122,13 @@ if status == "decision":
     except (ValueError, TypeError) as e:
         sys.exit(f"decision: {e}")
     message, status = reports.decision_message(decision), "progress"
+card, card_text = None, None
+if status == "card":
+    try:
+        card = reports.check_card(json.loads(message))
+    except (ValueError, TypeError) as e:
+        sys.exit(f"card: {e}")
+    message, status, card_text = reports.card_message(card), "progress", card["title"] + "\n\n" + card["notes"]
 board = board or reports.board_dir(reports.project_root())
 if status == "plan":
     try:
@@ -127,7 +140,7 @@ if status == "plan":
                  "it, and pass the update with --file <a file outside the project>.")
     print(f"plan of task {task_id}: {len(plan['nodes'])} nodes, {len(plan['files'])} files")
     sys.exit(0)
-mismatch = None if lang else reports.language_mismatch(board, task_id, message)
+mismatch = None if lang else reports.language_mismatch(board, task_id, card_text or message)
 if mismatch:
     sys.exit(f"Not posted: this report is in {mismatch[0]}, but the user's latest message on the card is in "
              f"{mismatch[1]}. Write it again in {mismatch[1]}. A task ABOUT {mismatch[0]} is not a request to "
@@ -171,7 +184,7 @@ for p, paths in zip(parts, part_files if parts else []):
 n_images = len(images) + sum(len(p.get("images", [])) for p in parts)
 try:
     reports.append(board, task_id, status, message.strip(), "claude", images=images, decision=decision,
-                   options=options, parts=parts)
+                   options=options, parts=parts, card=card)
 except PermissionError as e:
     refused(e)
-print(f"reported {'decision' if decision else status} on task {task_id}" + (f" with {n_images} image(s)" if n_images else ""))
+print(f"reported {'decision' if decision else 'card' if card else status} on task {task_id}" + (f" with {n_images} image(s)" if n_images else ""))

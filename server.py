@@ -865,6 +865,11 @@ def card_lines(report, answer_only=False, simple=False):
               "before it; post the same query again to turn an open decision into a decided one. Never post a "
               "decision for a choice the user just made "
               "by answering your question: the card already shows their pick.",
+              f'- `{report} card -` to suggest a new card for the board: pipe in JSON (a heredoc, or `--file <a file '
+              'outside the project>` in place of `-`) with {"title": "...", "notes": "...", "tags": ["..."]}. Use it '
+              "whenever the user asks you to add, write or make a card or task, and for follow-up work worth its own "
+              "card. You cannot add cards any other way: the card shows yours with an Add it button, and the new card "
+              "lands on the board when the user presses it. Write the notes as the brief for whoever picks it up.",
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "

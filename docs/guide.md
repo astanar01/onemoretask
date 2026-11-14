@@ -411,6 +411,7 @@ python3 report.py --board <project>/.task_board <task_id> question "what I need 
     --option "A. Settings screen" --option "B. Header toggle"
 python3 report.py --board <project>/.task_board <task_id> done "what I did, what is left"
 python3 report.py --board <project>/.task_board <task_id> decision - < decision.json
+python3 report.py --board <project>/.task_board <task_id> card - < card.json
 ```
 
 - `--option` (2 to 6) gives the card one button per answer. For several questions at once, give each as
@@ -419,6 +420,10 @@ python3 report.py --board <project>/.task_board <task_id> decision - < decision.
   The card draws a task's decisions as one horizontal tree at the top of the Summary and Conversation tabs, each
   hanging off the option chosen before it; it redraws as decisions arrive, and a decision posted again
   with the same query replaces the earlier one.
+- `card` suggests a new card: `{"title", "notes", "tags"}`. It shows in the card's Conversation with an
+  **Add it** button; the new card lands at the top of the first open column only when you press it, and the
+  button then reads "Added to the board" with an **Open it** button. Agents have no other way to add cards:
+  the open board page owns `tasks.json`.
 - `--image <file>` attaches a screenshot. In a many-part question, an `--image` right after a `--part` shows
   under that part's question instead of at the end.
 - A message plainly in another language than your latest one on the card is refused; `--lang <language>`
@@ -502,8 +507,9 @@ A list of messages, oldest first:
 ```
 
 `status` is `launch`, `reply`, `note`, `review`, `progress`, `question`, `decision`, `done`, `answer` or
-`recap`. `images` (file names), `session`, `options` and `parts` (a question's answer buttons) and `decision`
-(the tree) are added when they apply.
+`recap`. `images` (file names), `session`, `options` and `parts` (a question's answer buttons), `decision`
+(the tree) and `card` (a suggested card) are added when they apply. A card added from a suggestion keeps
+`fromCard` (`<task id>@<the entry's at>`) in `tasks.json`.
 
 ### Outside the project
 

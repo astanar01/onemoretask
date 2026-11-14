@@ -276,6 +276,27 @@ def check_decision(d):
             "why": str(d.get("why") or "").strip()}
 
 
+def check_card(d):
+    """A suggested card as stored: {"title", "notes", "tags"}. The board adds it only when the user presses Add it:
+    agents never write tasks.json, which the open board page owns."""
+    if not isinstance(d, dict) or not str(d.get("title") or "").strip():
+        raise ValueError('a card needs a "title"')
+    title = " ".join(str(d["title"]).split())
+    if len(title) > 200:
+        raise ValueError('"title" is at most 200 characters; put the rest in "notes"')
+    tags = d.get("tags") or []
+    if not isinstance(tags, list) or not all(isinstance(x, str) for x in tags):
+        raise ValueError('"tags" is a list of words')
+    tags = list(dict.fromkeys(x.strip() for x in tags if x.strip()))
+    if len(tags) > 8:
+        raise ValueError('"tags" takes at most 8')
+    return {"title": title, "notes": str(d.get("notes") or "").strip(), "tags": tags}
+
+
+def card_message(c):
+    return f"Suggested card: {c['title']}"
+
+
 def check_options(labels):
     """A question's answer choices as stored: 2 to 6 trimmed, non-empty, distinct labels."""
     clean = [str(o).strip() for o in labels]
@@ -469,7 +490,7 @@ def plan_docs(board, task_id):
 
 
 def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None,
-           parts=None):
+           parts=None, card=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
@@ -477,6 +498,8 @@ def append(board, task_id, status, message, sender, session=None, images=None, d
         entry["images"] = images  # names in log_images(board)
     if decision:
         entry["decision"] = decision  # check_decision(); the card draws it as a tree
+    if card:
+        entry["card"] = card  # check_card(); the card shows it with an Add it button
     if options:
         entry["options"] = options  # check_options(); the card shows a button per choice
     if parts:

@@ -5,6 +5,7 @@
 - You can now add any file to a task or a reply, not only pictures. Paste it, drop it or use the clip button; it shows as a small tile with its name, and Claude gets it with the task.
 - When a project gets new tools and Claude stops to ask if it may use them, the card now asks you too. Pick "Use it", "Always use new ones" or "Don't use" right there, with no need to open Claude yourself.
 - When a task's folder has no saved history yet, the task now shows a "Create repo" button. Click it to start one, even if you did not pick "Use a worktree".
+- When you ask Claude for a new card, it now shows the card it wrote right in the chat with an "Add it" button. Press it and the card goes on your board.
 
 ## 2026-11-12
 
