@@ -647,6 +647,7 @@ const I18N = {
     "✓ Added to the board": "✓ Ajoutée au tableau",
     "Open it": "L’ouvrir",
     "Card added: {title}": "Carte ajoutée : {title}",
+    "earlier": "plus tôt",
     "Could not create the task: {error}": "Impossible de créer la tâche : {error}",
     "Layout": "Disposition",
     "List": "Liste",

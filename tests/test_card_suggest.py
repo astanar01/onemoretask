@@ -68,6 +68,11 @@ check("refused: not JSON", r.returncode != 0 and "card:" in r.stderr, r.stderr)
 LOG = [x for x in reports.read(BOARD_DIR, "t1") if x.get("card")][:1]
 LOG.insert(0, {"at": "2026-11-14T10:00:00+00:00", "status": "progress", "message": "Here is the card.", "from": "claude"})
 LOG.append({"at": "2026-11-14T10:05:00+00:00", "status": "done", "message": "Done.", "from": "claude"})
+# A suggestion followed by more messages than the chat shows (30): it must stay reachable until added.
+OLD = {"at": "2026-11-14T08:00:00+00:00", "status": "progress", "message": "Suggested card: Old idea", "from": "claude",
+       "card": {"title": "Old idea", "notes": "", "tags": []}}
+LOG2 = [OLD] + [{"at": f"2026-11-14T08:{m:02d}:00+00:00", "status": "progress", "message": f"step {m}", "from": "claude"}
+                for m in range(1, 36)]
 
 
 def task(tid, title, col):
@@ -79,7 +84,7 @@ def task(tid, title, col):
 BOARD = {"version": 1, "columns": [{"id": "c1", "name": "To Do", "done": False},
                                    {"id": "c2", "name": "In Progress", "done": False, "role": "progress"},
                                    {"id": "c3", "name": "Done", "done": True}],
-         "tasks": [task("t1", "Asks for a card", "c2")]}
+         "tasks": [task("t1", "Asks for a card", "c2"), task("t2", "Long chat", "c2")]}
 PUTS = []
 
 
@@ -103,7 +108,8 @@ class Stub(SimpleHTTPRequestHandler):
         if p == "/api/tasks":
             return self.send_json(BOARD)
         if p == "/api/agents":
-            return self.send_json({"t1": {"id": "t1", "state": "idle", "phase": "done", "reason": "", "log": LOG}})
+            return self.send_json({"t1": {"id": "t1", "state": "idle", "phase": "done", "reason": "", "log": LOG},
+                                   "t2": {"id": "t2", "state": "idle", "phase": "done", "reason": "", "log": LOG2}})
         if p == "/api/app-copy":
             return self.send_json({"current": ROOT, "copies": [{"path": ROOT, "main": True}]})
         if p.startswith("/api/"):
@@ -191,6 +197,7 @@ out.after = await ev(LOOK);
 if (shot) { const s = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(shot.replace(/\.png$/, '-added.png'), Buffer.from(s.result.data, 'base64')); }
 out.added = await ev(`state.tasks.filter((x) => x.fromCard).map((x) => ({ title: x.title, notes: x.notes, tags: x.tags, column: x.column, fromCard: x.fromCard }))`);
 out.firstOpen = await ev(`firstOpenCol()`);
+out.nTasksAdded = await ev(`state.tasks.length`);
 out.topOfCol = await ev(`(() => { const c = state.tasks.find((x) => x.fromCard); return state.tasks.filter((x) => x.column === c.column && !x.parent).every((x) => x === c || x.order >= c.order); })()`);
 await sleep(1500);   // the page's save goes out
 out.reload = await load();
@@ -202,6 +209,23 @@ await ev(`document.querySelector('[data-card-open]').click(); true`);
 await sleep(300);
 out.openedId = await ev(`openId`);
 out.openedTitle = await ev(`document.querySelector('#d-title').value`);
+out.t1Old = await ev(`openDetail('t1'); showTab('conversation'); document.querySelectorAll('#d-log li.k-oldcard').length`);
+const LONG = `(() => { const lis = [...document.querySelectorAll('#d-log > li')], old = document.querySelector('#d-log li.k-oldcard');
+  return { n: lis.length, old: !!old, first: !!old && lis[0] === old, title: old?.querySelector('.sc-title')?.textContent || null,
+    add: !!old?.querySelector('[data-card-add]'), open: !!old?.querySelector('[data-card-open]'),
+    added: state.tasks.filter((x) => x.fromCard === 't2@${"2026-11-14T08:00:00+00:00"}').map((x) => x.title) }; })()`;
+await ev(`openDetail('t2'); showTab('conversation'); true`);
+await sleep(400);
+out.long = await ev(LONG);
+if (shot) { await ev(`document.querySelector('#d-body').scrollTop = 0; true`); const s = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(shot.replace(/\.png$/, '-old.png'), Buffer.from(s.result.data, 'base64')); }
+await ev(`document.querySelector('#d-log li.k-oldcard [data-card-add]').click(); true`);
+await sleep(300);
+out.longAfter = await ev(LONG);
+await sleep(1500);
+await load();
+await ev(`openDetail('t2'); showTab('conversation'); true`);
+await sleep(400);
+out.longReload = await ev(LONG);
 out.errors = errors;
 console.log(JSON.stringify(out));
 quit(0);
@@ -230,7 +254,8 @@ check("tags shown", b.get("tags") == ["feature", "world"], b)
 check("Add it button before adding", b.get("add") is True and not b.get("done"), b)
 check("plain message line not repeated", b.get("rawMsg") is None, b)
 added = out.get("added") or []
-check("one card added for two clicks", len(added) == 1 and out.get("nTasks0", 0) + 1 == len(BOARD["tasks"]), added)
+check("one card added for two clicks", len(added) == 1 and out.get("nTasksAdded") == out.get("nTasks0", 0) + 1,
+      (added, out.get("nTasksAdded")))
 a = added[0] if added else {}
 check("new card keeps title, notes, tags", a.get("title") == "Let Claude make changes in a world"
       and a.get("notes") == GOOD["notes"] and a.get("tags") == ["feature", "world"], a)
@@ -244,6 +269,13 @@ check("still Added after a reload, no second card", out.get("reload") and ar.get
       and out.get("nTasks1") == out.get("nTasks0", 0) + 1, (ar, out.get("nTasks1")))
 check("Open it opens the new card", out.get("openedId") == ar.get("open") and out.get("openedTitle") == "Let Claude make changes in a world",
       (out.get("openedId"), out.get("openedTitle")))
+check("a recent suggestion is not repeated at the top", out.get("t1Old") == 0, out.get("t1Old"))
+lg, la, lr = out.get("long") or {}, out.get("longAfter") or {}, out.get("longReload") or {}
+check("old suggestion still shown at the top after 35 more messages", lg.get("old") and lg.get("first")
+      and lg.get("title") == "Old idea" and lg.get("add") and lg.get("n") == 31, lg)
+check("its Add it adds it once", la.get("added") == ["Old idea"] and la.get("open") and not la.get("add"), la)
+check("once added and reloaded it leaves the top", lr.get("old") is False and lr.get("added") == ["Old idea"]
+      and lr.get("n") == 30, lr)
 check("no page errors", not out.get("errors"), out.get("errors"))
 shutil.rmtree(TMP, ignore_errors=True)
 print("FAILED: " + ", ".join(fails) if fails else "all card suggestion checks passed")
