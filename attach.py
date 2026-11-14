@@ -213,10 +213,21 @@ def focused(shown):
     return " ".join(re.split(r"[\r\n]|\s{3,}", line, maxsplit=1)[0].split())  # a redraw puts the next line after spaces
 
 
-def answer_mcp(session_id, choice, names, cmd=("claude",)):
+def mcp_listed(shown):
+    """(server names the approval on screen lists, the count in its title or 0): the one server named in the title, or
+    every box of the checkbox list. Whole names, so a card about probe-a never matches a screen about probe-admin."""
+    one = re.search(re.escape(MCP_ONE) + r":\s*(\S+)", shown)
+    if one:
+        return [one.group(1)], 1
+    many = re.search(r"(\d+)\s+" + re.escape(MCP_MANY), shown)
+    return re.findall(r"\[[^\]\r\n]*\]\s+(\S+)", shown), int(many.group(1)) if many else 0
+
+
+def answer_mcp(session_id, choice, names, cmd=("claude",), count=0):
     """Answer the MCP server approval on screen: allow = use them, always = use them and every later one in this project,
-    deny = use none. Only while it lists every name in `names` (what the card showed). Returns (answered, why); why is
-    "all-later" when `always` met the several-servers list, which has no such line: the caller saves that choice."""
+    deny = use none. Only while it lists every name in `names` (what the card showed; the CLI's list can be cut short,
+    so `count` is how many servers it said in all). Returns (answered, why); why is "all-later" when `always` met the
+    several-servers list, which has no such line: the caller saves that choice."""
     if not pty:
         return False, "needs a POSIX terminal"
     with _terminal(session_id, cmd) as fd:
@@ -224,7 +235,9 @@ def answer_mcp(session_id, choice, names, cmd=("claude",)):
         kind = mcp_dialog(shown)
         if not kind:
             return False, "no MCP server question on screen"
-        if not all(n in shown for n in names):
+        listed, total = mcp_listed(shown)
+        if (not set(names) <= set(listed) or kind == "one" and names != listed
+                or count and total and count != total or not names and not (count and count == total)):
             return False, "the question on screen is about other MCP servers"
         if choice == "deny":
             os.write(fd, ESC)  # one server: Esc is "Continue without"; several: "reject all"
@@ -236,7 +249,7 @@ def answer_mcp(session_id, choice, names, cmd=("claude",)):
             # its ends, so a bounded walk down covers both.
             key = (UP if labels.index(want) < labels.index(next((x for x in labels if now.startswith(x)), SKIP))
                    else DOWN) if kind == "one" else DOWN
-            for _ in range(len(names) + 4):
+            for _ in range(max(count, total, len(listed), len(names)) + 4):  # every box, then Enable selected
                 if now.startswith(want):
                     break
                 os.write(fd, key)

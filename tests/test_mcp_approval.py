@@ -32,9 +32,10 @@ def raw(name):
         return f.read()
 
 
-def run(reads, choice, names):
-    """attach.answer_mcp with the terminal faked: each read returns the next captured screen; keys are recorded."""
-    reads, keys = [raw(n) for n in reads], []
+def run(reads, choice, names, count=0):
+    """attach.answer_mcp with the terminal faked: each read returns the next captured screen (a fixture name, or bytes
+    made here); keys are recorded."""
+    reads, keys = [r if isinstance(r, bytes) else raw(r) for r in reads], []
 
     @attach.contextlib.contextmanager
     def fake_terminal(session_id, cmd):
@@ -44,7 +45,7 @@ def run(reads, choice, names):
     attach._terminal, attach._read = fake_terminal, lambda fd, seconds: reads.pop(0) if reads else b""
     attach.os.write = lambda fd, data: keys.append(data)
     try:
-        return attach.answer_mcp("x", choice, names), keys
+        return attach.answer_mcp("x", choice, names, count=count), keys
     finally:
         attach._terminal, attach._read, attach.os.write = saved
 
@@ -82,6 +83,29 @@ check("no MCP menu on screen: no key", got[0] is False and keys == [], (got, key
 got, keys = run(["mcp_one_before.raw", "mcp_one_before.raw"], "deny", ONE)
 check("menu still there after the key: not answered", got == (False, "the question is still on screen after the key"), got)
 
+# Review finding 2: a name that only starts like the card's is another server.
+admin_one = raw("mcp_one_before.raw").replace(b"probe-a", b"probe-admin")
+got, keys = run([admin_one], "allow", ONE)
+check("one server: probe-admin on screen, card says probe-a: no key", got[0] is False and keys == [], (got, keys))
+admin_many = raw("mcp_many_before.raw").replace(b"probe-a", b"probe-admin")
+got, keys = run([admin_many], "allow", MANY)
+check("two servers: probe-admin on screen, card says probe-a: no key", got[0] is False and keys == [], (got, keys))
+check("mcp_listed reads whole names and the count", attach.mcp_listed(many) == (["probe-a", "probe-b"], 2)
+      and attach.mcp_listed(one) == (["probe-a"], 1), (attach.mcp_listed(many), attach.mcp_listed(one)))
+got, keys = run(["mcp_many_before.raw"], "allow", MANY, count=3)
+check("the card counted 3 servers, the screen says 2: no key", got[0] is False and keys == [], (got, keys))
+
+# Review finding 1: 30 servers, the card's list cut to the first 13 names; every box must be walked past.
+N = 30
+servers = [f"long-server-name-{i:02d}" for i in range(N)]
+big = ("─" * 60 + f"\r\n   {N} new MCP servers found in this project  \r\n  Select any you wish to enable. \r\n\r\n"
+       + "".join(("  ❯ " if i == 0 else "    ") + f" [✔]  {s} \r\n" for i, s in enumerate(servers))
+       + "     Enable selected \r\n   Space to select · Esc to reject all  \r\n").encode()
+steps = [f"      {servers[i]}   ❯ {servers[i + 1]} ".encode() for i in range(N - 1)] + [f"      {servers[-1]}   ❯  Enable selected".encode()]
+got, keys = run([big, *steps, raw("mcp_many_after.raw")], "always", servers[:13], count=N)
+check("30 servers, 13 names on the card: walks all 30 boxes, then Enter", got == (True, "all-later")
+      and keys == [attach.DOWN] * N + [b"\r"], (got, len(keys)))
+
 # ---- server: reading the ask from the session record
 needs = {}
 server.job_detail = lambda job_id, field="detail": needs.get(job_id, "") if field == "needs" else ""
@@ -92,7 +116,10 @@ needs.update({"s1": "approve 1 new project MCP server (laravel-boost) — attach
 blocked = lambda sid: {"id": sid, "state": "blocked", "status": None, "waitingFor": None}
 check("one server", server.mcp_names(blocked("s1")) == ["laravel-boost"])
 check("two servers", server.mcp_names(blocked("s2")) == ["probe-a", "probe-b"])
-check("cut needs keeps what it has", server.mcp_names(blocked("s3")) == ["a", "b", "c-cut-he"], server.mcp_names(blocked("s3")))
+check("cut needs keeps the whole names and the full count", server.mcp_request(blocked("s3")) == (["a", "b"], 3),
+      server.mcp_request(blocked("s3")))
+check("cut needs: the card says how many more", server.permission_ask(blocked("s3")) == server.MCP_ASK + "a, b and 1 more",
+      server.permission_ask(blocked("s3")))
 check("a tool permission is not an MCP ask", server.mcp_names(blocked("s4")) == [])
 check("not blocked: no ask", server.mcp_names({"id": "s1", "state": "working"}) == [])
 check("permission_ask names the servers", server.permission_ask(blocked("s2")) == server.MCP_ASK + "probe-a, probe-b")
@@ -126,11 +153,11 @@ class P:
 calls = []
 server.WATCH.snapshot = lambda pid: {"t1": {"id": "s2"}}
 server.all_sessions = lambda p: [blocked("s2")]
-attach.answer_mcp = lambda sid, choice, names, cmd=None: calls.append(("mcp", sid, choice, names)) or (True, "all-later")
+attach.answer_mcp = lambda sid, choice, names, cmd=None, count=0: calls.append(("mcp", sid, choice, names, count)) or (True, "all-later")
 attach.answer_prompt = lambda *a, **k: calls.append(("prompt",)) or (True, "")
 os.remove(os.path.join(tmp, ".claude", "settings.local.json"))
 res = server.answer_permission(P, "t1", "always", server.MCP_ASK + "probe-a, probe-b")
-check("answer_permission routes to answer_mcp with the names", calls == [("mcp", "s2", "always", ["probe-a", "probe-b"])], calls)
+check("answer_permission routes to answer_mcp with the names", calls == [("mcp", "s2", "always", ["probe-a", "probe-b"], 2)], calls)
 check("answer_permission reports an MCP answer", res == {"next": "", "again": False, "once": False, "mcp": True}, res)
 check("'all-later' is saved for the project",
       json.load(open(os.path.join(tmp, ".claude", "settings.local.json"))).get("enableAllProjectMcpServers") is True)

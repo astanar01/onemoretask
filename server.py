@@ -2120,22 +2120,33 @@ def job_detail(job_id, field="detail"):
 MCP_ASK = "Claude asks permission: use new MCP servers: "
 
 
-def mcp_names(session):
-    """The project MCP servers a session waits on you to approve before it starts, else []. That approval comes before
-    the session's first turn: `claude agents` gives no waitingFor, only state "blocked"; state.json `needs` reads
-    "approve 2 new project MCP servers (a, b) — attach to respond" (CLI 2.1.325, cut at 800 characters)."""
+def mcp_request(session):
+    """(names, count) of the project MCP servers a session waits on you to approve before it starts, else ([], 0).
+    That approval comes before the session's first turn: `claude agents` gives no waitingFor, only state "blocked";
+    state.json `needs` reads "approve 2 new project MCP servers (a, b) — attach to respond" (CLI 2.1.325). `needs` is
+    cut at 800 characters, so a long list loses its end: names keeps only the whole ones, count says how many in all."""
     if not session or session.get("state") != "blocked" or is_codex(session):
-        return []
-    m = re.match(r"approve \d+ new project MCP servers? \(([^)]*)", job_detail(session.get("id"), "needs"))
-    return [n for n in (x.strip().rstrip("…") for x in m.group(1).split(",")) if n] if m else []
+        return [], 0
+    m = re.match(r"approve (\d+) new project MCP servers? \(([^)]*)(\))?", job_detail(session.get("id"), "needs"))
+    if not m:
+        return [], 0
+    names = [x.strip() for x in m.group(2).split(",")]
+    if not m.group(3):  # cut short: the last name may be part of one
+        names = names[:-1]
+    return [n for n in names if n], int(m.group(1))
+
+
+def mcp_names(session):
+    return mcp_request(session)[0]
 
 
 def permission_ask(session):
     """What a session sitting on a permission prompt asks to do ('' if it is not on one). `claude agents` gives
     waitingFor "permission prompt"; the job's state.json has the request ("approve Bash: rm -f …")."""
-    names = mcp_names(session)
-    if names:
-        return MCP_ASK + ", ".join(names)
+    names, count = mcp_request(session)
+    if count:
+        more = count - len(names)
+        return MCP_ASK + ", ".join(names) + (f" and {more} more" if names and more > 0 else f"{count} servers" if more > 0 else "")
     if not session or "permission" not in (session.get("waitingFor") or ""):
         return ""
     need = re.sub(r"^approve\s+", "", job_detail(session.get("id"), "needs"), flags=re.I)
@@ -3754,7 +3765,8 @@ def answer_permission(p, task_id, choice, shown):
     if not ask or ask != shown:
         raise LookupError("the session is no longer asking that; the card will update")
     if ask.startswith(MCP_ASK):
-        answered, why = attach.answer_mcp(info["id"], choice, mcp_names(session), CLAUDE_CMD)
+        names, count = mcp_request(session)
+        answered, why = attach.answer_mcp(info["id"], choice, names, CLAUDE_CMD, count)
         if not answered:
             raise LookupError(why)
         if why == "all-later":  # the several-servers menu has no "and all future" line: save that part here

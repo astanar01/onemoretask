@@ -2963,7 +2963,7 @@ function nextAction(t, ag, g) {
       const note = permissionNote[t.id] && permissionNote[t.id].ask === ag.permission ? "\n" + permissionNote[t.id].note : "";
       const mcp = mcpServers(ag.permission);
       if (mcp) {
-        const one = mcp.split(", ").length === 1;
+        const one = !/, | and \d+ more$|^\d+ servers$/.test(mcp);   // server.permission_ask: a cut list ends "and N more"
         return { title: window.t("{who} found new tools in this project", { who: nm }),
           text: (one ? window.t("The project adds an MCP server: {names}. {who} waits for your choice before it starts.", { names: mcp, who: nm })
             : window.t("The project adds MCP servers: {names}. {who} waits for your choice before it starts.", { names: mcp, who: nm })) + note,
