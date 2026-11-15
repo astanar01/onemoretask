@@ -664,7 +664,7 @@ def _worker_metas(board, task_id, since=0):
 
 
 def _worker_state(log):
-    """(a turn.completed seen, last command or file change) from a worker's event log."""
+    """(a turn.completed seen, last command or file change started or done) from a worker's event log."""
     st = os.stat(log)
     memo = _worker_memo.get(log)
     if memo and memo[0] == (st.st_mtime, st.st_size):
@@ -676,7 +676,7 @@ def _worker_state(log):
         elif e.get("type") == "turn.completed":
             finished = True
         item = e.get("item")
-        if e.get("type") != "item.completed" or not isinstance(item, dict):
+        if e.get("type") not in ("item.started", "item.completed") or not isinstance(item, dict):
             continue
         if item.get("type") == "command_execution":
             action = (str(item.get("command") or "").strip().splitlines() or [""])[0][:80]
@@ -699,9 +699,14 @@ def worker_rows(board, task_id, since=0):
         except OSError:
             finished, action, updated = False, "", meta.get("started") or 0
         u = usage(log)
+        code = meta.get("exit")
+        finished = finished or code == 0
+        # ended without finishing: a non-zero exit, or no exit written and its codex is gone (helper killed hard)
+        stopped = not finished and (code is not None or (POSIX and not _pid_alive(meta.get("pid"),
+                                                                                    meta.get("pid_start"))))
         rows.append({"id": os.path.basename(log).rsplit(".", 1)[0], "name": meta.get("name") or "Codex worker",
                      "type": meta.get("model") or "codex", "started": meta.get("started") or updated,
-                     "updated": updated, "finished": finished or meta.get("exit") == 0, "action": action,
+                     "updated": updated, "finished": finished, "stopped": stopped, "action": action,
                      "skills": [], "tokens": u[0] + u[2] + u[3], "cli": "codex"})
     rows.sort(key=lambda r: r["started"])
     return rows

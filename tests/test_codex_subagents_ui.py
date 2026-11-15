@@ -42,7 +42,10 @@ SUBS = [
     {"id": "a1", "name": "Find where the board saves", "type": "Explore", "started": NOW - 400, "updated": NOW - 20,
      "finished": False, "action": "Grep save_tasks", "skills": ["cmm-rules"], "tokens": 42000},
     {"id": "cx1", "name": "Write the parser tests", "type": "gpt-5.5", "cli": "codex", "started": NOW - 250,
-     "updated": NOW - 5, "finished": False, "action": "Running pytest", "skills": [], "tokens": 18000},
+     "updated": NOW - 5, "finished": False, "action": "Running pytest", "skills": [], "tokens": 18000, "stopped": False},
+    # A Codex worker that failed while the lead keeps working: shown stopped, never running.
+    {"id": "cx2", "name": "Fix the lint", "type": "gpt-5.5", "cli": "codex", "started": NOW - 200,
+     "updated": NOW - 100, "finished": False, "action": "ruff check", "skills": [], "tokens": 900, "stopped": True},
 ]
 TASKS = [
     card("cl", 0, {"model": "opus"}, subagentModel="gpt-5.5"),           # Claude session, Codex pick
@@ -167,9 +170,11 @@ for (const c of ['cl', 'clc', 'cx', 'cxx', 'new']) { await ev(`openDetail('${c}'
 // Subagent rows: the detail list and the card face.
 await ev(`openDetail('cl')`); await sleep(60);
 const ROWS = `[...document.querySelectorAll('#d-sa-list li')].map((li) => ({ id: li.dataset.id, name: li.querySelector('.nm').textContent,
-  tag: li.querySelector('.cx-tag')?.textContent ?? null, model: li.querySelector('.cx-model')?.textContent ?? null }))`;
+  tag: li.querySelector('.cx-tag')?.textContent ?? null, model: li.querySelector('.cx-model')?.textContent ?? null,
+  st: li.querySelector('.agent').className.replace('agent ', '') }))`;
 results.rows = await ev(ROWS);
-results.face = await ev(`[...document.querySelectorAll('.card-subs li')].map((li) => ({ tag: li.querySelector('.cx-tag')?.textContent ?? null, title: li.title, name: li.querySelector('.nm').textContent }))`);
+results.saN = await ev(`document.querySelector('#d-sa-n').textContent`);
+results.face = await ev(`[...document.querySelectorAll('.card-subs li')].map((li) => ({ tag: li.querySelector('.cx-tag')?.textContent ?? null, title: li.title, name: li.querySelector('.nm').textContent, st: li.querySelector('.agent').className.replace('agent ', '') }))`);
 
 // Screenshots: (a) the picker's options on a Claude card (shown as a list box: a headless shot cannot show an open
 // native menu), (b) the subagent list with one Claude row and one Codex row, plus the card face.
@@ -251,7 +256,11 @@ def main():
     check("Codex card, no Codex flag: list and pick unchanged", (off["cxx"]["kids"], off["cxx"]["sub"]), ([""] + codex, "gpt-5.6-sol"))
 
     rows = {r["id"]: r for r in res["rows"]}
-    check("subagent list: two rows", sorted(rows), ["a1", "cx1"])
+    check("subagent list: three rows", sorted(rows), ["a1", "cx1", "cx2"])
+    check("a failed Codex worker shows stopped while the lead works; the others run",
+          (rows["a1"]["st"], rows["cx1"]["st"], rows["cx2"]["st"]), ("working", "working", "stopped"))
+    check("the running count leaves the stopped worker out", res["saN"], "2 running of 3")
+    check("card face: the failed Codex worker shows stopped", {r["name"]: r["st"] for r in res["face"]}.get("Fix the lint"), "stopped")
     check("Codex row: Codex tag and the model's name", (rows["cx1"]["tag"], rows["cx1"]["model"]), ("Codex", "GPT-5.5"))
     check("Claude row (no cli): no tag, no model", (rows["a1"]["tag"], rows["a1"]["model"]), (None, None))
     face = {r["name"]: r for r in res["face"]}

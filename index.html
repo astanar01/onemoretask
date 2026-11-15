@@ -2526,7 +2526,7 @@ function subagentRows(ag) {
   const subs = (ag && ag.subagents) || [];
   if (!subs.length) return "";
   return `<ul class="card-subs">${subs.map((s) => {
-    const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
+    const st = s.finished ? "finished" : !s.stopped && ag.phase === "working" ? "working" : "stopped";
     return `<li title="${esc(cxSub(s) ? modelName(s.type) : s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
       ${cxSub(s) ? `<span class="cx-tag">Codex</span>` : ""}<span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
   }).join("")}</ul>`;
@@ -2996,7 +2996,7 @@ function nextAction(t, ag, g) {
   }
   if (!ag) return { title: window.t("Work in progress"), text: window.t("Waiting for the first status from the session."), actions: [], busy: true };
   if (ag.phase === "working") {
-    const subs = (ag.subagents || []).filter((s) => !s.finished).length;
+    const subs = (ag.subagents || []).filter((s) => !s.finished && !s.stopped).length;
     return { title: reviewing(ag) ? window.t("Code review in progress") : window.t("Work in progress"), text: subs ? (subs === 1 ? window.t("{who} is working with 1 subagent running. You can add a note below.", { who: nm }) : window.t("{who} is working with {n} subagents running. You can add a note below.", { who: nm, n: subs })) : window.t("{who} is working. You can add a note in Conversation; it reads it as soon as it can.", { who: nm }), actions: [], busy: true };
   }
   if (ag.phase === "gone") {
@@ -3087,11 +3087,11 @@ $("#d-sa-list").addEventListener("click", (e) => {
 function renderSubagents(ag) {
   const subs = (ag && ag.subagents) || [];
   $("#d-subagents").hidden = !subs.length;
-  const run = subs.filter((s) => !s.finished && ag.phase === "working").length;
+  const run = subs.filter((s) => !s.finished && !s.stopped && ag.phase === "working").length;
   $("#d-sa-n").textContent = run ? t("{run} running of {total}", { run, total: subs.length }) : `${subs.length}`;
   const dur = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "<1m" : m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
   const html = subs.map((s) => {
-    const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
+    const st = s.finished ? "finished" : !s.stopped && ag.phase === "working" ? "working" : "stopped";
     const secs = (st === "working" ? Date.now() / 1000 : s.updated) - s.started;
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
       <span class="meta">${s.context ? `<span title="${t("Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}", { now: s.context.toLocaleString(), total: (s.tokens || 0).toLocaleString() })}">${fmtTokens(s.context)}</span>`

@@ -11,6 +11,7 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -44,12 +45,18 @@ def main(argv=None):
                               "read-only" if a.read_only else "workspace-write", "-m", a.model, "-C", cwd, "-"]
     proc = codex._spawn(args, cwd, prompt, log, err)
     meta = {"task": a.task, "name": a.name, "model": a.model, "cwd": cwd, "log": log, "err": err, "started": started,
-            "pid": proc.pid, "readOnly": a.read_only, "exit": None}
+            "pid": proc.pid, "pid_start": codex._pid_start(proc.pid), "readOnly": a.read_only, "exit": None}
     write_meta(meta_path, meta)
 
+    got = []
+
     def stop(sig, _frame):  # codex runs in its own session: a killed helper must not leave it working
-        codex._kill(proc)
-        raise SystemExit(128 + sig)
+        # No proc.wait() here: the interrupted proc.wait() below holds Popen's wait lock, a second one deadlocks.
+        got.append(sig)
+        proc.terminate()
+        t = threading.Timer(5, proc.kill)  # codex ignored SIGTERM
+        t.daemon = True
+        t.start()
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, stop)
     try:
@@ -57,6 +64,8 @@ def main(argv=None):
     finally:
         meta["exit"] = proc.returncode
         write_meta(meta_path, meta)
+    if got:
+        return 128 + got[0]
     answer = codex.last_answer(log)
     if code != 0:
         if answer:

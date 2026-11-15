@@ -20,7 +20,7 @@ os.makedirs(BIN)
 GOT = os.path.join(TMP, "got.txt")
 with open(os.path.join(BIN, "codex"), "w", encoding="utf-8") as f:
     f.write(r'''#!%s
-import json, os, sys
+import json, os, sys, time
 args = sys.argv[1:]
 prompt = sys.stdin.read()
 with open(%r, "a", encoding="utf-8") as g:
@@ -33,6 +33,10 @@ if prompt.startswith("FAIL"):
     sys.stderr.write("Reading prompt from stdin...\nerror: model not found\n")
     out({"type": "turn.failed", "error": {"message": "model not found"}})
     sys.exit(1)
+if prompt.startswith("SLEEP"):
+    out({"type": "item.completed", "item": {"id": "item_0", "type": "command_execution", "command": "echo previous job", "status": "completed"}})
+    out({"type": "item.started", "item": {"id": "item_1", "type": "command_execution", "command": "sleep 30", "status": "in_progress"}})
+    time.sleep(60)
 out({"type": "item.completed", "item": {"id": "item_0", "type": "command_execution", "command": "ls -la\nmore", "status": "completed"}})
 out({"type": "item.completed", "item": {"id": "item_1", "type": "file_change", "changes": [{"path": "/x/hello.txt", "kind": "add"}], "status": "completed"}})
 out({"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "DONE: " + prompt.splitlines()[0]}})
@@ -108,7 +112,6 @@ print("ok  codex.sessions does not list a worker; is_log is false for its log")
 rows = codex.worker_rows(p.board, "t1")
 assert len(rows) == 3, rows
 ok_row = next(r for r in rows if r["type"] == "gpt-5.5" and r["finished"] and r["action"] == "edit hello.txt")
-assert set(ok_row) == {"id", "name", "type", "started", "updated", "finished", "action", "skills", "tokens", "cli"}, ok_row
 assert ok_row["name"] == "Hello" and ok_row["skills"] == [] and ok_row["cli"] == "codex" and ok_row["tokens"] == 107, ok_row
 assert ok_row["started"] <= ok_row["updated"], ok_row
 bad = [r for r in rows if not r["finished"]]
@@ -119,6 +122,53 @@ assert codex.worker_rows(p.board, "t2") == [] and codex.worker_usage(p.board, "t
 assert codex.worker_rows(p.board, "t1", time.time() + 5) == []
 assert len(codex.worker_rows(p.board, "t1", rows[1]["started"])) == 2
 print("ok  worker_rows: 3 rows (finished + action + 107 tokens, the failed one unfinished), usage [120, 0, 80, 14], since")
+
+# ---- stopped vs running, and the job running now
+live = subprocess.Popen([sys.executable, HELPER, "--board", p.board, "t3", "--model", "gpt-5.5", "--name", "Slow"],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=proj,
+                        env=ENV)
+live.stdin.write("SLEEP please")
+live.stdin.close()
+deadline, lmeta = time.time() + 20, None
+while time.time() < deadline:
+    found = [n for n in os.listdir(WF) if n.startswith("t3-") and n.endswith(".json")]
+    if found:
+        lmeta = json.load(open(os.path.join(WF, found[0])))
+        if "sleep 30" in open(lmeta["log"]).read():
+            break
+    time.sleep(0.1)
+assert lmeta and live.poll() is None, (lmeta, live.poll())
+running, live_start = codex.worker_rows(p.board, "t3")[0], codex._pid_start(lmeta["pid"])
+gone = subprocess.Popen([sys.executable, "-c", "pass"])
+gone.wait()  # a real pid whose process is gone
+with open(os.path.join(WF, "t4-1.jsonl"), "w") as f:
+    f.write("")
+with open(os.path.join(WF, "t4-1.json"), "w") as f:
+    json.dump({"task": "t4", "name": "Killed", "model": "gpt-5.5", "log": os.path.join(WF, "t4-1.jsonl"), "started": 1,
+               "pid": gone.pid, "exit": None}, f)
+dead = codex.worker_rows(p.board, "t4")[0]
+got = {"failed exit=1": (bad[0].get("stopped"), bad[0]["finished"]), "ok exit=0": ok_row.get("stopped"),
+       "running": (running.get("stopped"), running["finished"]), "now": running["action"],
+       "no exit, dead pid": (dead.get("stopped"), dead["finished"])}
+want = {"failed exit=1": (True, False), "ok exit=0": False, "running": (False, False), "now": "sleep 30",
+        "no exit, dead pid": (True, False)}
+try:
+    assert got == want, got
+finally:
+    live.terminate()  # as when the lead stops its background task
+    try:
+        live.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        live.kill()
+        live.wait()
+        raise AssertionError("codex_worker.py hung on SIGTERM")
+assert live.returncode == 143, live.returncode
+assert set(ok_row) == {"id", "name", "type", "started", "updated", "finished", "stopped", "action", "skills", "tokens",
+                       "cli"}, ok_row
+assert lmeta["pid_start"] and lmeta["pid_start"] == live_start or not codex.POSIX, (lmeta, live_start)
+killed = codex.worker_rows(p.board, "t3")[0]
+assert killed["stopped"] and not killed["finished"] and killed["action"] == "sleep 30", killed
+print("ok  stopped: exit 1 or a gone pid -> stopped; a running worker is not; Now shows the started command")
 
 # ---- the brief
 W_CMD = server.script_cmd(p, "t1", "codex_worker.py")
