@@ -4,7 +4,7 @@
 # BLOCKING: exits 2 when a Godot engine run's output is piped into a truncation
 # filter (grep/head/tail/sed/awk). Bytes discarded before capture never reach
 # the context-mode index (ctx-rules anti-pattern), and the kept bytes still
-# flood the context window — ctx_batch_execute does both jobs properly.
+# flood the context window — ctx_batch (1.x: ctx_batch_execute) does both jobs properly.
 # Escape hatch: append "# ctx-exempt" to the command (advertised in the error).
 # Any input without "godot" exits 0 before Python is needed; no Python at all also exits 0.
 # Installed by setup/install_hooks.py (PreToolUse, matcher "Bash").
@@ -38,12 +38,13 @@ Bytes discarded before capture are permanently lost from the context-mode index
 Run it through context-mode instead — the FULL output gets indexed and stays
 searchable, and only the sections you asked about return:
 
-  mcp__plugin_context-mode_context-mode__ctx_batch_execute(
-    commands: [{label: "verify run", command: "<same engine command, UNPIPED>"}],
+  mcp__plugin_context-mode_context-mode__ctx_batch(
+    commands: ["<same engine command, UNPIPED>"],
     queries: ["FAIL", "SCRIPT ERROR", "PASS"])   # note: queries is REQUIRED
+  (context-mode 1.x: ctx_batch_execute with commands: [{label, command}])
 
-Single run? ctx_execute(language: "shell", code: "...", intent: "...") — above
-5KB the intent switches the return to search hits instead of raw output.
+Single run? ctx_execute(language: "shell", code: "...", intent: "...") — the
+intent indexes the output and returns only the matching parts.
 
 Truly just eyeballing a short fixed line (e.g. a version string)? Append
 "# ctx-exempt" to the command to bypass this gate.

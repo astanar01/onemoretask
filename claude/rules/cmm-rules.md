@@ -36,4 +36,4 @@ The `cmm-grep-nudge.sh` PreToolUse gate blocks nav-verb Bash (`grep`/`rg`/`find`
 
 ### CMM vs. context-mode
 
-CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode captures tool output within one session (FTS5 search over Bash/Read/Grep results). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".
+CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode keeps ctx_* tool output per project, across sessions (FTS5 over ctx_batch, ctx_index and large ctx_execute output; plain Bash/Read/Grep output is not stored). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".

@@ -103,6 +103,9 @@ CASES = [
     ("cmm-grep-nudge.sh", pre("Bash", command="echo hi > out.txt; grep foo src/x.py"), 2, False),
     ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT, subagent_type="general-purpose"), 2, False),
     ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT + " # cmm-exempt"), 0, False),
+    # context-mode 2.x name and the 1.x one both count as a tool keyword.
+    ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT + " Run tests with ctx_batch."), 0, False),
+    ("agent-cmm-gate.sh", pre("Agent", prompt=LONG_PROMPT + " Run tests with ctx_batch_execute."), 0, False),
     ("cmm-index-mode-guard.sh", pre("mcp__codebase-memory-mcp__index_repository", repo_path="x", mode="fast"),
      2, False),
     ("cmm-index-mode-guard.sh", pre("mcp__codebase-memory-mcp__index_repository", repo_path="x", mode="moderate"),

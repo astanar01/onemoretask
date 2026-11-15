@@ -47,7 +47,9 @@ cwd = d.get('cwd','') or ''
 # two names — keep this python set in lockstep with that shell case to avoid
 # the F-06 divergence where python classified ctx_execute_file/_batch_execute
 # but shell silently no-op'd. If the install matcher is ever widened to also
-# route _file/_batch_execute, update BOTH layers together.
+# route ctx_batch (1.x: ctx_batch_execute), update BOTH layers together.
+# context-mode 2.x folded ctx_execute_file into ctx_execute + a 'file' field;
+# a grep on that one file (\$CTX_FILE) stays allowed, as ctx_execute_file was.
 # Any other tool_name routes to 'other' and exits 0 (no nudge needed).
 _ACCEPTED = {
     'mcp__plugin_context-mode_context-mode__ctx_execute',
@@ -260,7 +262,7 @@ def extract_find_name(toks):
 
 if first in GREP_FAMILY:
     pattern, target = extract_grep_family(tokens, first)
-    if not pattern:
+    if not pattern or (ti.get('file') and 'CTX_FILE' in target):
         emit(tool_name, 'other', '', '', cwd)
         sys.exit(0)
     emit(tool_name, 'grep-family', pattern, target, cwd)

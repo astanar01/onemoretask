@@ -13,14 +13,14 @@ skill holds only what that file points here for.
 
 ## When the CMM gate fires — `# cmm-exempt` policy (AUTHORITATIVE)
 
-A PreToolUse hook (`cmm-grep-nudge.sh`) blocks Bash commands that pair a navigation verb (`grep`/`rg`/`find`/`cat`/`head`/`tail`/`wc`) with a source-ish path. **This section is the single authoritative `# cmm-exempt` policy.** The hook ignores the marker when a nav verb's own arguments name a file CMM indexes (`.py`, `.gd`, `.js`, `.ts`, `.go`, `.php`, ...) — read those with CMM, `Read`, or `ctx_execute_file`. Other docs (`~/.claude/rules/cmm-rules.md`) defer to this section.
+A PreToolUse hook (`cmm-grep-nudge.sh`) blocks Bash commands that pair a navigation verb (`grep`/`rg`/`find`/`cat`/`head`/`tail`/`wc`) with a source-ish path. **This section is the single authoritative `# cmm-exempt` policy.** The hook ignores the marker when a nav verb's own arguments name a file CMM indexes (`.py`, `.gd`, `.js`, `.ts`, `.go`, `.php`, ...) — read those with CMM, `Read`, or `ctx_execute` with `file` (1.x: `ctx_execute_file`). Other docs (`~/.claude/rules/cmm-rules.md`) defer to this section.
 
 **CMM tools are mandatory — never exempt — for actual code navigation:** searching or reading source to understand code → `search_graph` / `search_code` / `get_code_snippet`. Never use the marker to author files either — `cat >`/heredoc → `Write`/`Edit`.
 
 **`# cmm-exempt` is legitimate in exactly three classes** (append the marker and proceed):
 
 1. **Engine/CLI driver output filtering** — piping a launched binary's output through nav verbs (e.g. `godot --headless … | grep`): the source-ish path is the program being run, not code being searched.
-2. **Non-source state files** — checks/diffs/reads of markdown, logs, git state, `.import`/staged-copy artifacts: CMM doesn't index these and no CMM tool does the job. Prefer `Read`/`ctx_execute_file` when they fit; exempt when a shell one-liner is the right tool.
+2. **Non-source state files** — checks/diffs/reads of markdown, logs, git state, `.import`/staged-copy artifacts: CMM doesn't index these and no CMM tool does the job. Prefer `Read`/`ctx_execute` with `file` when they fit; exempt when a shell one-liner is the right tool.
 3. **ctx tools unavailable** — the sanctioned `ctx_execute` path is unreachable because no ctx_* tools are registered in the session (ToolSearch finds none).
 
 **Marker placement: the marker must be the LAST thing on the command line.** Everything after `#` is a shell comment, so `cmd1 # cmm-exempt (reason); cmd2; cmd3` silently never runs cmd2/cmd3 — and the output looks complete, so the miss is invisible (this ate a staged-index check in a real session). When chaining commands, put the marker only at the very end of the full chain, or split into separate invocations.

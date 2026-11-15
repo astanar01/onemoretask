@@ -288,21 +288,131 @@ class InstallTools(unittest.TestCase):
         self.main()
         self.assertEqual(self.read(env), b"MUNINN_OLLAMA_URL=ollama://other:1/x\n")
 
+    def node(self, version="v24.15.0"):
+        """A fake node on PATH answering --version with version."""
+        path = os.path.join(self.home, "nodebin", "node")  # never created: fake_run answers for it
+        self.which["node"] = path
+        self.versions[path] = version + "\n"
+        return path
+
+    def settings(self):
+        with open(os.path.join(self.claude, "settings.json")) as f:
+            return json.load(f)
+
+    def claude_calls(self):
+        return [c for c in self.calls if c[0] == "claude"]
+
     def test_context_mode_plugin(self):
         self.which["claude"] = "/usr/bin/claude"
-        self.main()
-        self.assertIn(["claude", "plugin", "marketplace", "add", "mksglu/context-mode"], self.calls)
-        self.assertIn(["claude", "plugin", "install", "context-mode@context-mode", "--scope", "user"], self.calls)
+        self.node()
+        out = self.main()
+        self.assertEqual(self.claude_calls(), [
+            ["claude", "plugin", "marketplace", "add", "mksglu/context-mode"],
+            ["claude", "plugin", "install", "context-mode@context-mode", "--scope", "user"]])
+        self.assertIn(["node", "--version"], self.calls)
+        self.assertIn("Installed the context-mode plugin", out)
+        self.assertNotIn("context-mode", it.FAILED)
+
+    def test_context_mode_already_on_is_updated(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node("v25.0.1")
         os.makedirs(self.claude)
         with open(os.path.join(self.claude, "settings.json"), "w") as f:
             json.dump({"enabledPlugins": {"context-mode@context-mode": True}}, f)
-        self.calls.clear()
         out = self.main()
-        self.assertFalse(any(c[0] == "claude" for c in self.calls))
-        self.assertIn("Kept your context-mode plugin", out)
+        self.assertEqual(self.claude_calls(), [["claude", "plugin", "update", "context-mode@context-mode"]])
+        self.assertIn("Updated the context-mode plugin. Restart Claude Code, then run /ctx-upgrade in it.", out)
+        self.assertNotIn("context-mode", it.FAILED)
+        self.assertTrue(self.settings()["enabledPlugins"]["context-mode@context-mode"])
+
+    def test_context_mode_update_failure_is_failed(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node()
+        os.makedirs(self.claude)
+        with open(os.path.join(self.claude, "settings.json"), "w") as f:
+            json.dump({"enabledPlugins": {"context-mode@context-mode": True}}, f)
+        self.failing = {"claude plugin update context-mode@context-mode"}
+        out = self.main()
+        self.assertIn("Note: claude plugin update context-mode@context-mode failed (boom)", out)
+        self.assertNotIn("Restart Claude Code", out)
+        self.assertIn("context-mode", it.FAILED)
+
+    def test_old_node_skips_context_mode(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node("v24.14.9")
+        out = self.main()
+        self.assertEqual(self.claude_calls(), [])
+        self.assertIn("Note: context-mode 2.x needs Node 24.15.0 or newer (you have v24.14.9). "
+                      "Install a newer Node, then run setup again", out)
+        self.assertEqual(it.FAILED, ["context-mode"])
+        self.assertFalse(os.path.exists(os.path.join(self.claude, "settings.json")))
+
+    def test_old_node_names_newer_nvm_node(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node("v24.12.0")
+        root = os.path.join(self.home, ".nvm", "versions", "node")
+        for v in ["v24.12.0", "v24.22.3", "v24.9.9", "v25.1.0"]:
+            os.makedirs(os.path.join(root, v, "bin"))
+            if v != "v25.1.0":  # a folder without its node binary does not count
+                open(os.path.join(root, v, "bin", "node"), "w").close()
+        out = self.main()
+        self.assertIn("Node v24.22.3 is already installed with nvm", out)
+        self.assertIn("nvm alias default 24.22.3", out)
+        self.assertEqual(it.FAILED, ["context-mode"])
+
+    def test_old_node_without_nvm_has_no_nvm_hint(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node("v24.12.0")
+        self.assertNotIn("nvm", self.main())
+
+    def test_missing_or_broken_node_skips_context_mode(self):
+        self.which["claude"] = "/usr/bin/claude"
+        out = self.main()
+        self.assertIn("needs Node 24.15.0 or newer (Node was not found)", out)
+        self.assertEqual((self.claude_calls(), it.FAILED), ([], ["context-mode"]))
+        for version, why in [(None, "--version did not work"), ("node: weird", "you have node: weird")]:
+            with self.subTest(version=version):
+                path = self.node()
+                self.versions[path] = version
+                self.calls.clear()
+                out = self.main()
+                self.assertIn(why, out)
+                self.assertEqual((self.claude_calls(), it.FAILED), ([], ["context-mode"]))
+
+    def test_context_mode_env_added_once(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node()
+        os.makedirs(self.claude)
+        with open(os.path.join(self.claude, "settings.json"), "w") as f:
+            json.dump({"theme": "dark", "env": {"OTHER": "1"}}, f)
+        out = self.main()
+        self.assertEqual(self.settings(), {"theme": "dark", "env": {"OTHER": "1", "CTX_REPLACE_TRIGGER_BYTES": "1048576"}})
+        self.assertIn("Added CTX_REPLACE_TRIGGER_BYTES=1048576 to the env in", out)
+        before = self.read(os.path.join(self.claude, "settings.json"))
+        out = self.main()
+        self.assertEqual(self.read(os.path.join(self.claude, "settings.json")), before)
+        self.assertIn("Kept your own CTX_REPLACE_TRIGGER_BYTES (1048576)", out)
+
+    def test_context_mode_env_user_value_kept(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node()
+        os.makedirs(self.claude)
+        with open(os.path.join(self.claude, "settings.json"), "w") as f:
+            json.dump({"env": {"CTX_REPLACE_TRIGGER_BYTES": "8192"}}, f)
+        before = self.read(os.path.join(self.claude, "settings.json"))
+        out = self.main()
+        self.assertEqual(self.read(os.path.join(self.claude, "settings.json")), before)
+        self.assertIn("Kept your own CTX_REPLACE_TRIGGER_BYTES (8192)", out)
+
+    def test_context_mode_env_written_with_no_settings_file(self):
+        self.which["claude"] = "/usr/bin/claude"
+        self.node()
+        self.main()
+        self.assertEqual(self.settings(), {"env": {"CTX_REPLACE_TRIGGER_BYTES": "1048576"}})
 
     def test_claude_found_off_path(self):
         # A board started from the desktop shortcut may lack ~/.local/bin on PATH.
+        self.node()
         os.makedirs(self.bin)
         with open(os.path.join(self.bin, "claude"), "w") as f:
             f.write("")
@@ -333,12 +443,14 @@ class InstallTools(unittest.TestCase):
 
     def test_dry_run_changes_nothing(self):
         self.which.update(ollama="/usr/bin/ollama", claude="/usr/bin/claude")
+        self.node()
         before = sorted(os.listdir(self.home))
         out = self.main("--dry-run")
         self.assertEqual(sorted(os.listdir(self.home)), before)
-        self.assertEqual((self.calls, self.downloads), ([], []))
+        self.assertEqual((self.calls, self.downloads), ([["node", "--version"]], []))  # only the read-only check
         for line in ("Would download codebase-memory-mcp", "Would download muninn", "Would add MCP server",
-                     "Would run: muninn start", "Would run: claude plugin install"):
+                     "Would run: muninn start", "Would run: claude plugin install",
+                     "Would add CTX_REPLACE_TRIGGER_BYTES=1048576 to the env in"):
             self.assertIn(line, out)
 
 

@@ -3,8 +3,9 @@
 Usage: python3 setup/install_tools.py [--bin-dir DIR] [--claude-dir DIR] [--dry-run]
 install.sh and install.ps1 run this. It never fails the install: every problem prints a "Note: ... skipped"
 line and the script still exits 0. A tool you already have is kept as is, except a codebase-memory-mcp older than
-its pinned tag, which is replaced (the old one kept beside it as <path>-<version>.bak). After main(), FAILED names the steps a
-later run may fix (a failed download or plugin command); setup/run_setup.py runs it again then.
+its pinned tag, which is replaced (the old one kept beside it as <path>-<version>.bak), and the context-mode plugin,
+which is updated. context-mode needs Node 24.15.0 or newer and is skipped below that. After main(), FAILED names the
+steps a later run may fix (a failed download or plugin command); setup/run_setup.py runs it again then.
 Skip it all with ONEMORETASK_NO_TOOLS=1.
 """
 import argparse
@@ -35,6 +36,10 @@ OLLAMA_LINE = "MUNINN_OLLAMA_URL=ollama://localhost:11434/nomic-embed-text"
 PLUGIN = "context-mode@context-mode"
 PLUGIN_CMDS = [["plugin", "marketplace", "add", "mksglu/context-mode"],
                ["plugin", "install", PLUGIN, "--scope", "user"]]
+# Below this the context-mode 2.x server offers only ctx_doctor and its hooks do nothing.
+NODE_MIN = (24, 15, 0)
+# 2.x swaps Bash/Read output over 4 KB for a preview; 0/empty/invalid mean 4096, so a big number turns it off.
+CTX_ENV = ("CTX_REPLACE_TRIGGER_BYTES", "1048576")
 FAILED = []
 
 
@@ -231,6 +236,20 @@ def claude_json_path(claude_dir):
     return os.path.join(os.path.dirname(os.path.abspath(claude_dir)), ".claude.json")
 
 
+def write_json(path, data):
+    """Replace path with data in one rename, the old file kept as path.bak-onemoretask. Raises OSError."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        shutil.copy2(path, path + ".bak-onemoretask")
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path).lstrip(".") + "-", dir=os.path.dirname(path))
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    if os.path.exists(path):
+        shutil.copymode(path, tmp)
+    os.replace(tmp, path)
+
+
 def register_mcp(claude_dir, servers, dry):
     """Add the servers ({name: entry}) to Claude Code's user-scope MCP list; a same-name entry is kept."""
     path = claude_json_path(claude_dir)
@@ -261,15 +280,7 @@ def register_mcp(claude_dir, servers, dry):
         print(f"Would add MCP server {', '.join(added)} to {path}")
         return
     try:
-        if os.path.exists(path):
-            shutil.copy2(path, path + ".bak-onemoretask")
-        fd, tmp = tempfile.mkstemp(prefix=".claude.json-", dir=os.path.dirname(path))
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
-        if os.path.exists(path):
-            shutil.copymode(path, tmp)
-        os.replace(tmp, path)
+        write_json(path, data)
     except OSError as e:
         print(f"Note: could not write {path} ({e}) — MCP servers not added.")
         FAILED.append("MCP servers")
@@ -359,16 +370,95 @@ def find_claude():
     return shutil.which("claude") or next((p for p in local if os.path.isfile(p)), None)
 
 
-def setup_context_mode(claude_dir, dry):
-    if plugin_enabled(claude_dir):
-        print("Kept your context-mode plugin (already on)")
+def node_problem():
+    """None when Node is new enough for context-mode 2.x, else what is wrong with it."""
+    node = shutil.which("node")
+    if not node:
+        return "Node was not found"
+    have = version_of(node)
+    mine = version_tuple(have)
+    if mine and mine >= NODE_MIN:
+        return None
+    return f"you have {have}" if have else f"{node} --version did not work"
+
+
+def newer_nvm_node():
+    """The highest nvm-installed Node new enough for context-mode, e.g. "v24.22.3", or None."""
+    root = os.path.expanduser("~/.nvm/versions/node")
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return None
+    ok = [(version_tuple(n), n) for n in names
+          if os.path.isfile(os.path.join(root, n, "bin", "node"))]
+    ok = [(v, n) for v, n in ok if v and v >= NODE_MIN]
+    return max(ok)[1] if ok else None
+
+
+def set_settings_env(claude_dir, key, value, dry):
+    """Add key to the env of Claude Code's user settings.json; a value already there is kept."""
+    path = os.path.join(claude_dir, "settings.json")
+    data = {}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"Note: could not read {path} ({e}) — {key} not set.")
+            FAILED.append("context-mode settings")
+            return
+        if not isinstance(data, dict) or not isinstance(data.get("env", {}), dict):
+            print(f"Note: {path} is not in the expected shape — {key} not set.")
+            FAILED.append("context-mode settings")
+            return
+    env = data.setdefault("env", {})
+    if key in env:
+        print(f"Kept your own {key} ({env[key]}) in {path}")
         return
+    env[key] = value
+    if dry:
+        print(f"Would add {key}={value} to the env in {path}")
+        return
+    try:
+        write_json(path, data)
+    except OSError as e:
+        print(f"Note: could not write {path} ({e}) — {key} not set.")
+        FAILED.append("context-mode settings")
+        return
+    print(f"Added {key}={value} to the env in {path}")
+
+
+def setup_context_mode(claude_dir, dry):
     claude = find_claude()
     if not claude:
         print("Note: Claude Code not found — context-mode plugin skipped. Once Claude Code is installed, run:")
         for args in PLUGIN_CMDS:
             print("  claude " + " ".join(args))
         FAILED.append("context-mode")
+        return
+    problem = node_problem()
+    if problem:
+        print(f"Note: context-mode 2.x needs Node {'.'.join(map(str, NODE_MIN))} or newer ({problem}). "
+              "Install a newer Node, then run setup again — context-mode plugin skipped.")
+        nvm = newer_nvm_node()
+        if nvm:
+            print(f"  Node {nvm} is already installed with nvm, but the board started with another one. "
+                  f"Make it the default (nvm alias default {nvm.lstrip('v')}), then restart the board "
+                  "from a new terminal so its Claude sessions use it too.")
+        FAILED.append("context-mode")
+        return
+    set_settings_env(claude_dir, *CTX_ENV, dry)
+    if plugin_enabled(claude_dir):
+        update = ["plugin", "update", PLUGIN]
+        if dry:
+            print("Would run: claude " + " ".join(update))
+            return
+        ok, out = run([claude] + update, timeout=300)
+        if not ok:
+            print(f"Note: claude {' '.join(update)} failed ({out[-200:]}) — context-mode plugin not updated.")
+            FAILED.append("context-mode")
+            return
+        print("Updated the context-mode plugin. Restart Claude Code, then run /ctx-upgrade in it.")
         return
     for args in PLUGIN_CMDS:
         if dry:

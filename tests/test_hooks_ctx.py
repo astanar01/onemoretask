@@ -131,16 +131,59 @@ class WithPython(Base):
             os.rename(cj + ".off", cj)
         self.assertEqual((r.returncode, r.stderr), (0, ""))
 
+    def test_nudge_allows_grep_on_its_own_file(self):
+        # context-mode 2.x: ctx_execute + file replaced ctx_execute_file, which this hook never gated.
+        r = self.run_hook("ctx-execute-cmm-nudge.sh", {
+            "hook_event_name": "PreToolUse", "tool_name": PLUGIN,
+            "tool_input": {"language": "shell", "file": "src/app.py", "code": 'grep -n foo "$CTX_FILE"'}})
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        r = self.run_hook("ctx-execute-cmm-nudge.sh", {
+            "hook_event_name": "PreToolUse", "tool_name": PLUGIN,
+            "tool_input": {"language": "shell", "file": "src/app.py", "code": "grep -r foo src"}})
+        self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_nudge_passes_batch_under_both_names(self):
+        for name in ("ctx_batch", "ctx_batch_execute"):
+            r = self.run_hook("ctx-execute-cmm-nudge.sh", {
+                "hook_event_name": "PreToolUse", "tool_name": "mcp__plugin_context-mode_context-mode__" + name,
+                "tool_input": {"commands": ["grep -r foo src"], "queries": ["foo"]}})
+            self.assertEqual((r.returncode, r.stderr), (0, ""), name)
+
+    def test_session_gate_allows_ctx_tools_before_init(self):
+        # Context-mode counts as installed once its session DB exists; its own sentinel is still missing.
+        db = os.path.join(self.proj, ".claude", "context-mode.db")
+        os.makedirs(os.path.dirname(db), exist_ok=True)
+        open(db, "w").close()
+        try:
+            def gate(tool):
+                return self.run_hook("session-gate.sh", {
+                    "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {}})
+            r = gate("Edit")
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("Context Mode", r.stderr)
+            for tool in ("ctx_batch", "ctx_resume", "ctx_execute", "ctx_index",
+                         "ctx_batch_execute", "ctx_execute_file", "ctx_fetch_and_index"):
+                r = gate(tool)
+                self.assertEqual((r.returncode, r.stderr), (0, ""), tool)
+            r = gate("ctx_purge")
+            self.assertEqual(r.returncode, 2, r.stderr)
+        finally:
+            shutil.rmtree(os.path.dirname(db))
+
     def test_pipe_gate(self):
         r = self.bash_cmd("godot --headless --path . -s t.gd | grep FAIL")
         self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("__ctx_batch(", r.stderr)
+        self.assertIn("1.x: ctx_batch_execute", r.stderr)
         r = self.bash_cmd("ls | grep foo")
         self.assertEqual((r.returncode, r.stderr), (0, ""))
 
     def test_muninn_prints_json(self):
         r = self.muninn()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("muninn_recall", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+        text = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("muninn_recall", text)
+        self.assertIn("`ctx_batch`", text)
 
     def test_subagent_on_and_off(self):
         r = self.subagent()

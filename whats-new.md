@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-15
+
+- Setup now brings the helper that keeps long outputs out of the way up to date. If something on your computer is too old for it, setup now says so plainly instead of leaving it half working.
+
 ## 2026-11-14
 
 - You can now add any file to a task or a reply, not only pictures. Paste it, drop it or use the clip button; it shows as a small tile with its name, and Claude gets it with the task.

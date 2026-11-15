@@ -18,7 +18,7 @@ RECALL — before exploring the codebase, launching agents, or reading files:
 
 If the user's message is a simple question, clarification, or follow-up that doesn't require codebase exploration, skip the recall. If you're about to search code, read files, or start implementing — recall FIRST. Skipping this wastes tokens re-discovering what Muninn already knows.
 
-SESSION NOTES — before re-running a command, re-reading earlier output, or after a resume/compaction, call `ctx_search` (context-mode) first; output captured with `ctx_batch_execute`, `ctx_index` or `ctx_execute` + `intent` is searchable there.
+SESSION NOTES — before re-running a command, re-reading earlier output, or after a resume/compaction, call `ctx_search` (context-mode) first; output captured with `ctx_batch` (1.x: `ctx_batch_execute`), `ctx_index` or `ctx_execute` + `intent` is searchable there.
 
 REMEMBER — scan the PRIOR assistant turn for durable learnings that should be stored in Muninn beyond what commit messages already capture. Prefer `muninn_remember` (or `muninn_remember_batch` for 2+ items) for:
   - Newly-learned infra or system facts (not re-derivable from git)

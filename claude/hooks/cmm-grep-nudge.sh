@@ -159,7 +159,7 @@ BLOCKED: Use CMM tools instead of Bash navigation for code search.
   - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
   - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")
   - Functions in one file: mcp__codebase-memory-mcp__search_graph(file_pattern="*name.gd")
-  - Whole file:     Read, or ctx_execute_file to filter it
+  - Whole file:     Read, or ctx_execute with file: to filter it (1.x: ctx_execute_file)
 CMM indexes .py/.gd/.js/.ts/... functions (GDScript included). # cmm-exempt does not work on these
 reads; it is only for non-source files, git state and filtering a program's output (skill \`cmm-rules\`).
 EOF

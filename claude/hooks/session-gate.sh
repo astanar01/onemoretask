@@ -156,9 +156,11 @@ case "$TOOL" in
   ctx_execute)           exit 0 ;;
   ctx_search)            exit 0 ;;
   ctx_index)             exit 0 ;;
-  ctx_fetch_and_index)   exit 0 ;;
-  ctx_batch_execute)     exit 0 ;;
-  ctx_execute_file)      exit 0 ;;
+  ctx_batch)             exit 0 ;;  # 2.x name of ctx_batch_execute
+  ctx_resume)            exit 0 ;;  # 2.x
+  ctx_fetch_and_index)   exit 0 ;;  # 1.x
+  ctx_batch_execute)     exit 0 ;;  # 1.x
+  ctx_execute_file)      exit 0 ;;  # 1.x
   ctx_stats)             exit 0 ;;
   ctx_doctor)            exit 0 ;;
   ctx_upgrade)           exit 0 ;;

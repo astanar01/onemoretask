@@ -36,7 +36,7 @@ if [ "$PROMPT_LEN" -lt 300 ] && ! echo "$PROMPT" | grep -qiE "$CODE_SIGNALS"; th
 fi
 
 # --- Keyword Check: CMM tool function names ---
-KEYWORDS="search_graph|trace_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_fetch_and_index|ctx_batch_execute"
+KEYWORDS="search_graph|trace_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_batch|ctx_fetch_and_index|ctx_batch_execute"
 if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
   exit 0
 fi
@@ -81,8 +81,8 @@ Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
 Workflow: search_graph → trace_path → get_code_snippet
 Prefer these over Read/Grep for understanding code structure and relationships.
 
-If using Context Mode MCP: ctx_execute, ctx_search, ctx_index, ctx_fetch_and_index
-also satisfy this requirement.
+If using Context Mode MCP: ctx_execute, ctx_batch, ctx_search, ctx_index
+(1.x: ctx_batch_execute, ctx_fetch_and_index) also satisfy this requirement.
 
 --- End of copy-paste instructions ---
 BLOCKED
