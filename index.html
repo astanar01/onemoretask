@@ -2488,14 +2488,23 @@ function qParts(e) {
   const ok = parts.filter((p) => p.options.length >= 2 && p.options.length <= 6 && new Set(p.options).size === p.options.length);
   return ok.length <= 8 && new Set(ok.map((p) => p.q)).size === ok.length ? ok : [];
 }
+// A part is answered by a pick or by its typed note alone (the note is then that part's answer).
+const partDone = (e, pi) => (qPicks[qKey(e)] || {})[pi] != null || !!noteText(noteKey(e, pi));
+const partsCount = (n, m) => window.t("{n} of {m} answered", { n, m });
+function paintParts(wrap, e, parts) {
+  const n = parts.filter((_, k) => partDone(e, k)).length, s = wrap && wrap.querySelector("[data-qsend]");
+  if (!s) return;
+  s.disabled = n < parts.length || $("#d-reply-send").disabled;
+  wrap.querySelector(".qsend span").textContent = partsCount(n, parts.length);
+}
 function partsHtml(e, i, parts, ans, live) {
   const said = ans ? String(ans.message || "").split("\n").map((s) => s.trim()) : null, picks = qPicks[qKey(e)] || {};
   const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div>${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
     const picked = said ? said.includes(answerLine(p, o)) : picks[pi] === k;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qp="${pi}" data-qo="${k}" aria-pressed="${picked}"${live ? "" : " disabled"}>${picked && !live ? "✓ " : ""}${esc(String(o))}</button>`;
   }).join("")}</div>${noteHtml(noteKey(e, pi), live)}</div>`).join("");
-  const n = parts.filter((_, pi) => picks[pi] != null).length;
-  const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(window.t("{n} of {m} picked", { n, m: parts.length }))}</span></div>` : "";
+  const n = parts.filter((_, pi) => partDone(e, pi)).length;
+  const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(partsCount(n, parts.length))}</span></div>` : "";
   return `<div class="qparts">${rows}${send}</div>`;
 }
 function pickPart(b) {
@@ -2504,18 +2513,17 @@ function pickPart(b) {
   const picks = (qPicks[qKey(e)] = qPicks[qKey(e)] || {});
   picks[pi] = +b.dataset.qo;
   b.closest(".qopts").querySelectorAll("button").forEach((x) => { x.classList.toggle("picked", x === b); x.setAttribute("aria-pressed", x === b); });
-  const n = parts.filter((_, k) => picks[k] != null).length, wrap = b.closest(".qparts");
-  wrap.querySelector("[data-qsend]").disabled = n < parts.length || $("#d-reply-send").disabled;
-  wrap.querySelector(".qsend span").textContent = window.t("{n} of {m} picked", { n, m: parts.length });
+  paintParts(b.closest(".qparts"), e, parts);
 }
 function sendParts(b) {
-  const e = logShown[+b.dataset.qsend], parts = e && qParts(e), picks = e && qPicks[qKey(e)], t = task(openId);
-  if (!t || !parts || !picks || parts.some((_, k) => picks[k] == null) || $("#d-reply-send").disabled) return;
+  const e = logShown[+b.dataset.qsend], parts = e && qParts(e), picks = (e && qPicks[qKey(e)]) || {}, t = task(openId);
+  if (!t || !parts || parts.some((_, k) => !partDone(e, k)) || $("#d-reply-send").disabled) return;
   const extra = $("#d-reply").value.trim();
   if (extra) setReplyDraft(t.id, "");
   $("#d-log").querySelectorAll("button[data-qo], button[data-qsend], textarea[data-qnote]").forEach((x) => (x.disabled = true));   // no double send
   // A failed send gives back only the typed extra (and images): the picks and notes stay and are re-read on retry.
-  sendReply(parts.map((p, k) => withNote(answerLine(p, p.options[picks[k]]), noteKey(e, k))).join("\n") + (extra ? "\n\n" + extra : ""), extra, true);
+  const line = (p, k) => picks[k] != null ? withNote(answerLine(p, p.options[picks[k]]), noteKey(e, k)) : answerLine(p, noteText(noteKey(e, k)));
+  sendReply(parts.map(line).join("\n") + (extra ? "\n\n" + extra : ""), extra, true);
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
@@ -3904,7 +3912,10 @@ $("#d-log").addEventListener("click", (ev) => {
 });
 $("#d-log").addEventListener("input", (ev) => {
   const n = ev.target.closest("textarea[data-qnote]");
-  if (n) (qNotes[n.dataset.qnote] = qNotes[n.dataset.qnote] || { open: true }).text = n.value;
+  if (!n) return;
+  (qNotes[n.dataset.qnote] = qNotes[n.dataset.qnote] || { open: true }).text = n.value;
+  const wrap = n.closest(".qparts"), s = wrap && wrap.querySelector("[data-qsend]"), e = s && logShown[+s.dataset.qsend];
+  if (e) paintParts(wrap, e, qParts(e));   // a typed note counts as that part's answer
 });
 $("#d-reply-attach").onclick = () => $("#d-file").click();
 $("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files], true); e.target.value = ""; });

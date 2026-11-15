@@ -238,6 +238,7 @@ const I18N = {
     "Send answers": "Envoyer les réponses",
     "Sends your picks, plus anything typed in the reply box": "Envoie vos choix, plus ce que vous avez écrit dans la zone de réponse",
     "{n} of {m} picked": "{n} sur {m} choisis",
+    "{n} of {m} answered": "{n} sur {m} avec réponse",
     "Add a note": "Ajouter une note",
     "Your note for this question": "Votre note pour cette question",
     "Note: {text}": "Note : {text}",

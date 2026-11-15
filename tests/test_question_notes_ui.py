@@ -4,13 +4,14 @@ A many-part question gets one link per part; a single question with --option but
 Clicking the link opens a note box. The note is sent on its own line ("Note: ...") right under that question's
 pick. A poll's redraw keeps the box, its text and the caret. An answered question still shows its pick as chosen
 when a note line follows it, and shows no link. An answer typed in the reply box (Send reply) carries the live
-question's notes after a blank line; with an empty box the notes go alone.
+question's notes after a blank line; with an empty box the notes go alone. A part with no pick but a typed note
+counts as answered (the count and Send answers follow the typing), and its note goes out as that part's answer.
 Drives the real index.html + i18n.js in headless Chrome over raw CDP, with /api faked by a stub server on a free port
 (never the live board, never .task_board). Each run uses a fresh mkdtemp folder.
 
 Run: python3 tests/test_question_notes_ui.py  (stdlib + node 22+ + Google Chrome).
 INDEX=<file> serves another index.html (e.g. the previous commit's, to see the test fail on the old page).
-SHOT=<file.png> saves a screenshot of the many-part question with a note open."""
+SHOT=<file.png> saves a screenshot of the many-part question with one part answered by its note alone."""
 import json
 import os
 import shutil
@@ -54,8 +55,9 @@ def agent(cid, log):
 
 
 AGENTS = {"c1": agent("c1", [PARTS_Q]), "c2": agent("c2", [ONE_Q]), "c3": agent("c3", [ONE_Q, ANSWERED]),
-          "c4": agent("c4", [PARTS_Q]), "c5": agent("c5", [ONE_Q]), "c6": agent("c6", [ONE_Q]), "c7": agent("c7", [ONE_Q])}
-BOARD = {"version": 1, "columns": COLS, "tasks": [card(c, k) for k, c in enumerate(["c1", "c2", "c3", "c4", "c5", "c6", "c7"])]}
+          "c4": agent("c4", [PARTS_Q]), "c5": agent("c5", [ONE_Q]), "c6": agent("c6", [ONE_Q]), "c7": agent("c7", [ONE_Q]),
+          "c8": agent("c8", [PARTS_Q])}
+BOARD = {"version": 1, "columns": COLS, "tasks": [card(c, k) for k, c in enumerate(["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"])]}
 REPLIES = []
 
 
@@ -156,11 +158,12 @@ res.afterRedraw = await ev(`(() => { const n = document.querySelector('#d-log te
 await ev(`document.querySelector('#d-log button[data-qp="0"][data-qo="0"]').click()`);
 await ev(`document.querySelector('#d-log button[data-qp="1"][data-qo="1"]').click()`);
 await ev(`document.querySelector('#d-log button[data-qp="2"][data-qo="0"]').click()`);
-if (shot) {
+const capture = async () => {
+  if (!shot) return;
   const r = await ev(`(() => { const b = $('#d-log li.k-question').getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()`);
   const s = await send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, r.x - 8), y: Math.max(0, r.y - 8), width: r.w + 16, height: r.h + 16, scale: 1 } });
   writeFileSync(shot, Buffer.from(s.result.data, 'base64'));
-}
+};
 await ev(`document.querySelector('#d-log button[data-qsend]').click()`); await sleep(600);
 
 // Single question with option buttons: one link; the note rides under the clicked option.
@@ -195,6 +198,25 @@ res.sendDisabled = {
   c6: await typedSend('c6', '', null, 'Just text'),
   c7: await typedSend('c7', 'only the note', null, ''),
 };
+
+// A part with no pick but a typed note counts as answered: the note is its answer.
+await ev(`openDetail('c8')`); await ev(`showTab('conversation')`); await sleep(400);
+const sendState = () => ev(`(() => { const s = document.querySelector('#d-log button[data-qsend]'); return [s.disabled, s.nextElementSibling.textContent]; })()`);
+await ev(`document.querySelector('#d-log button[data-qp="0"][data-qo="0"]').click()`);
+await ev(`document.querySelector('#d-log button[data-qp="2"][data-qo="1"]').click()`);
+res.noteOnly = { picksOnly: await sendState() };
+await ev(`document.querySelectorAll('#d-log .qpart')[1].querySelector('.qnote-add').click()`);
+await type('#d-log textarea.qnote', '   ');
+res.noteOnly.blank = await sendState();
+await type('#d-log textarea.qnote', 'Only the\nbig ones');
+res.noteOnly.typed = await sendState();
+await ev(`renderAgent(task('c8'))`); await sleep(100);
+res.noteOnly.redrawn = await sendState();
+await type('#d-log textarea.qnote', '');
+res.noteOnly.cleared = await sendState();
+await type('#d-log textarea.qnote', 'Only the\nbig ones');
+await capture();
+await ev(`document.querySelector('#d-log button[data-qsend]').click()`); await sleep(600);
 res.errors = errors;
 console.log(JSON.stringify(res));
 quit(0);
@@ -253,6 +275,14 @@ def main():
     check("typed answer on a single question carries its note", sent("c5"), ["Use the blue one\n\nNote: keep my note"])
     check("typed answer with no note goes out unchanged", sent("c6"), ["Just text"])
     check("empty reply box with a note sends the note alone", sent("c7"), ["Note: only the note"])
+    no = res["noteOnly"] or {}
+    check("two of three parts picked: Send answers stays off", no.get("picksOnly"), [True, "2 of 3 answered"])
+    check("a blank note does not count as an answer", no.get("blank"), [True, "2 of 3 answered"])
+    check("typing a note on the unpicked part turns Send answers on", no.get("typed"), [False, "3 of 3 answered"])
+    check("a redraw keeps the note counted", no.get("redrawn"), [False, "3 of 3 answered"])
+    check("clearing the note turns Send answers off again", no.get("cleared"), [True, "2 of 3 answered"])
+    check("the note is sent as that part's answer", sent("c8"), [
+        "1. Are the tables the right size? → a) Yes\n2. And the chairs? → Only the big ones\n3. And the barrels? → b) No"])
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0
