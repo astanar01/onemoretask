@@ -169,7 +169,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .card .parent { font-size: calc(11px * var(--ts)); color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .title { word-wrap: break-word; }
 .card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: calc(12px * var(--ts)); color: var(--muted); }
-.tag { background: var(--accent-soft); color: var(--text); border-radius: 4px; padding: 0 6px; font-size: calc(11px * var(--ts)); }
+.tag, .cx-tag { background: var(--accent-soft); color: var(--text); border-radius: 4px; padding: 0 6px; font-size: calc(11px * var(--ts)); }
+.cx-tag { flex: none; font-weight: 600; }
 .progress { display: flex; align-items: center; gap: 6px; }
 .progress .bar { width: 50px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .progress .bar i { display: block; height: 100%; background: var(--accent); }
@@ -663,6 +664,7 @@ body.view-plan #search { visibility: hidden; }
 .sa-list .nm::before { content: ""; display: inline-block; width: 6px; height: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); margin: 0 8px 1px 1px; transition: transform .15s; }
 .sa-list li.open .nm::before { transform: rotate(45deg); }
 .sa-list li:not(.open) .act:not(.now), .sa-list li:not(.open) .sks { display: none; }
+.sa-list .cx-line { grid-column: 1 / -1; display: flex; gap: 6px; align-items: baseline; color: var(--muted); font-size: calc(12px * var(--ts)); padding-left: 17px; }
 .sa-list .sks i { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text); overflow-wrap: anywhere; }
 .sk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .sk-list li { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: calc(12px * var(--ts)); overflow-wrap: anywhere; }
@@ -2518,13 +2520,15 @@ const pillText = (a, who) => {
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
 // One row per subagent on the card: status, name, and what a running one is doing now.
+// A Codex worker a Claude session started (cli "codex", type = its model id) gets a Codex tag.
+function cxSub(s) { return s.cli === "codex"; }
 function subagentRows(ag) {
   const subs = (ag && ag.subagents) || [];
   if (!subs.length) return "";
   return `<ul class="card-subs">${subs.map((s) => {
     const st = s.finished ? "finished" : ag.phase === "working" ? "working" : "stopped";
-    return `<li title="${esc(s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
-      <span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
+    return `<li title="${esc(cxSub(s) ? modelName(s.type) : s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
+      ${cxSub(s) ? `<span class="cx-tag">Codex</span>` : ""}<span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
   }).join("")}</ul>`;
 }
 function cacheChip(ag, long) {
@@ -2703,12 +2707,16 @@ function labelClaudeModels() {
 }
 // The session's family: the card's agent once sent, else the session model picker.
 const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
-// The subagent pick only counts when it matches the session's family (the server ignores a mismatched one).
-const subModel = (t) => t.subagentModel && isCodexModel(t.subagentModel) === runsCodex(t) ? t.subagentModel : "";
+// The subagent pick counts when the session can run it: a Codex session only Codex models, a Claude session
+// Claude models and (with Codex installed) Codex workers too. The server ignores a pick that does not count.
+const subModel = (t) => !t.subagentModel ? "" : !isCodexModel(t.subagentModel) ? (runsCodex(t) ? "" : t.subagentModel)
+  : runsCodex(t) || clis.codex ? t.subagentModel : "";
 const subModelName = (t) => modelName(subModel(t));
 function renderSubmodel(t) {
-  const list = runsCodex(t) ? codexList : CLAUDE_SUBMODELS;
-  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + list.map((m) => `<option value="${esc(m.id)}">${esc(modelName(m.id))}</option>`).join("");
+  const opts = (list) => list.map((m) => `<option value="${esc(m.id)}">${esc(modelName(m.id))}</option>`).join("");
+  const html = runsCodex(t) ? opts(codexList) : !clis.codex ? opts(CLAUDE_SUBMODELS)
+    : `<optgroup label="Claude">${opts(CLAUDE_SUBMODELS)}</optgroup><optgroup label="Codex">${opts(codexList)}</optgroup>`;
+  $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + html;
   $("#d-submodel").value = subModel(t);
 }
 async function loadCodexModels(tries = 0) {
@@ -3088,6 +3096,7 @@ function renderSubagents(ag) {
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
       <span class="meta">${s.context ? `<span title="${t("Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}", { now: s.context.toLocaleString(), total: (s.tokens || 0).toLocaleString() })}">${fmtTokens(s.context)}</span>`
         : s.tokens ? `<span title="${t("{n} tokens", { n: s.tokens.toLocaleString() })}">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span></span>
+      ${cxSub(s) ? `<span class="cx-line"><span class="cx-tag">Codex</span><span class="cx-model">${esc(modelName(s.type))}</span></span>` : ""}
       ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? t("Now:") : t("Last:")} ${esc(s.action)}</span>` : ""}
       <span class="sks">${t("Skills:")} ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : t("none")}</span></li>`;
   }).join("");

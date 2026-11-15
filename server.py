@@ -130,8 +130,10 @@ lives in <board>/agent_reports/codex/. Its sessions (cli "codex") come from code
 `claude agents --json`, so the watcher, phases, replies, review and close treat both alike. What differs: the prompt
 gets a note that it runs without Claude Code's Skill / Agent tools (codex_note), and a "divide in subtasks" brief
 names Codex's spawn_agent / wait tools instead (delegate_lines(codex=True)) and runs the workers on the card's subagent
-model when it is an OpenAI one (spawn_agent `model` + `fork_turns: "none"`; a Claude alias there, or an OpenAI model on
-a Claude session, counts as none: worker_model); its workers are the card's subagent rows
+model when it is an OpenAI one (spawn_agent `model` + `fork_turns: "none"`; a Claude alias there counts as none:
+worker_model). An OpenAI subagent model on a Claude session runs each part as a Codex worker instead: the lead starts
+codex_worker.py in a background Bash call (codex_worker_model); those show as subagent rows and tokens through
+codex.worker_rows / worker_usage. A Codex session's workers are the card's subagent rows
 (codex.subagents, read from each worker's own rollout under $CODEX_HOME/sessions, found by the parent_thread_id on its
 first line); there is no attach and no
 permission prompt; a card note waits until the turn ends and is then delivered by resuming it (codex.resume); tokens
@@ -584,7 +586,8 @@ def build_prompt(p, state, t, wt=None, model=""):
     if plan_id:
         lines += ["", *build_lines(report, reports.plan_dir(p.board, plan_id), plan_id)]
     if t.get("delegate"):
-        lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only, codex.is_model(model))]
+        lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only, codex.is_model(model),
+                                      script_cmd(p, t["id"], "codex_worker.py"))]
     wt = None if answer_only else wt
     if wt:
         lines += ["", *worktree_lines(wt, p.path)]
@@ -925,15 +928,28 @@ def worker_model(model, on_codex):
     return model if model and MODEL.fullmatch(model) and codex.is_model(model) == on_codex else ""
 
 
+def codex_worker_model(model, on_codex):
+    """An OpenAI subagent model on a Claude session's card: its parts run as Codex workers (codex_worker.py), else ''."""
+    return model if model and not on_codex and MODEL.fullmatch(model) and codex.is_model(model) else ""
+
+
+def worker_run(worker, model, answer_only):
+    """The Bash line that starts one Codex worker; the prompt follows it as a quoted heredoc."""
+    return (f"{worker or 'python3 codex_worker.py'} --model {model} --name \"<short label>\""
+            f"{' --read-only' if answer_only else ''} <<'EOF'")
+
+
 def pinned_worker(t, model):
     """The model a delegating Claude card's session pins its subagents to (start_session's `worker`), else ''."""
     return worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and not codex.is_model(model) else ""
 
 
-def delegate_lines(model, report, answer_only=False, codex=False):
-    """`codex`: the session runs on Codex, whose subagents are workers from its spawn_agent / wait tools."""
+def delegate_lines(model, report, answer_only=False, codex=False, worker=""):
+    """`codex`: the session runs on Codex, whose subagents are workers from its spawn_agent / wait tools. `worker`:
+    the codex_worker.py command (absolute paths, board and task filled in) for a Claude session with an OpenAI pick."""
+    cx = codex_worker_model(model, codex)
     model = worker_model(model, codex)
-    sub = "worker" if codex else "subagent"
+    sub = "worker" if codex or cx else "subagent"
     brief = (f"- Give each {sub} a self-contained prompt: the question, the files, the constraints (incl. "
              f"CLAUDE.md rules) and what to return. {sub.capitalize()}s only look into it and return findings: no file "
              "changes, no commits, no posts to the card. You write the answer." if answer_only else
@@ -951,6 +967,32 @@ def delegate_lines(model, report, answer_only=False, codex=False):
     picks = ("the skills that cover its kind of work (the project's own skills, the domain skill for what it touches, "
              "and EVERY working-rules skill a hook, this prompt or CLAUDE.md tells you to load at the start: all of "
              "them, not one, e.g. both cmm-rules and ctx-rules when your setup asks for them)")
+    skills_codex = (f"- Skills: a worker has no Skill tool. For each part, choose {picks} and open its prompt with "
+                    f"{CODEX_SKILL_PATHS}, plus one line on why each matters for this part. Leave task-observer out: you "
+                    "log the observations.")
+    if cx:
+        return ["Subagents (this task is marked \"divide in subtasks / use subagents\"):",
+                "- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work out the split yourself and carry on "
+                "without waiting for approval.",
+                f"- Before {'starting' if answer_only else 'changing anything'}, analyse the brief carefully and work "
+                "out how to split it: the parts, what each needs to know, and which depend on others.",
+                f"- Delegate each part that can stand alone to a Codex worker: run `{worker_run(worker, cx, answer_only)}` "
+                "with the Bash tool and `run_in_background: true`, the part's prompt on the lines after it and a last "
+                "line `EOF` (the quotes keep the prompt from expanding). Launch independent parts in one message so they "
+                "run in parallel; run dependent parts after what they need. Wait for each background-task notification, "
+                "then read that task's output: the worker's final answer (a failed worker exits non-zero with its "
+                "error). Keep tiny or tightly coupled parts yourself.",
+                brief,
+                skills_codex,
+                f'- Run every part on the "{cx}" model through that command, not the Agent tool: the user picked this '
+                "Codex model for subagents on the card. A worker sees none of this conversation, so its prompt must "
+                "hold everything it needs.",
+                f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching workers, '
+                "then check and integrate their results yourself before reporting done.",
+                "- When a worker writes a test, ask that it makes a fresh temp folder on every run (mkdtemp), so you "
+                "can rerun it; rerun it once yourself before you trust its pass count.",
+                "- This holds for the whole task, not just this first turn: when a reply from the card (an answer to "
+                "your question, a follow-up change) asks for more work, split and delegate that work the same way."]
     return ["Subagents (this task is marked \"divide in subtasks / use subagents\"):",
             *([] if codex else ["- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work out the split yourself "
                                 "and carry on without waiting for approval."]),
@@ -966,9 +1008,7 @@ def delegate_lines(model, report, answer_only=False, codex=False):
             # Measured: an Agent-tool subagent sees the same skills list as the lead and can call Skill by name, but
             # it picks none on its own. The `skills:` frontmatter field exists only for custom agent files
             # (.claude/agents/*.md): it preloads a skill's text, so writing one per part would leave files behind.
-            f"- Skills: a worker has no Skill tool. For each part, choose {picks} and open its prompt with "
-            f"{CODEX_SKILL_PATHS}, plus one line on why each matters for this part. Leave task-observer out: you log "
-            "the observations." if codex else
+            skills_codex if codex else
             f"- Skills: a subagent sees the same skills list as you but picks none by itself. For each part, choose "
             f"{picks} and open its prompt with them: `First invoke Skill('<name>') with the Skill tool` per skill, plus "
             "one line on why that skill matters for this part. Leave task-observer out: you log the observations.",
@@ -982,14 +1022,25 @@ def delegate_lines(model, report, answer_only=False, codex=False):
             "question, a follow-up change) asks for more work, split and delegate that work the same way."]
 
 
-def delegate_reminder(t):
-    """Appended to a card reply that resumes a delegating session: the brief is many turns back by then."""
+def delegate_reminder(t, worker=""):
+    """Appended to a card reply that resumes a delegating session: the brief is many turns back by then. `worker`: as
+    in delegate_lines."""
     if not t or not t.get("delegate"):
         return ""
     look = "the looking-into this reply needs" if t.get("answerOnly") else "the work this reply asks for"
     agent = t.get("agent") or {}
     on_codex = codex.is_model(agent.get("model")) or agent.get("cli") == "codex"
     model = worker_model(t.get("subagentModel") or "", on_codex)
+    cx = codex_worker_model(t.get("subagentModel") or "", on_codex)
+    if cx:
+        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to Codex workers on "
+                f"the \"{cx}\" model (the user picked it on the card), as the first brief says: per part, run "
+                f"`{worker_run(worker, cx, t.get('answerOnly'))}` with the Bash tool and `run_in_background: true`, the "
+                "prompt on the lines after it and a last line `EOF`; launch independent parts in one message, wait for "
+                "each background-task notification and read its output. Each prompt is self-contained and opens with "
+                f"{CODEX_SKILL_PATHS} for each skill you chose for that part, working-rules skills included (a worker "
+                "has no Skill tool). Split it and launch them before you edit anything yourself, not only for the check "
+                "at the end. Keep only tiny or tightly coupled parts yourself.")
     if on_codex:
         on = (f' on the "{model}" model (`model: "{model}"` and `fork_turns: "none"` on each spawn_agent call: the user '
               "picked it on the card)" if model else "")
@@ -2853,10 +2904,19 @@ def task_transcripts(p, task_id, session_ids):
     return [x for x in dict.fromkeys(paths) if x and os.path.exists(x)]
 
 
-def tokens(paths):
+def tokens(paths, workers=None):
     """Tokens used by the given main transcripts and their subagents:
     {"main": [input, cache write, cache read, output], "subagents": [...], "count": subagent count}.
-    A reply copied into a second transcript (a forked resume carries the history over) counts once, by message id."""
+    A reply copied into a second transcript (a forked resume carries the history over) counts once, by message id.
+    `workers`: (board, task id) whose Codex workers (codex_worker.py, run for a Claude session) count as subagents."""
+    out = _tokens(paths)
+    used, count = codex.worker_usage(*workers) if workers else ([0] * 4, 0)
+    if count:  # a new dict: `out` may be the saved totals
+        out = {**out, "subagents": [a + b for a, b in zip(out["subagents"], used)], "count": out["count"] + count}
+    return out
+
+
+def _tokens(paths):
     out, seen = {"main": [0] * 4, "subagents": [0] * 4, "count": 0}, set()
     # Totals of transcripts that did not change since they were counted come from the saved file: after a restart,
     # re-reading every old transcript took 5 s. Codex logs are left out (their workers' rollouts are elsewhere).
@@ -3160,6 +3220,12 @@ class Watcher:
                 subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
             except OSError:
                 subs = []
+            if not is_codex(s):  # a Claude session's Codex workers (codex_worker.py), started since its launch
+                try:
+                    since = _ts(t["agent"]["started"]) if t["agent"].get("started") else 0
+                    subs = sorted(subs + codex.worker_rows(p.board, t["id"], since), key=lambda r: r["started"])
+                except (OSError, ValueError):
+                    pass
             ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
             try:
                 used = skills(sessions[i].get("sessionId") for i in ids if i in sessions and not is_codex(sessions[i]))
@@ -3170,7 +3236,7 @@ class Watcher:
             except OSError:
                 paths = None
             try:
-                spent = tokens(paths) if paths is not None else None
+                spent = tokens(paths, (p.board, t["id"])) if paths is not None else None
             except OSError:
                 spent = None
             # A finished card keeps the rows it has: reading every old chat after a board restart cost 6 s (4 GB).
@@ -3406,7 +3472,7 @@ def board_tail(p, task_id):
     wt = t and renew_worktree(p, t)
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
-    extra += delegate_reminder(t)
+    extra += delegate_reminder(t, script_cmd(p, task_id, "codex_worker.py"))
     if t and t.get("planMode"):
         extra += "\n\n" + plan_reminder(p, t)
     elif t and t.get("answerOnly"):

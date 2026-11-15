@@ -85,6 +85,12 @@ def subagents(log_path):
 def subagent_usage(log_path):
     return SUB_USAGE[0]
 
+def worker_rows(board, task_id, since=0):
+    return []
+
+def worker_usage(board, task_id, since=0):
+    return [0, 0, 0, 0], 0
+
 def context(log_path):
     return {"tokens": 5, "peak": 9, "model": "gpt-5.5", "max": 258400}
 
@@ -300,14 +306,14 @@ assert 'model: "gpt-5.6-sol"' in cx and 'fork_turns: "none"' in cx and "picked t
 assert "does not apply" not in cx, cx
 cx = "\n".join(server.delegate_lines("", "R", False, codex=True))
 assert 'model: "' not in cx and "fork_turns" not in cx and "your own model" in cx, cx
-cl = "\n".join(server.delegate_lines("gpt-5.5", "R", False))
-assert 'model: "' not in cl and "this session's model" in cl, cl
+cl = "\n".join(server.delegate_lines("gpt-5.5", "R", False))  # a Claude session: Codex workers via codex_worker.py
+assert 'model: "' not in cl and "--model gpt-5.5" in cl and "run_in_background" in cl, cl
 rem = server.delegate_reminder({"delegate": True, "subagentModel": "gpt-6-astra", "agent": {"model": "gpt-5.5"}})
 assert 'model: "gpt-6-astra"' in rem and 'fork_turns: "none"' in rem and "spawn_agent" in rem, rem
 rem = server.delegate_reminder({"delegate": True, "subagentModel": "opus", "agent": {"cli": "codex"}})
 assert 'model: "' not in rem and "fork_turns" not in rem, rem
 rem = server.delegate_reminder({"delegate": True, "subagentModel": "gpt-5.5", "agent": {"model": "opus"}})
-assert 'model: "' not in rem and "Agent call" not in rem, rem
+assert 'model: "' not in rem and "Agent call" not in rem and "--model gpt-5.5" in rem, rem
 assert 'model: "sonnet"' in server.delegate_reminder({"delegate": True, "subagentModel": "sonnet", "agent": {}})
 td = dict(state["tasks"][0], delegate=True, subagentModel="gpt-5.6-sol")
 assert 'model: "gpt-5.6-sol"' in server.build_prompt(p, state, td, None, "gpt-5.5")

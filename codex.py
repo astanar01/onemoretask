@@ -631,6 +631,91 @@ def subagent_usage(log_path):
     return total, len(workers)
 
 
+# ---------------------------------------------------------------- Codex workers of a Claude session (codex_worker.py)
+# A Claude card whose subagent model is an OpenAI one runs each part through codex_worker.py, which writes
+# <board>/agent_reports/codex-workers/<task>-<epoch ms>.{jsonl,err,json}: outside folder(), so sessions() never lists one.
+_worker_memo = {}  # worker log path -> ((mtime, size), (finished, action))
+
+
+def worker_folder(board):
+    path = os.path.join(board, "agent_reports", "codex-workers")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _worker_metas(board, task_id, since=0):
+    folder_ = os.path.join(board, "agent_reports", "codex-workers")
+    try:
+        names = sorted(os.listdir(folder_))
+    except OSError:
+        return []
+    out = []
+    for n in names:
+        if not (n.startswith(task_id + "-") and n.endswith(".json")):
+            continue
+        try:
+            with open(os.path.join(folder_, n), encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue  # being written: next pass
+        if isinstance(meta, dict) and meta.get("task") == task_id and (meta.get("started") or 0) >= (since or 0):
+            out.append(meta)
+    return out
+
+
+def _worker_state(log):
+    """(a turn.completed seen, last command or file change) from a worker's event log."""
+    st = os.stat(log)
+    memo = _worker_memo.get(log)
+    if memo and memo[0] == (st.st_mtime, st.st_size):
+        return memo[1]
+    finished, action = False, ""
+    for e in _events(log):
+        if e.get("type") == "turn.started":
+            finished = False
+        elif e.get("type") == "turn.completed":
+            finished = True
+        item = e.get("item")
+        if e.get("type") != "item.completed" or not isinstance(item, dict):
+            continue
+        if item.get("type") == "command_execution":
+            action = (str(item.get("command") or "").strip().splitlines() or [""])[0][:80]
+        elif item.get("type") == "file_change" and item.get("changes"):
+            c = item["changes"][0] if isinstance(item["changes"], list) else next(iter(item["changes"]))
+            action = "edit " + os.path.basename(str(c.get("path") if isinstance(c, dict) else c))
+    _worker_memo[log] = ((st.st_mtime, st.st_size), (finished, action))
+    return finished, action
+
+
+def worker_rows(board, task_id, since=0):
+    """The card's Codex workers started at/after `since`, as subagents() rows plus "cli": "codex", oldest first.
+    tokens = input (cached part included) + output, like a rollout's total_tokens."""
+    rows = []
+    for meta in _worker_metas(board, task_id, since):
+        log = meta.get("log") or ""
+        try:
+            finished, action = _worker_state(log)
+            updated = os.path.getmtime(log)
+        except OSError:
+            finished, action, updated = False, "", meta.get("started") or 0
+        u = usage(log)
+        rows.append({"id": os.path.basename(log).rsplit(".", 1)[0], "name": meta.get("name") or "Codex worker",
+                     "type": meta.get("model") or "codex", "started": meta.get("started") or updated,
+                     "updated": updated, "finished": finished or meta.get("exit") == 0, "action": action,
+                     "skills": [], "tokens": u[0] + u[2] + u[3], "cli": "codex"})
+    rows.sort(key=lambda r: r["started"])
+    return rows
+
+
+def worker_usage(board, task_id, since=0):
+    """([input, cache write, cache read, output] summed over the card's Codex workers, worker count), like
+    subagent_usage()."""
+    total, metas = [0, 0, 0, 0], _worker_metas(board, task_id, since)
+    for meta in metas:
+        total = [a + b for a, b in zip(total, usage(meta.get("log") or ""))]
+    return total, len(metas)
+
+
 def context(log_path):
     """How full the session's context is, from its own rollout: {"tokens", "peak", "model", "max"} like
     server.context, or None before its first reply."""
