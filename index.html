@@ -512,6 +512,10 @@ body.view-plan #search { visibility: hidden; }
 .fixopts .qsend { margin-top: 8px; }
 .fixopts .btn.picked:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .qsend { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: calc(12px * var(--ts)); }
+.qnote-add { display: block; margin-top: 6px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: calc(12px * var(--ts)); cursor: pointer; }
+.qnote-add:hover { color: var(--accent); text-decoration: underline; }
+.qnote { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; min-height: 2.6em; resize: vertical; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: calc(13px * var(--ts)); field-sizing: content; }
+.qnote:focus { border-color: var(--accent); outline: none; }
 #d-log .mark.sending { color: var(--accent); }
 #d-log .mark.sending svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -2372,11 +2376,11 @@ function qChoices(shown, i) {
     const parts = qParts(e);
     return e.status === "question" && parts.length ? partsHtml(e, i, parts, ans, live) : "";   // a report's numbered list is not asking
   }
-  const said = ans ? String(ans.message || "").trim() : null;
+  const said = ans ? String(ans.message || "").trim().split("\n")[0].trim() : null;   // a note rides on the lines below the pick
   return `<div class="qopts">${e.options.map((o, k) => {
     const picked = said !== null && String(o).trim() === said;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qo="${k}"${live ? ` title="${esc(window.t("Send this as your answer"))}"` : " disabled"}>${picked ? "✓ " : ""}${esc(String(o))}</button>`;
-  }).join("")}</div>`;
+  }).join("")}</div>${noteHtml(noteKey(e, "q"), live)}`;
 }
 // The code review's findings report: the reviewer's first "done" after the last review start (later ones report fixes).
 const reviewReport = (log) => { const r = log.findLastIndex((x) => x.status === "review"); return r < 0 ? -1 : log.findIndex((x, k) => k > r && x.from !== "you" && x.status === "done"); };
@@ -2451,6 +2455,17 @@ function fixPick(b) {
 const qPicks = {};
 const qKey = (e) => `${openId}:${e.at}`;
 const answerLine = (p, o) => `${p.q} → ${o}`;
+// "Add a note" under each question's choices: the note goes out on its own line right under that question's pick.
+// Notes live in qNotes (key -> {open, text}) since polls re-render the log; renderAgent keeps a note box's focus.
+const qNotes = {};
+const noteKey = (e, pi) => `${qKey(e)}:${pi}`;
+const withNote = (line, k) => {
+  const n = String((qNotes[k] && qNotes[k].text) || "").replace(/\s*\n\s*/g, " ").trim();
+  return n ? `${line}\n${window.t("Note: {text}", { text: n })}` : line;
+};
+const noteBox = (k) => `<textarea class="qnote" data-qnote="${esc(k)}" rows="2" placeholder="${esc(window.t("Your note for this question"))}">${esc((qNotes[k] && qNotes[k].text) || "")}</textarea>`;
+const noteHtml = (k, live) => !live ? "" : qNotes[k] && qNotes[k].open ? noteBox(k)
+  : `<button type="button" class="qnote-add" data-qnote-add="${esc(k)}">+ ${esc(window.t("Add a note"))}</button>`;
 function qParts(e) {
   if (Array.isArray(e.parts)) return e.parts;
   const parts = [];
@@ -2469,7 +2484,7 @@ function partsHtml(e, i, parts, ans, live) {
   const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div>${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
     const picked = said ? said.includes(answerLine(p, o)) : picks[pi] === k;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qp="${pi}" data-qo="${k}" aria-pressed="${picked}"${live ? "" : " disabled"}>${picked && !live ? "✓ " : ""}${esc(String(o))}</button>`;
-  }).join("")}</div></div>`).join("");
+  }).join("")}</div>${noteHtml(noteKey(e, pi), live)}</div>`).join("");
   const n = parts.filter((_, pi) => picks[pi] != null).length;
   const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(window.t("{n} of {m} picked", { n, m: parts.length }))}</span></div>` : "";
   return `<div class="qparts">${rows}${send}</div>`;
@@ -2489,9 +2504,9 @@ function sendParts(b) {
   if (!t || !parts || !picks || parts.some((_, k) => picks[k] == null) || $("#d-reply-send").disabled) return;
   const extra = $("#d-reply").value.trim();
   if (extra) setReplyDraft(t.id, "");
-  $("#d-log").querySelectorAll("button[data-qo], button[data-qsend]").forEach((x) => (x.disabled = true));   // no double send
-  // A failed send gives back only the typed extra (and images): the picks stay on the buttons and are re-read on retry.
-  sendReply(parts.map((p, k) => answerLine(p, p.options[picks[k]])).join("\n") + (extra ? "\n\n" + extra : ""), extra, true);
+  $("#d-log").querySelectorAll("button[data-qo], button[data-qsend], textarea[data-qnote]").forEach((x) => (x.disabled = true));   // no double send
+  // A failed send gives back only the typed extra (and images): the picks and notes stay and are re-read on retry.
+  sendReply(parts.map((p, k) => withNote(answerLine(p, p.options[picks[k]]), noteKey(e, k))).join("\n") + (extra ? "\n\n" + extra : ""), extra, true);
 }
 function dropPending(t, m) { if (pending[t.id]) pending[t.id] = pending[t.id].filter((x) => x !== m); }
 const refreshAgent = (t) => { if (openId === t.id) renderAgent(t); };
@@ -2801,12 +2816,19 @@ function renderAgent(t) {
   const anchor = !follow && [...dl.querySelectorAll("li[data-i]")].find((li) => li.getBoundingClientRect().bottom > top0);
   const anchorI = anchor && anchor.dataset.i, anchorOff = anchor && anchor.getBoundingClientRect().top - top0;
   logShown = shown;
+  // A note box being typed in survives the poll's redraw: refocus it with the caret where it was.
+  const fa = document.activeElement, fk = fa && fa.matches && fa.matches("#d-log textarea[data-qnote]") ? fa.dataset.qnote : null;
+  const caret = fk && [fa.selectionStart, fa.selectionEnd];
   const rr = reviewReport(log);
   const groups = mcpGroups(shown, (ag && ag.mcp_uses) || [], start > 0);
   const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
   // A suggested card older than the shown messages and not added yet stays reachable at the top.
   const keepCards = log.slice(0, start).map((e, k) => e.card && (!cardAdded(e) || cardsJustAdded.has(cardKey(e))) ? `<li class="k-progress k-oldcard"><span class="who">${who(t)} · ${esc(window.t("earlier"))} · ${fmt(e.at)}</span>${cardSuggest(e, k)}</li>` : "").join("");
   $("#d-log").innerHTML = keepCards + shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) : `<div class="msg md">${fmtMsg(e.message)}</div>`}${qChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
+  if (fk) {
+    const box = [...dl.querySelectorAll("textarea[data-qnote]")].find((x) => x.dataset.qnote === fk);
+    if (box && !box.disabled) { box.focus({ preventScroll: true }); box.setSelectionRange(caret[0], caret[1]); }
+  }
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
   $("#d-copy-attach").hidden = !t.agent;
@@ -3852,14 +3874,27 @@ $("#d-log").addEventListener("click", (ev) => {
     cb.disabled = true;   // no double add
     return addSuggested(+cb.dataset.cardAdd);
   }
+  const na = ev.target.closest("button[data-qnote-add]");
+  if (na) {
+    const k = na.dataset.qnoteAdd;
+    (qNotes[k] = qNotes[k] || { text: "" }).open = true;
+    na.outerHTML = noteBox(k);
+    const box = [...$("#d-log").querySelectorAll("textarea[data-qnote]")].find((x) => x.dataset.qnote === k);
+    if (box) box.focus();
+    return;
+  }
   const b = ev.target.closest("button[data-qo], button[data-qsend]");
   if (!b || b.disabled) return;
   if (b.dataset.qsend != null) return sendParts(b);
   if (b.dataset.qp != null) return pickPart(b);
   const e = logShown[+b.dataset.qi], o = e && e.options && e.options[+b.dataset.qo];
   if (o == null) return;
-  $("#d-log").querySelectorAll("button[data-qo]").forEach((x) => (x.disabled = true));   // no double send
-  sendReply(String(o));
+  $("#d-log").querySelectorAll("button[data-qo], textarea[data-qnote]").forEach((x) => (x.disabled = true));   // no double send
+  sendReply(withNote(String(o), noteKey(e, "q")));
+});
+$("#d-log").addEventListener("input", (ev) => {
+  const n = ev.target.closest("textarea[data-qnote]");
+  if (n) (qNotes[n.dataset.qnote] = qNotes[n.dataset.qnote] || { open: true }).text = n.value;
 });
 $("#d-reply-attach").onclick = () => $("#d-file").click();
 $("#d-file").addEventListener("change", (e) => { attachFiles([...e.target.files], true); e.target.value = ""; });

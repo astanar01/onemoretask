@@ -179,7 +179,9 @@ the board remembers which.
 ### 6. Answer questions
 
 When Claude asks you to pick, each choice is a button: click one to answer, or type your own. When it
-asks several things at once, click one answer per row, then **Send answers**.
+asks several things at once, click one answer per row, then **Send answers**. To say more about one
+question, click **+ Add a note** under its choices and write it there: the note goes with your answer,
+right under that question's pick.
 
 ### 7. Answer permission requests
 

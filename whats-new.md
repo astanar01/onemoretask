@@ -2,6 +2,7 @@
 
 ## 2026-11-15
 
+- Each question Claude asks now has an "Add a note" link under its choices. Click it to write a few extra words for that question, and they go with your answer.
 - Setup now brings the helper that keeps long outputs out of the way up to date. If something on your computer is too old for it, setup now says so plainly instead of leaving it half working.
 
 ## 2026-11-14
