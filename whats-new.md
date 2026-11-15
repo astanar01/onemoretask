@@ -2,6 +2,7 @@
 
 ## 2026-11-15
 
+- When Claude asks about several things, each with its own paragraph, the choices for each one now sit right under its paragraph instead of all at the bottom.
 - Each question Claude asks now has an "Add a note" link under its choices. Click it to write a few extra words for that question, and they go with your answer, even when you type your own answer in the reply box. When Claude asks several things at once, a note on its own now counts as the answer for that question, so you can send without also clicking a choice.
 - Setup now brings the helper that keeps long outputs out of the way up to date. If something on your computer is too old for it, setup now says so plainly instead of leaving it half working.
 

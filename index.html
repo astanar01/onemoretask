@@ -507,6 +507,7 @@ body.view-plan #search { visibility: hidden; }
 .qopts .btn.picked:disabled { opacity: 1; border-color: var(--ok); color: var(--ok); font-weight: 600; }
 .qparts { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .qparts .qopts { margin-top: 4px; }
+.qparts.inline { margin-top: 0; gap: 14px; }
 .qpq { font-weight: 600; font-size: calc(13px * var(--ts)); }
 .qparts .btn.picked:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .fixopts .qsend { margin-top: 8px; }
@@ -2367,14 +2368,20 @@ function addSuggested(k) {
   renderAgent(t);
   setStatus(window.t("Card added: {title}", { title: nt.title }));
 }
-function qChoices(shown, i) {
+// The message plus its answer buttons. A many-part question with a paragraph per part draws them interleaved.
+function msgChoices(shown, i) {
+  const e = shown[i], parts = e.status === "question" && e.from !== "you" && !e.decision && !(Array.isArray(e.options) && e.options.length) ? qParts(e) : [];
+  const split = parts.length ? partSplit(e, parts) : null;
+  return split ? qChoices(shown, i, split) : `<div class="msg md">${fmtMsg(e.message)}</div>${qChoices(shown, i)}`;
+}
+function qChoices(shown, i, split) {
   const e = shown[i];
   if (e.from === "you" || e.decision) return "";
   const later = shown.slice(i + 1), ans = later.find((x) => x.from === "you");
   const live = !ans && !later.some((x) => x.from !== "you" && x.status === "question");
   if (!Array.isArray(e.options) || !e.options.length || e.status !== "question") {
     const parts = qParts(e);
-    return e.status === "question" && parts.length ? partsHtml(e, i, parts, ans, live) : "";   // a report's numbered list is not asking
+    return e.status === "question" && parts.length ? partsHtml(e, i, parts, ans, live, split) : "";   // a report's numbered list is not asking
   }
   const said = ans ? String(ans.message || "").trim().split("\n")[0].trim() : null;   // a note rides on the lines below the pick
   return `<div class="qopts">${e.options.map((o, k) => {
@@ -2497,15 +2504,36 @@ function paintParts(wrap, e, parts) {
   s.disabled = n < parts.length || $("#d-reply-send").disabled;
   wrap.querySelector(".qsend span").textContent = partsCount(n, parts.length);
 }
-function partsHtml(e, i, parts, ans, live) {
+// A --part question whose message has a numbered paragraph per part ("**2. Module page.** …"): cut the message
+// so each part's choices sit right under its paragraph. Parts and paragraphs pair by number, in order; any part
+// without its paragraph keeps the whole message on top with the choices after it (null). Fenced code is never cut.
+const partNum = (s) => (String(s).match(/^\s*(\d{1,2})[.)]\s/) || [])[1];
+const plainWords = (s) => String(s).replace(/^\s*(?:#{1,4}\s+)?(?:\*\*)?\d{1,2}[.)]\s*/, "").replace(/[*_`]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
+function partSplit(e, parts) {
+  if (!Array.isArray(e.parts) || !parts.length) return null;
+  const lines = String(e.message || "").split("\n"), starts = [];
+  let fence = false, from = 0;
+  const heads = lines.map((l) => { if (/^\s*```/.test(l)) fence = !fence; return fence ? null : (l.match(/^\s*(?:#{1,4}\s+)?(?:\*\*)?(\d{1,2})[.)]\s/) || [])[1]; });
+  for (const p of parts) {
+    const n = partNum(p.q), k = n ? heads.findIndex((h, j) => j >= from && h === n) : -1;
+    if (k < 0) return null;
+    starts.push(k);
+    from = k + 1;
+  }
+  const segs = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).join("\n").trim());
+  // The question line repeats the paragraph's own title: show it only when the paragraph does not start with it.
+  const sameQ = parts.map((p, k) => { const q = plainWords(p.q); return !!q && plainWords(segs[k].split("\n")[0]).startsWith(q); });
+  return { intro: lines.slice(0, starts[0]).join("\n").trim(), segs, sameQ };
+}
+function partsHtml(e, i, parts, ans, live, split) {
   const said = ans ? String(ans.message || "").split("\n").map((s) => s.trim()) : null, picks = qPicks[qKey(e)] || {};
-  const rows = parts.map((p, pi) => `<div class="qpart"><div class="qpq">${esc(p.q)}</div>${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
+  const rows = parts.map((p, pi) => `<div class="qpart">${split ? `<div class="msg md">${fmtMsg(split.segs[pi])}</div>` : ""}${split && split.sameQ[pi] ? "" : `<div class="qpq">${esc(p.q)}</div>`}${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
     const picked = said ? said.includes(answerLine(p, o)) : picks[pi] === k;
     return `<button type="button" class="btn${picked ? " picked" : ""}" data-qi="${i}" data-qp="${pi}" data-qo="${k}" aria-pressed="${picked}"${live ? "" : " disabled"}>${picked && !live ? "✓ " : ""}${esc(String(o))}</button>`;
   }).join("")}</div>${noteHtml(noteKey(e, pi), live)}</div>`).join("");
   const n = parts.filter((_, pi) => partDone(e, pi)).length;
   const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(partsCount(n, parts.length))}</span></div>` : "";
-  return `<div class="qparts">${rows}${send}</div>`;
+  return `<div class="qparts${split ? " inline" : ""}">${split && split.intro ? `<div class="msg md">${fmtMsg(split.intro)}</div>` : ""}${rows}${send}</div>`;
 }
 function pickPart(b) {
   const e = logShown[+b.dataset.qi], parts = e && qParts(e), pi = +b.dataset.qp;
@@ -2841,7 +2869,7 @@ function renderAgent(t) {
   const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
   // A suggested card older than the shown messages and not added yet stays reachable at the top.
   const keepCards = log.slice(0, start).map((e, k) => e.card && (!cardAdded(e) || cardsJustAdded.has(cardKey(e))) ? `<li class="k-progress k-oldcard"><span class="who">${who(t)} · ${esc(window.t("earlier"))} · ${fmt(e.at)}</span>${cardSuggest(e, k)}</li>` : "").join("");
-  $("#d-log").innerHTML = keepCards + shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) : `<div class="msg md">${fmtMsg(e.message)}</div>`}${qChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
+  $("#d-log").innerHTML = keepCards + shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) + qChoices(shown, i) : msgChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
   if (fk) {
     const box = [...dl.querySelectorAll("textarea[data-qnote]")].find((x) => x.dataset.qnote === fk);
     if (box && !box.disabled) { box.focus({ preventScroll: true }); box.setSelectionRange(caret[0], caret[1]); }
