@@ -3,7 +3,8 @@
 A many-part question gets one link per part; a single question with --option buttons gets one under its buttons.
 Clicking the link opens a note box. The note is sent on its own line ("Note: ...") right under that question's
 pick. A poll's redraw keeps the box, its text and the caret. An answered question still shows its pick as chosen
-when a note line follows it, and shows no link.
+when a note line follows it, and shows no link. An answer typed in the reply box (Send reply) carries the live
+question's notes after a blank line; with an empty box the notes go alone.
 Drives the real index.html + i18n.js in headless Chrome over raw CDP, with /api faked by a stub server on a free port
 (never the live board, never .task_board). Each run uses a fresh mkdtemp folder.
 
@@ -52,8 +53,9 @@ def agent(cid, log):
             "log": log, "mcp_uses": [], "mcp": None}
 
 
-AGENTS = {"c1": agent("c1", [PARTS_Q]), "c2": agent("c2", [ONE_Q]), "c3": agent("c3", [ONE_Q, ANSWERED])}
-BOARD = {"version": 1, "columns": COLS, "tasks": [card("c1", 0), card("c2", 1), card("c3", 2)]}
+AGENTS = {"c1": agent("c1", [PARTS_Q]), "c2": agent("c2", [ONE_Q]), "c3": agent("c3", [ONE_Q, ANSWERED]),
+          "c4": agent("c4", [PARTS_Q]), "c5": agent("c5", [ONE_Q]), "c6": agent("c6", [ONE_Q]), "c7": agent("c7", [ONE_Q])}
+BOARD = {"version": 1, "columns": COLS, "tasks": [card(c, k) for k, c in enumerate(["c1", "c2", "c3", "c4", "c5", "c6", "c7"])]}
 REPLIES = []
 
 
@@ -172,6 +174,27 @@ await ev(`document.querySelector('#d-log button[data-qo="0"]').click()`); await 
 await ev(`openDetail('c3')`); await ev(`showTab('conversation')`); await sleep(400);
 res.answered = await ev(`[...document.querySelectorAll('#d-log li.k-question button[data-qo]')].map((b) => [b.textContent, b.classList.contains('picked')])`);
 res.answeredLinks = await ev(`document.querySelectorAll('#d-log .qnote-add, #d-log textarea.qnote').length`);
+
+// Typed answer in the reply box (Send reply button): notes under the live question go out with it.
+const typedSend = async (cid, note, part, typed) => {
+  await ev(`openDetail('${cid}')`); await ev(`showTab('conversation')`); await sleep(400);
+  if (note) {
+    await ev(part == null ? `document.querySelector('#d-log .qnote-add').click()`
+      : `document.querySelectorAll('#d-log .qpart')[${part}].querySelector('.qnote-add').click()`);
+    await type('#d-log textarea.qnote', note);
+  }
+  await type('#d-reply', typed);
+  const disabled = await ev(`$('#d-reply-send').disabled`);
+  if (disabled === false) await ev(`$('#d-reply-send').click()`);
+  await sleep(600);
+  return disabled;
+};
+res.sendDisabled = {
+  c4: await typedSend('c4', 'wobbly legs', 1, 'My own answer'),
+  c5: await typedSend('c5', 'keep my note', null, 'Use the blue one'),
+  c6: await typedSend('c6', '', null, 'Just text'),
+  c7: await typedSend('c7', 'only the note', null, ''),
+};
 res.errors = errors;
 console.log(JSON.stringify(res));
 quit(0);
@@ -216,12 +239,20 @@ def main():
     check("the new note box has the focus", res["boxFocused"])
     check("a redraw keeps the note text, the focus and the caret", res["afterRedraw"], ["wobbly legs", True, 11])
     check("a single question has one Add a note link", res["singleLinks"], 1)
-    check("the answers sent carry each note under its own question", REPLIES, [
+    check("the answers sent carry each note under its own question", [r for r in REPLIES if r["taskId"] in ("c1", "c2")], [
         {"taskId": "c1", "text": "1. Are the tables the right size? → a) Yes\n2. And the chairs? → b) No\n"
                                  "Note: wobbly legs\n3. And the barrels? → a) Yes"},
         {"taskId": "c2", "text": "a) Yes\nNote: only on Mondays"}])
     check("an answer with a note still marks its pick", res["answered"], [["✓ a) Yes", True], ["b) No", False]])
     check("an answered question shows no note link", res["answeredLinks"], 0)
+    sent = lambda cid: [r["text"] for r in REPLIES if r["taskId"] == cid]
+    check("the Send reply button was enabled for each typed answer", res["sendDisabled"],
+          {"c4": False, "c5": False, "c6": False, "c7": False})
+    check("typed answer on a many-part question carries the part's note", sent("c4"),
+          ["My own answer\n\n2. And the chairs?\nNote: wobbly legs"])
+    check("typed answer on a single question carries its note", sent("c5"), ["Use the blue one\n\nNote: keep my note"])
+    check("typed answer with no note goes out unchanged", sent("c6"), ["Just text"])
+    check("empty reply box with a note sends the note alone", sent("c7"), ["Note: only the note"])
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0
