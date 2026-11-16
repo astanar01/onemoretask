@@ -190,6 +190,10 @@ out.afterRename = await A.ev(`({ name: state.columns.find(c => c.id === 'todo').
 await A.ev(`window.oldCol = document.querySelector('[data-col="todo"]'); await pollAgents(); true`);
 await sleep(700);
 out.pollRedrawsWhenNotTyping = await A.ev(`!window.oldCol.isConnected`);
+// A name box that only has the cursor (clicked, nothing typed) must not stop the board updating.
+await A.ev(`window.oldCol = document.querySelector('[data-col="todo"]'); document.querySelector('[data-col="todo"] .name').focus(); await pollAgents(); true`);
+await sleep(700);
+out.pollRedrawsWithIdleFocus = await A.ev(`!window.oldCol.isConnected`);
 
 step = '3.';
 // 3. Half-typed subtask in the open card while another window saves.
@@ -284,6 +288,7 @@ def main():
           {"focus": True, "value": "Backlog", "sameBox": True, "name": "To Do"})
     check("rename: leaving the box saves it and redraws", res["afterRename"], {"name": "Backlog", "redrawn": True})
     check("control: a poll redraws when nothing is being typed", res["pollRedrawsWhenNotTyping"], True)
+    check("a poll redraws while a name box only has the cursor", res["pollRedrawsWithIdleFocus"], True)
     ns = res["newsub"]
     check("subtask: the reload from another window happened", ns["status"], "Board updated from another window")
     check("subtask: half-typed text kept", ns["kept"], "half typed subtask")

@@ -4007,7 +4007,8 @@ for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, ()
 // It also waits while a column name is being typed: the rebuilt box would drop the cursor (change saves it and redraws).
 function pollRender() {
   clearTimeout(pollRenderTimer);
-  const a = document.activeElement, naming = a && a.matches && a.matches("#board .col-head .name");
+  // Only while the box holds unsaved typing: a name box that just has the cursor must not stop cards updating.
+  const a = document.activeElement, naming = a && a.matches && a.matches("#board .col-head .name") && a.value !== a.defaultValue;
   if (naming || scrollGrab || Date.now() - scrollWheelAt < 500) { pollRenderTimer = setTimeout(pollRender, 250); return; }
   render();
 }
