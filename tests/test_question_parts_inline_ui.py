@@ -50,6 +50,15 @@ Q3 = {"from": "claude", "status": "question", "at": OLD, "message": "Two things 
 # c4: Q1 answered: still under each paragraph, picks marked.
 A4 = {"from": "you", "status": "reply", "at": LATER,
       "message": "1. Back-office layout and home → approved\n2. Module page → change it\n3. Tester-mark page → approved"}
+# c5: steps numbered 1 and 2 inside paragraph 1 (indented, and plain under bold titles) stay in that paragraph.
+Q5 = {"from": "claude", "status": "question", "at": OLD,
+      "message": "Two screens.\n\n**1. Login page.** To try it:\n   1. Open the page\n   2. Type a name\n"
+                 "1. Plain step one\n2. Plain step two\n\n**2. Logout page.** One button.",
+      "parts": [{"q": "1. Login page", "options": YN}, {"q": "2. Logout page", "options": YN}]}
+# c6: plain numbered paragraphs with indented steps inside the first one.
+Q6 = {"from": "claude", "status": "question", "at": OLD,
+      "message": "1. The tables. Steps:\n   1. Measure\n   2. Cut\n\n2. The chairs are red.",
+      "parts": [{"q": "1. Keep the tables?", "options": YN}, {"q": "2. Keep the chairs?", "options": YN}]}
 COLS = [{"id": "prog", "name": "In Progress", "done": False, "role": "progress"},
         {"id": "done", "name": "Done", "done": True}]
 
@@ -59,7 +68,7 @@ def card(cid, k):
             "order": k, "created": OLD, "updated": OLD, "agent": {"id": f"a-{cid}", "started": OLD}}
 
 
-LOGS = {"c1": [Q1], "c2": [Q2], "c3": [Q3], "c4": [Q1, A4]}
+LOGS = {"c1": [Q1], "c2": [Q2], "c3": [Q3], "c4": [Q1, A4], "c5": [Q5], "c6": [Q6]}
 AGENTS = {c: {"id": f"a-{c}", "sessionId": f"s-{c}", "state": "idle", "phase": "needs_you", "reason": "", "log": log,
               "mcp_uses": [], "mcp": None} for c, log in LOGS.items()}
 BOARD = {"version": 1, "columns": COLS, "tasks": [card(c, k) for k, c in enumerate(LOGS)]}
@@ -155,7 +164,7 @@ const layout = `(() => { const li = document.querySelector('#d-log li.k-question
     out.push(n.matches('.msg') ? ['msg', n.textContent.replace(/\\s+/g, '').slice(0, 24)] : n.matches('.qpq') ? ['q', n.textContent.trim()]
       : ['opts', [...n.querySelectorAll('button')].map((b) => b.textContent.trim())]); });
   return { out, inOrder }; })()`;
-for (const c of ['c1', 'c2', 'c3', 'c4']) {
+for (const c of ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']) {
   await ev(`openDetail('${c}')`); await ev(`showTab('conversation')`); await sleep(400);
   res[c] = await ev(layout);
   if (c === 'c1' && shot) {
@@ -239,6 +248,12 @@ def main():
            m("1. Back-office layout and home. A side "), ["opts", ["✓ approved", "change it"]],
            m("2. Module page. One row per module with"), ["opts", ["approved", "✓ change it"]],
            m("3. Tester-mark page. One form: the membe"), ["opts", ["✓ approved", "change it"]]])
+    check("steps numbered inside a paragraph stay in it; the next question starts at the next title", res["c5"]["out"],
+          [m("Two screens."), m("1. Login page. To try it:1. Open the page2. Type a name1. Plain step one2. Plain step two"),
+           opts, m("2. Logout page. One button."), opts])
+    check("indented steps under plain numbered paragraphs stay in their paragraph", res["c6"]["out"],
+          [m("1. The tables. Steps:1. Measure2. Cut"), ["q", "1. Keep the tables?"], opts,
+           m("2. The chairs are red."), ["q", "2. Keep the chairs?"], opts])
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0

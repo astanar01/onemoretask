@@ -2511,15 +2511,28 @@ const partNum = (s) => (String(s).match(/^\s*(\d{1,2})[.)]\s/) || [])[1];
 const plainWords = (s) => String(s).replace(/^\s*(?:#{1,4}\s+)?(?:\*\*)?\d{1,2}[.)]\s*/, "").replace(/[*_`]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
 function partSplit(e, parts) {
   if (!Array.isArray(e.parts) || !parts.length) return null;
-  const lines = String(e.message || "").split("\n"), starts = [];
-  let fence = false, from = 0;
-  const heads = lines.map((l) => { if (/^\s*```/.test(l)) fence = !fence; return fence ? null : (l.match(/^\s*(?:#{1,4}\s+)?(?:\*\*)?(\d{1,2})[.)]\s/) || [])[1]; });
-  for (const p of parts) {
-    const n = partNum(p.q), k = n ? heads.findIndex((h, j) => j >= from && h === n) : -1;
-    if (k < 0) return null;
-    starts.push(k);
-    from = k + 1;
-  }
+  const lines = String(e.message || "").split("\n");
+  let fence = false;
+  // A paragraph head starts at the margin (an indented "2." is a step inside a paragraph) and has a style:
+  // "#" heading, "**" bold or plain. All heads of one question share a style, so bold titles never pair with plain steps.
+  const heads = lines.map((l) => {
+    if (/^\s*```/.test(l)) fence = !fence;
+    const m = !fence && l.match(/^(#{1,4}\s+)?(\*\*)?(\d{1,2})[.)]\s/);
+    return m ? { n: m[3], style: m[1] ? "#" : m[2] ? "**" : "" } : null;
+  });
+  const pair = (style) => {
+    const starts = [];
+    let from = 0;
+    for (const p of parts) {
+      const n = partNum(p.q), k = n ? heads.findIndex((h, j) => j >= from && h && h.n === n && h.style === style) : -1;
+      if (k < 0) return null;
+      starts.push(k);
+      from = k + 1;
+    }
+    return starts;
+  };
+  const starts = pair("**") || pair("#") || pair("");
+  if (!starts) return null;
   const segs = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).join("\n").trim());
   // The question line repeats the paragraph's own title: show it only when the paragraph does not start with it.
   const sameQ = parts.map((p, k) => { const q = plainWords(p.q); return !!q && plainWords(segs[k].split("\n")[0]).startsWith(q); });
