@@ -2520,6 +2520,10 @@ function partSplit(e, parts) {
     const m = !fence && l.match(/^(#{1,4}\s+)?(\*\*)?(\d{1,2})[.)]\s/);
     return m ? { n: m[3], style: m[1] ? "#" : m[2] ? "**" : "" } : null;
   });
+  // A paragraph pairs with its part only if it talks about the same thing: a shared word of 4+ letters (first 5
+  // letters compared, so "update" meets "updates"). A list that only explains, numbered like the parts, does not pair.
+  const stems = (s) => new Set(plainWords(s).split(" ").filter((w) => w.length >= 4 && !SMALL_WORDS.has(w)).map((w) => w.slice(0, 5)));
+  const about = (q, seg) => { const a = stems(q); if (!a.size) return true; const b = stems(seg); return [...a].some((w) => b.has(w)); };
   const pair = (style) => {
     const starts = [];
     let from = 0;
@@ -2529,15 +2533,28 @@ function partSplit(e, parts) {
       starts.push(k);
       from = k + 1;
     }
-    return starts;
+    const segs = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).join("\n").trim());
+    return parts.every((p, k) => about(p.q, segs[k])) ? { starts, segs, style } : null;
   };
-  const starts = pair("**") || pair("#") || pair("");
-  if (!starts) return null;
-  const segs = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).join("\n").trim());
+  const got = pair("**") || pair("#") || pair("");
+  if (!got) return null;
+  const { starts, segs } = got;
+  // A closing line after the last part ("Want any of these?") belongs to the whole question: it goes under every
+  // row, above Send answers. It is the last block after a blank line, one line long, not a list item, no code;
+  // a "#" heading with only one body block keeps that block.
+  const last = segs.length - 1, blocks = segs[last].split(/\n\s*\n/);
+  let outro = "";
+  const tail = blocks[blocks.length - 1];
+  if (blocks.length >= 2 && !tail.includes("\n") && !/^\s*([-*•>|]|\d{1,2}[.)]\s|```)/.test(tail) && !segs[last].includes("```")
+      && !(got.style === "#" && blocks.length === 2 && !blocks[0].includes("\n"))) {
+    outro = tail.trim();
+    segs[last] = blocks.slice(0, -1).join("\n\n").trim();
+  }
   // The question line repeats the paragraph's own title: show it only when the paragraph does not start with it.
   const sameQ = parts.map((p, k) => { const q = plainWords(p.q); return !!q && plainWords(segs[k].split("\n")[0]).startsWith(q); });
-  return { intro: lines.slice(0, starts[0]).join("\n").trim(), segs, sameQ };
+  return { intro: lines.slice(0, starts[0]).join("\n").trim(), segs, sameQ, outro };
 }
+const SMALL_WORDS = new Set("this that these those with what which when where should would could have from they them their your about into does only also some there here just than then very will want need make".split(" "));
 function partsHtml(e, i, parts, ans, live, split) {
   const said = ans ? String(ans.message || "").split("\n").map((s) => s.trim()) : null, picks = qPicks[qKey(e)] || {};
   const rows = parts.map((p, pi) => `<div class="qpart">${split ? `<div class="msg md">${fmtMsg(split.segs[pi])}</div>` : ""}${split && split.sameQ[pi] ? "" : `<div class="qpq">${esc(p.q)}</div>`}${(p.images || []).length ? `<div class="thumbs">${thumbItems(p.images, fileDir("agent_reports/images"))}</div>` : ""}<div class="qopts">${p.options.map((o, k) => {
@@ -2546,7 +2563,7 @@ function partsHtml(e, i, parts, ans, live, split) {
   }).join("")}</div>${noteHtml(noteKey(e, pi), live)}</div>`).join("");
   const n = parts.filter((_, pi) => partDone(e, pi)).length;
   const send = live ? `<div class="qsend"><button type="button" class="btn primary" data-qsend="${i}" title="${esc(window.t("Sends your picks, plus anything typed in the reply box"))}"${n === parts.length ? "" : " disabled"}>${esc(window.t("Send answers"))}</button><span>${esc(partsCount(n, parts.length))}</span></div>` : "";
-  return `<div class="qparts${split ? " inline" : ""}">${split && split.intro ? `<div class="msg md">${fmtMsg(split.intro)}</div>` : ""}${rows}${send}</div>`;
+  return `<div class="qparts${split ? " inline" : ""}">${split && split.intro ? `<div class="msg md">${fmtMsg(split.intro)}</div>` : ""}${rows}${split && split.outro ? `<div class="msg md">${fmtMsg(split.outro)}</div>` : ""}${send}</div>`;
 }
 function pickPart(b) {
   const e = logShown[+b.dataset.qi], parts = e && qParts(e), pi = +b.dataset.qp;

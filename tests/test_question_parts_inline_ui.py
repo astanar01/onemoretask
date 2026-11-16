@@ -59,6 +59,15 @@ Q5 = {"from": "claude", "status": "question", "at": OLD,
 Q6 = {"from": "claude", "status": "question", "at": OLD,
       "message": "1. The tables. Steps:\n   1. Measure\n   2. Cut\n\n2. The chairs are red.",
       "parts": [{"q": "1. Keep the tables?", "options": YN}, {"q": "2. Keep the chairs?", "options": YN}]}
+# c7: a numbered list that only explains, then parts numbered the same that ask other things: no pairing (as before).
+Q7 = {"from": "claude", "status": "question", "at": OLD,
+      "message": "It does two small jobs:\n\n1. **It updates the map of the code.** Helpers use it to find things.\n"
+                 "2. **It looks after the big files.** This part works fine.\n\nThe two questions are still open:",
+      "parts": [{"q": "1. Install the 5 guards?", "options": YN}, {"q": "2. Fix the map-update helper?", "options": YN}]}
+# c8: a closing line after the last paragraph goes under every row, not above the last part's choices.
+Q8 = {"from": "claude", "status": "question", "at": OLD,
+      "message": "Two screens.\n\n**1. Login page.** One form.\n\n**2. Logout page.** One button.\n\nWant any of these?",
+      "parts": [{"q": "1. Login page", "options": YN}, {"q": "2. Logout page", "options": YN}]}
 COLS = [{"id": "prog", "name": "In Progress", "done": False, "role": "progress"},
         {"id": "done", "name": "Done", "done": True}]
 
@@ -68,7 +77,7 @@ def card(cid, k):
             "order": k, "created": OLD, "updated": OLD, "agent": {"id": f"a-{cid}", "started": OLD}}
 
 
-LOGS = {"c1": [Q1], "c2": [Q2], "c3": [Q3], "c4": [Q1, A4], "c5": [Q5], "c6": [Q6]}
+LOGS = {"c1": [Q1], "c2": [Q2], "c3": [Q3], "c4": [Q1, A4], "c5": [Q5], "c6": [Q6], "c7": [Q7], "c8": [Q8]}
 AGENTS = {c: {"id": f"a-{c}", "sessionId": f"s-{c}", "state": "idle", "phase": "needs_you", "reason": "", "log": log,
               "mcp_uses": [], "mcp": None} for c, log in LOGS.items()}
 BOARD = {"version": 1, "columns": COLS, "tasks": [card(c, k) for k, c in enumerate(LOGS)]}
@@ -164,7 +173,7 @@ const layout = `(() => { const li = document.querySelector('#d-log li.k-question
     out.push(n.matches('.msg') ? ['msg', n.textContent.replace(/\\s+/g, '').slice(0, 24)] : n.matches('.qpq') ? ['q', n.textContent.trim()]
       : ['opts', [...n.querySelectorAll('button')].map((b) => b.textContent.trim())]); });
   return { out, inOrder }; })()`;
-for (const c of ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']) {
+for (const c of ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8']) {
   await ev(`openDetail('${c}')`); await ev(`showTab('conversation')`); await sleep(400);
   res[c] = await ev(layout);
   if (c === 'c1' && shot) {
@@ -254,6 +263,12 @@ def main():
     check("indented steps under plain numbered paragraphs stay in their paragraph", res["c6"]["out"],
           [m("1. The tables. Steps:1. Measure2. Cut"), ["q", "1. Keep the tables?"], opts,
            m("2. The chairs are red."), ["q", "2. Keep the chairs?"], opts])
+    check("a list that only explains, numbered like the parts, does not take their choices", res["c7"]["out"],
+          [m("It does two small jobs:1. It updates the map"),
+           ["q", "1. Install the 5 guards?"], opts, ["q", "2. Fix the map-update helper?"], opts])
+    check("a closing line sits under every row, not above the last part's choices", res["c8"]["out"],
+          [m("Two screens."), m("1. Login page. One form."), opts, m("2. Logout page. One button."), opts,
+           m("Want any of these?")])
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0
