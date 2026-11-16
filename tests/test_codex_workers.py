@@ -18,6 +18,7 @@ os.makedirs(os.environ["HOME"])
 BIN = os.path.join(TMP, "bin")
 os.makedirs(BIN)
 GOT = os.path.join(TMP, "got.txt")
+CHILD = os.path.join(TMP, "child.pid")
 with open(os.path.join(BIN, "codex"), "w", encoding="utf-8") as f:
     f.write(r'''#!%s
 import json, os, sys, time
@@ -36,12 +37,15 @@ if prompt.startswith("FAIL"):
 if prompt.startswith("SLEEP"):
     out({"type": "item.completed", "item": {"id": "item_0", "type": "command_execution", "command": "echo previous job", "status": "completed"}})
     out({"type": "item.started", "item": {"id": "item_1", "type": "command_execution", "command": "sleep 30", "status": "in_progress"}})
+    import subprocess
+    with open(%r, "w") as g:  # the command codex runs: in its process group
+        g.write(str(subprocess.Popen(["sleep", "60"]).pid))
     time.sleep(60)
 out({"type": "item.completed", "item": {"id": "item_0", "type": "command_execution", "command": "ls -la\nmore", "status": "completed"}})
 out({"type": "item.completed", "item": {"id": "item_1", "type": "file_change", "changes": [{"path": "/x/hello.txt", "kind": "add"}], "status": "completed"}})
 out({"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "DONE: " + prompt.splitlines()[0]}})
 out({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40, "cache_write_input_tokens": 0, "output_tokens": 7}})
-''' % (sys.executable, GOT))
+''' % (sys.executable, GOT, CHILD))
 os.chmod(os.path.join(BIN, "codex"), 0o755)
 ENV = dict(os.environ, PATH=BIN + os.pathsep + os.environ.get("PATH", ""))
 
@@ -134,7 +138,7 @@ while time.time() < deadline:
     found = [n for n in os.listdir(WF) if n.startswith("t3-") and n.endswith(".json")]
     if found:
         lmeta = json.load(open(os.path.join(WF, found[0])))
-        if "sleep 30" in open(lmeta["log"]).read():
+        if "sleep 30" in open(lmeta["log"]).read() and os.path.exists(CHILD) and open(CHILD).read():
             break
     time.sleep(0.1)
 assert lmeta and live.poll() is None, (lmeta, live.poll())
@@ -163,6 +167,16 @@ finally:
         live.wait()
         raise AssertionError("codex_worker.py hung on SIGTERM")
 assert live.returncode == 143, live.returncode
+child, end = int(open(CHILD).read()), time.time() + 5
+while time.time() < end:
+    try:
+        os.kill(child, 0)
+    except ProcessLookupError:
+        break
+    time.sleep(0.1)
+else:
+    os.kill(child, 9)
+    raise AssertionError("codex_worker.py left the command codex started running")
 assert set(ok_row) == {"id", "name", "type", "started", "updated", "finished", "stopped", "action", "skills", "tokens",
                        "cli"}, ok_row
 assert lmeta["pid_start"] and lmeta["pid_start"] == live_start or not codex.POSIX, (lmeta, live_start)

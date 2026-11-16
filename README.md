@@ -75,7 +75,7 @@ Board or list layout, light or dark, English or French, and browser notification
 
 ## Install
 
-You need Python 3.7+, `git` and [Claude Code](https://claude.com/claude-code). Codex CLI is optional.
+You need Python 3.9+, `git` and [Claude Code](https://claude.com/claude-code). Codex CLI is optional.
 
 macOS / Linux:
 

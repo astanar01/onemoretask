@@ -94,7 +94,7 @@ function Install-OneMoreTask {
     }
 
     # Prefer the py launcher: a bare "python" can be the Microsoft Store stub, which runs nothing.
-    $check = 'import sys; print(sys.version_info >= (3, 7))'
+    $check = 'import sys; print(sys.version_info >= (3, 9))'
     $python = $null
     foreach ($cand in @('py -3', 'python')) {
         $parts = $cand -split ' '
@@ -105,7 +105,7 @@ function Install-OneMoreTask {
         if ("$out".Trim() -eq 'True') { $python = $cand; break }
     }
     if (-not $python) {
-        Write-Host 'onemoretask needs Python 3.7 or newer. Install it from https://www.python.org/downloads/ (or: winget install Python.Python.3.12), then open a new terminal.' -ForegroundColor Red
+        Write-Host 'onemoretask needs Python 3.9 or newer. Install it from https://www.python.org/downloads/ (or: winget install Python.Python.3.12), then open a new terminal.' -ForegroundColor Red
         return $false
     }
 

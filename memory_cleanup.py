@@ -6,7 +6,8 @@ Run: python3 memory_cleanup.py            one check; acts when a note meets ever
 
 server.py runs this about once a day. A note is marked no longer true only when ALL of these hold:
   - it names at least one file or folder of a known project, the project's history shows that name was deleted (not
-    renamed), and no name in the note still exists in the project, a card copy or a local branch;
+    renamed), and no name in the note still exists in the project, a card copy or any branch, remote branch, tag or
+    stash;
   - two checks at least a day apart found this;
   - no session used it for 90 days;
   - it has no key-decision tag (those wait for a person, on the board).
@@ -74,6 +75,16 @@ def names_in(text):
     return out
 
 
+def rename_in(text, renames):
+    """`text` with each old name swapped for its new one where it stands as a whole name (the same edges NAME uses),
+    so renaming old.py leaves tests/test_old.py and old.py.bak alone. A sentence's closing dot is not part of a name."""
+    if not renames:
+        return text
+    olds = "|".join(re.escape(o) for o in sorted(renames, key=len, reverse=True))
+    pat = rf"(?:(?<=res://)|(?<![\w/.~:@-]))(?:{olds})(?![\w@+/]|[.-]+[\w@+/])"
+    return re.sub(pat, lambda m: renames[m.group()], text)
+
+
 def subpaths(path):
     """Every run of whole segments of a/b/c: a, b, c, a/b, b/c, a/b/c. A note may name a path by its tail or a folder."""
     parts = path.split("/")
@@ -88,7 +99,8 @@ def git(root, *args):
 
 
 class Project:
-    """What one git project holds now (checkouts and local branches) and what its history once held."""
+    """What one git project holds now (checkouts and every ref: branches, remote branches, tags, stash) and what its
+    history deleted or renamed."""
 
     def __init__(self, root):
         self.root = root
@@ -96,20 +108,20 @@ class Project:
         self.checkouts = [line[9:] for line in git(root, "worktree", "list", "--porcelain").splitlines()
                           if line.startswith("worktree ")]
         self.here = set()
-        for tree in sorted(set(git(root, "for-each-ref", "--format=%(tree)", "refs/heads").split())):
+        # Every ref `log --all` reads; %(*tree) is an annotated tag's commit.
+        for tree in sorted(set(git(root, "for-each-ref", "--format=%(tree) %(*tree)").split())):
             for path in git(root, "ls-tree", "-r", "--name-only", tree).splitlines():
                 self.here |= subpaths(path)
-        self.ever = set()
+        self.ever = set()  # names some commit deleted or renamed away
         self.renames = {}  # old path -> new path, the newest rename of it
-        for line in git(root, "log", "--all", "-M", "--name-status", "--format=").splitlines():
+        for line in git(root, "log", "--all", "-M", "--diff-filter=DR", "--name-status", "--format=").splitlines():
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
-            for path in parts[1:]:
-                self.ever |= subpaths(path)
+            self.ever |= subpaths(parts[1])
             if parts[0].startswith("R") and len(parts) == 3:
                 self.renames.setdefault(parts[1], parts[2])
-        if not self.ever:
+        if not self.here:
             raise RuntimeError(f"no history in {root}")
 
     def exists(self, name):
@@ -209,8 +221,8 @@ def judge(note, projects):
         here += state == "here"
         if state == "gone":
             gone.append(name)
-        elif state == "renamed":
-            renamed[name] = new
+        elif state == "renamed":  # an absolute name keeps its folder: /x/proj/old.py -> /x/proj/new.py
+            renamed[name] = new if rel == name else name[:len(name) - len(rel)] + new
     if not gone and not renamed:
         return {"kind": "keep", "names": []}
     names = gone + sorted(renamed)
@@ -363,10 +375,8 @@ def run(now=None, dry=False, rest=REST, mcp=MCP, registry=REGISTRY, state_path=S
         if kind == "renamed":
             if acted < MAX_PER_RUN and not dry:
                 cur = is_open(nid, mcp)
-                if cur:
-                    text = cur["content"]
-                    for old, new in verdict["renames"].items():
-                        text = text.replace(old, new)
+                text = cur and rename_in(cur["content"], verdict["renames"])
+                if cur and text != cur["content"]:
                     call("muninn_evolve", {"id": nid, "new_content": text, "reason": "a file it names was renamed"}, mcp)
                     state.setdefault("renamed", []).append({**entry, "renames": verdict["renames"]})
                     flagged.pop(nid)

@@ -114,6 +114,10 @@ def _mac_install(project, days, at, path_env):
     _launchctl("bootout", f"{domain}/{label}")   # an older copy of this job, if loaded
     r = _launchctl("bootstrap", domain, p)
     if r.returncode != 0:
+        try:  # launchd loads every plist there at the next login: a job the board says is off would run anyway
+            os.remove(p)
+        except OSError:
+            pass
         raise RuntimeError(f"launchctl bootstrap failed: {(r.stderr or r.stdout).strip()[:300]}")
 
 
@@ -158,8 +162,9 @@ def _cron_install(project, days, at, path_env):
     os.makedirs(os.path.dirname(log), exist_ok=True)
     dow = ",".join(str((d + 1) % 7) for d in days)
     cmd = " ".join(_sh(a) for a in run_command(project))
-    line = (f"{minute} {hour} * * {dow} PATH={_sh(path_env)} {cmd} >> {_sh(log)} 2>&1 "
-            f"{CRON_TAG} {job_id(project)}\n")
+    # cron turns an unescaped % into a newline (crontab(5)), even inside the shell's quotes
+    line = (f"{minute} {hour} * * {dow} PATH={_sh(path_env)} {cmd} >> {_sh(log)} 2>&1 ".replace("%", "\\%")
+            + f"{CRON_TAG} {job_id(project)}\n")
     text = _cron_strip(_crontab(), project)
     if text and not text.endswith("\n"):
         text += "\n"

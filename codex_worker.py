@@ -53,8 +53,8 @@ def main(argv=None):
     def stop(sig, _frame):  # codex runs in its own session: a killed helper must not leave it working
         # No proc.wait() here: the interrupted proc.wait() below holds Popen's wait lock, a second one deadlocks.
         got.append(sig)
-        proc.terminate()
-        t = threading.Timer(5, proc.kill)  # codex ignored SIGTERM
+        codex._signal(proc)  # its whole process group: the commands codex started stop too
+        t = threading.Timer(5, codex._signal, (proc, True))  # codex ignored SIGTERM
         t.daemon = True
         t.start()
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

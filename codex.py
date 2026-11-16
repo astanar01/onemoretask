@@ -285,12 +285,24 @@ def _tail_from(path, offset):
         return ""
 
 
+def _signal(proc, kill=False):
+    """SIGTERM (SIGKILL with `kill`) to a turn. On POSIX to its whole process group: _spawn starts it in its own
+    session, so the group also holds the commands codex started, which must not outlive it."""
+    if POSIX:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL if kill else signal.SIGTERM)
+            return
+        except OSError:
+            pass
+    (proc.kill if kill else proc.terminate)()
+
+
 def _kill(proc):
-    proc.terminate()
+    _signal(proc)
     try:
         proc.wait(5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        _signal(proc, kill=True)
         proc.wait()
 
 

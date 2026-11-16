@@ -404,6 +404,25 @@ class InstallTools(unittest.TestCase):
         self.assertEqual(self.read(os.path.join(self.claude, "settings.json")), before)
         self.assertIn("Kept your own CTX_REPLACE_TRIGGER_BYTES (8192)", out)
 
+    def test_symlinked_settings_and_claude_json_written_through(self):
+        # Kept in a dotfiles repo: the links stay, the targets get the change and keep their mode.
+        self.which["claude"] = "/usr/bin/claude"
+        self.node()
+        dot = os.path.join(self.home, "dotfiles")
+        os.makedirs(dot)
+        os.makedirs(self.claude)
+        for name, link in (("settings.json", os.path.join(self.claude, "settings.json")), ("claude.json", self.cj)):
+            with open(os.path.join(dot, name), "w") as f:
+                json.dump({"theme": "dark"}, f)
+            os.chmod(os.path.join(dot, name), 0o644)
+            os.symlink(os.path.join(dot, name), link)
+        self.main()
+        for name, link in (("settings.json", os.path.join(self.claude, "settings.json")), ("claude.json", self.cj)):
+            self.assertTrue(os.path.islink(link), link)
+            self.assertEqual(os.stat(os.path.join(dot, name)).st_mode & 0o777, 0o644)
+        self.assertEqual(self.settings()["env"], {"CTX_REPLACE_TRIGGER_BYTES": "1048576"})
+        self.assertIn("muninn", self.servers())
+
     def test_context_mode_env_written_with_no_settings_file(self):
         self.which["claude"] = "/usr/bin/claude"
         self.node()

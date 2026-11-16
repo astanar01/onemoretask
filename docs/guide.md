@@ -5,7 +5,7 @@ The full details. For a quick start, see the [README](../README.md).
 ## Requirements
 
 - macOS, Linux or Windows
-- Python 3.7 or newer, and `git`
+- Python 3.9 or newer, and `git`
 - [Claude Code](https://claude.com/claude-code) (the `claude` command), for Send to Claude
 - Optional: OpenAI's [Codex CLI](https://github.com/openai/codex) (the `codex` command), to send a task
   or a code review to an OpenAI model

@@ -144,5 +144,47 @@ class FingerprintTest(unittest.TestCase):
         f.write_text(f.read_text() + "\nx\n")
         self.assertNotEqual(before, fp())
 
+
+class InstallShFolderTest(unittest.TestCase):
+    """install.sh's choice of folder: the clone it runs from, else $ONEMORETASK_DIR updated with git pull."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="install-sh-folder-"))
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.clone = self.tmp / "clone"
+        for name in ("server.py", "launch.py", "bin/onemoretask", ".git/HEAD"):
+            (self.clone / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.clone / name).write_text("")
+        (self.tmp / "bin").mkdir()
+        git = self.tmp / "bin" / "git"
+        git.write_text('#!/bin/sh\necho "git $*"\n')  # no real pull
+        git.chmod(0o755)
+        lines = (REAL_REPO / "install.sh").read_text().splitlines()
+        start = next(i for i, ln in enumerate(lines) if ln.startswith("here="))
+        end = next(i for i in range(start, len(lines)) if lines[i] == "fi")
+        self.step = "\n".join(lines[start:end + 1]) + '\necho "dir=$dir"\n'
+        self.env = dict(os.environ, ONEMORETASK_DIR=str(self.clone), PATH=f"{self.tmp / 'bin'}:{os.environ['PATH']}")
+
+    def test_piped_in_from_inside_the_install_updates_it(self):
+        # curl ... | sh run while the shell sits in ~/.onemoretask: $0 is "sh", not a file in that folder
+        out = subprocess.run(["sh"], input=self.step, cwd=self.clone, env=self.env, capture_output=True, text=True,
+                             check=True).stdout
+        self.assertIn(f"git -C {self.clone} pull", out)
+
+    def test_run_as_a_file_uses_its_clone(self):
+        (self.clone / "install.sh").write_text(self.step)
+        out = subprocess.run(["sh", str(self.clone / "install.sh")], cwd=self.tmp, env=self.env, capture_output=True,
+                             text=True, check=True).stdout
+        self.assertNotIn("pull", out)
+        self.assertIn(f"dir={self.clone}", out)
+
+    def test_installers_ask_for_python_3_9(self):
+        # The code uses 3.9 APIs (str.removeprefix in server.py): on 3.8 the branch guard crashed open.
+        for name in ("install.sh", "install.ps1", "bin/onemoretask.cmd"):
+            text = (REAL_REPO / name).read_text(encoding="utf-8-sig")
+            self.assertIn("(3, 9)", text, name)
+            self.assertNotIn("(3, 7)", text, name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

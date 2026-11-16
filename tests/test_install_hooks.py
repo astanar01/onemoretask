@@ -113,6 +113,19 @@ class InstallHooksTest(unittest.TestCase):
         self.assertTrue(any("cwd-guard.sh" in c for c in self.commands("PreToolUse")))
         self.assertTrue((self.claude / "settings.json.bak-onemoretask").exists())
 
+    def test_symlinked_settings_written_through(self):
+        # settings.json kept in a dotfiles repo: the link stays, the target gets the hooks and keeps its mode.
+        target = self.tmp / "dotfiles" / "settings.json"
+        target.parent.mkdir()
+        target.write_text(json.dumps({"model": "x"}))
+        target.chmod(0o644)
+        (self.claude / "settings.json").symlink_to(target)
+        self.run_installer()
+        self.assertTrue((self.claude / "settings.json").is_symlink())
+        self.assertEqual(json.loads(target.read_text())["model"], "x")
+        self.assertTrue(any("cwd-guard.sh" in c for c in self.commands("PreToolUse")))
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
     def test_same_script_under_other_path_not_duplicated(self):
         theirs = {"matcher": "Bash", "hooks": [{"type": "command", "command": "bash /opt/hooks/cwd-guard.sh"}]}
         (self.claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [theirs]}}))
