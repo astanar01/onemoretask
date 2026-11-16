@@ -314,6 +314,7 @@ body.view-plan #search { visibility: hidden; }
 .obs-group .sub-list .c { flex-basis: 100%; padding-left: 22px; overflow-wrap: anywhere; }
 .obs-body { flex-basis: 100%; margin: 4px 0 2px 22px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(12px * var(--ts)); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 .obs-empty { color: var(--muted); padding: 5px 6px; }
+.mem-err { color: var(--danger); padding: 5px 6px; }
 #obs-modal .actions { flex-wrap: wrap; }
 #obs-modal .actions .grow, #cl-modal .actions .grow { flex: 1; }
 #obs-model { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); max-width: 100%; }
@@ -1196,7 +1197,7 @@ function renderProjects() {
 
 async function switchProject(id) {
   await settled();
-  openId = null; delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
+  openId = null; delete $("#d-log").dataset.task; delete $("#d-newsub").dataset.task; replyImages = []; $("#overlay").classList.remove("open");
   P = id; agents = {}; agentsRev = null; polledOnce = false; closeObs(); obsSel.clear(); renderObsButton();
   try { await loadTasks(); } catch (e) { setStatus(t("Could not load the board: {error}", { error: t(e.message) }), true); }
   render(); pollAgents(); checkUnpushed();
@@ -1257,7 +1258,11 @@ $("#project").addEventListener("change", async (e) => {
 });
 
 let saveTimer = null;
+// userEdit: an unsent change came from the user, not only from a poll's own card moves (pollMoving while those run).
+// A refused save with no user change in it lost nothing: every window makes the same poll moves.
+let userEdit = false, pollMoving = false;
 function save() {
+  if (!pollMoving) userEdit = true;
   setStatus(t("Saving…"));
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 300);
@@ -1285,6 +1290,7 @@ const settled = () => saveTimer ? flush() : (saving || Promise.resolve());
 // If-Match makes the server refuse (409) a save based on an older board than disk, so a stale window cannot overwrite newer work.
 async function putBoard(keepalive) {
   const pid = P;
+  let sentUser = false;
   // Saves queued behind a refused one would only resend the reloaded board and cover its notice with "Saved".
   if (!keepalive) { queued--; if (skip > 0) { skip--; return; } }
   try {
@@ -1292,12 +1298,15 @@ async function putBoard(keepalive) {
     // The pagehide save skips the chain: when a save of ours is still in flight they carry the same rev, and whichever
     // lands second would be refused. That in-flight save is the only other writer, so this one goes without If-Match.
     if (typeof rev === "string" && !(keepalive && saving)) headers["If-Match"] = rev;
+    sentUser = userEdit; userEdit = false;
     const r = await fetch(api("/api/tasks"), { method: "PUT", headers, body: JSON.stringify(state), keepalive });
     if (r.status === 409) {
       if (!keepalive && pid === P && await reloadBoard(true)) {
-        skip = queued;
-        setStatus(t("The board changed in another window, so it was reloaded. Please redo your last change."), true);
-      }
+        const lost = sentUser || userEdit;   // the reload threw away this save and anything typed since
+        skip = queued; userEdit = false;
+        if (lost) setStatus(t("The board changed in another window, so it was reloaded. Please redo your last change."), true);
+        else setStatus(t("Board updated from another window"));
+      } else userEdit ||= sentUser;
       return;
     }
     if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
@@ -1305,6 +1314,7 @@ async function putBoard(keepalive) {
     if (next !== null && pid === P) rev = next;
     setStatus(t("Saved"));
   } catch (e) {
+    userEdit ||= sentUser;
     setStatus(t("Save failed: {error}", { error: t(e.message) }), true);
   }
 }
@@ -2117,7 +2127,7 @@ function openDetail(id) {
   const t = task(id);
   if (t && !t.agent) $("#d-title").focus(); else $("#d-back").focus();
 }
-function closeDetail() { dtZoom(null); showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
+function closeDetail() { dtZoom(null); showPanelError(""); settleDraft(); openId = null; ovFor = null; toggleMenu(false); delete $("#d-log").dataset.task; delete $("#d-newsub").dataset.task; replyImages = []; $("#overlay").classList.remove("open"); render(); }
 
 // One Claude call names an untitled task and tags an untagged one from its notes, reusing the board's tags (the
 // server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
@@ -2211,7 +2221,9 @@ function renderDetail() {
     li.querySelector(".t").onclick = () => { openId = k.id; renderDetail(); };
     ul.appendChild(li);
   }
-  $("#d-newsub").value = "";
+  // A redraw of the same card (another window saved) keeps a half-typed subtask; another card starts empty.
+  const ns = $("#d-newsub");
+  if (ns.dataset.task !== t.id) { ns.value = ""; ns.dataset.task = t.id; }
   $("#d-subblock").style.display = sent && !kids.length ? "none" : "";
   $("#d-meta").innerHTML = `<span>#${esc(t.id.slice(0, 6))}</span>` + (sent && t.tags.length ? t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join("") : "");
   renderAgent(t);
@@ -2257,6 +2269,7 @@ $("#d-newsub").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || !e.target.value.trim()) return;
   const parent = task(openId);
   withDelegateChoice(addTask(e.target.value, isDone(parent) ? firstOpenCol() : parent.column, parent.id)); save();
+  e.target.value = "";
   renderDetail(); $("#d-newsub").focus();
 });
 $("#d-x").onclick = closeDetail;
@@ -3605,7 +3618,10 @@ async function showRepoSizes() {
   const box = $("#repo-sizes"), forP = P;
   box.textContent = window.t("Checking the folder size…");
   let r;
-  try { r = await post("/api/git/scan", { p: forP }); } catch (e) { box.textContent = ""; return; }
+  try { r = await post("/api/git/scan", { p: forP }); } catch (e) {
+    if (forP === P && repoOpen()) box.textContent = window.t("Could not measure the folder: {error}", { error: window.t(e.message) });
+    return;
+  }
   if (forP !== P || !repoOpen()) return;
   if (!r.entries.length) { box.textContent = ""; return; }
   box.innerHTML = `<div>${esc(window.t("This folder holds {size}. Every worktree gets a full copy. Tick what to leave out (it stays on your disk):", { size: fmtBytes(r.total) }))}</div>`
@@ -3988,9 +4004,11 @@ let scrollGrab = false, scrollWheelAt = 0, pollRenderTimer = null;
 $("#board").addEventListener("pointerdown", (e) => { if (e.target.closest(".cards, .lmain")) scrollGrab = true; });
 $("#board").addEventListener("wheel", () => (scrollWheelAt = Date.now()), { passive: true });
 for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, () => (scrollGrab = false));
+// It also waits while a column name is being typed: the rebuilt box would drop the cursor (change saves it and redraws).
 function pollRender() {
   clearTimeout(pollRenderTimer);
-  if (scrollGrab || Date.now() - scrollWheelAt < 500) { pollRenderTimer = setTimeout(pollRender, 250); return; }
+  const a = document.activeElement, naming = a && a.matches && a.matches("#board .col-head .name");
+  if (naming || scrollGrab || Date.now() - scrollWheelAt < 500) { pollRenderTimer = setTimeout(pollRender, 250); return; }
   render();
 }
 
@@ -4031,7 +4049,8 @@ async function pollAgents() {
     if (pid !== P) return;
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
-    for (const [id, a] of Object.entries(next)) {
+    pollMoving = true;
+    try { for (const [id, a] of Object.entries(next)) {
       const t = task(id), was = agents[id] && agents[id].phase;
       if (!t) continue;
       const review = colRole("review"), prog = colRole("progress");
@@ -4045,7 +4064,7 @@ async function pollAgents() {
       // Newest finished work goes on top of Review, even if the card was already there.
       if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
       if (a.phase === "working" && prog && (review && t.column === review.id || isDone(t))) moveTask(t.id, prog.id, null);
-    }
+    } } finally { pollMoving = false; }
     const changed = moved || (changedCards !== null ? changedCards > 0 : JSON.stringify(next) !== JSON.stringify(agents));
     // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
     const op = openId && agents[openId] && agents[openId].phase;
@@ -4408,9 +4427,15 @@ $("#cl-body").addEventListener("click", async (e) => {
   try {
     const r = await fetch("/api/memory-cleanup", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: b.dataset.memId, action: b.dataset.memAction }) });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || t("server said {status}", { status: r.status }));
     if (clOpen()) $("#cl-body").innerHTML = fmtMemory(await r.json());
-  } catch (err) { b.disabled = false; b.title = t("Could not load the memory clean-up."); }
+  } catch (err) {
+    b.disabled = false;
+    const msg = t("Could not change the memory note: {error}", { error: t(err.message) });
+    let line = $("#cl-body .mem-err");
+    if (!line) { line = document.createElement("div"); line.className = "mem-err"; $("#cl-body").prepend(line); }
+    line.textContent = msg;
+  }
 });
 
 // ---------------------------------------------------------------- images
