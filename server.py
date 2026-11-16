@@ -3766,14 +3766,8 @@ def _kill(proc):
             if proc.poll() is None:
                 subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
         else:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)  # an app that ignores SIGTERM would run on, forgotten
-            except ProcessLookupError:
-                pass  # the group is already gone
+            # The whole group, SIGKILL for what ignores SIGTERM: a server the shell started would run on, forgotten.
+            codex.stop_group(proc)
         proc.wait(timeout=10)
     except (OSError, subprocess.SubprocessError) as e:
         print("stop run:", e)

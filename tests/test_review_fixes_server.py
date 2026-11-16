@@ -256,5 +256,36 @@ server.forget_project(p5.id)
 server.review_schedule.remove = real_remove
 check(removed == [os.path.realpath(p5.path)], "forget_project removes the project's scheduled skill review")
 
+# --- stopping a run or a Codex turn: the leader quits on SIGTERM, a command it started ignores it
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return bool(stat) and not stat.startswith("Z")
+
+
+if os.name == "posix":
+    for name, kill in (("Run app stop", server._kill), ("Codex turn stop", server.codex._kill)):
+        pidfile = os.path.join(TMP, f"child-{len(name)}.pid")
+        proc = subprocess.Popen(["sh", "-c", f"(trap '' TERM; exec sleep 60) & echo $! > '{pidfile}'; wait"],
+                                start_new_session=True)
+        for _ in range(100):
+            if os.path.exists(pidfile) and open(pidfile).read().strip():
+                break
+            time.sleep(0.05)
+        child = int(open(pidfile).read())
+        started = time.time()
+        kill(proc)
+        left = alive(child)
+        if left:
+            try:
+                os.kill(child, 9)
+            except ProcessLookupError:
+                pass
+        check(proc.poll() is not None and not left and time.time() - started < 15,
+              f"{name}: a child that ignores SIGTERM is stopped too (child left={left})")
+
 print(f"test_review_fixes_server: {'PASS' if not FAILS else 'FAIL (%d)' % len(FAILS)}")
 sys.exit(1 if FAILS else 0)
