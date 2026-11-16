@@ -153,6 +153,20 @@ class Judging(Base):
     def test_a_file_alive_on_a_local_branch_is_not_gone(self):
         self.assertEqual(self.judge("Look in tools/on_branch.py")["kind"], "keep")
 
+    def test_a_file_only_on_a_remote_branch_is_not_gone(self):
+        self.git("checkout", "-q", "-b", "wip")
+        self.write("tools/remote.py", "on a remote branch\n")
+        self.commit("remote work")
+        self.git("update-ref", "refs/remotes/origin/wip", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-q", "-D", "wip")  # never deleted anywhere: history has no deletion of it
+        self.assertEqual(self.judge("Look in tools/remote.py")["kind"], "keep")
+        self.git("checkout", "-q", "-b", "wip2", "origin/wip")  # deleted on a local branch, still on the remote one
+        self.git("rm", "-q", "tools/remote.py")
+        self.commit("drop it here")
+        self.git("checkout", "-q", "main")
+        self.assertEqual(self.judge("Look in tools/remote.py")["kind"], "keep")
+
     def test_a_file_alive_in_a_card_copy_is_not_gone(self):
         wt = os.path.join(self.tmp.name, "wt")
         self.git("worktree", "add", "-q", "-b", "card", wt)
@@ -258,6 +272,19 @@ class Removing(Base):
         self.run_check(fake, NOW + DAY)
         self.assertEqual(fake.tool_calls("muninn_forget"), [])
         self.assertEqual(fake.tool_calls("muninn_evolve")[0]["new_content"], "Look in tools/new_name.py")
+
+    def test_a_rename_swaps_whole_names_only_and_keeps_a_folder(self):
+        self.write("tools/test_old_name.py", "a test that is still here\n")
+        self.commit("test")
+        fake = FakeMuninn([
+            self.note("a", "Look in tools/old_name.py; tools/test_old_name.py tests it. Not tools/old_name.py.bak."),
+            self.note("b", f"Start at {self.root}/tools/old_name.py.")])
+        self.run_check(fake, NOW)
+        self.run_check(fake, NOW + DAY)
+        got = {a["id"]: a["new_content"] for a in fake.tool_calls("muninn_evolve")}
+        self.assertEqual(got["a"], "Look in tools/new_name.py; tools/test_old_name.py tests it. "
+                                   "Not tools/old_name.py.bak.")
+        self.assertEqual(got["b"], f"Start at {self.root}/tools/new_name.py.")
 
     def test_a_short_read_of_the_store_stops_everything(self):
         fake = FakeMuninn([self.note("a", "Look in tools/gone.py")])

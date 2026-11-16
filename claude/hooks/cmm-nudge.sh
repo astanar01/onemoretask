@@ -65,20 +65,8 @@ if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT="${CWD:-.}"
 fi
 
-CMM_FOUND=false
-# Check project .mcp.json
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-  CMM_FOUND=true
-fi
-# Check global settings.json as fallback
-if [ "$CMM_FOUND" = false ]; then
-  CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    CMM_FOUND=true
-  fi
-fi
-# If CMM not found anywhere, stay silent (fail open)
-[ "$CMM_FOUND" = false ] && exit 0
+# If CMM not found anywhere (project .mcp.json or user config, lib/compat.sh), stay silent (fail open)
+omt_cmm_registered "$REPO_ROOT" || exit 0
 
 # --- Code Extension Check (inline list + project extra_extensions) ---
 _IS_CODE=false

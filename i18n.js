@@ -739,14 +739,18 @@ const I18N = {
     "Last run: {date}": "Dernier passage : {date}",
     "Not run yet": "Pas encore lancée",
     "Pick at least one day": "Choisissez au moins un jour",
-    "Could not save the schedule: {err}": "Impossible d’enregistrer la planification : {err}"
+    "Could not save the schedule: {err}": "Impossible d’enregistrer la planification : {err}",
+    "Could not measure the folder: {error}": "Impossible de mesurer le dossier : {error}",
+    "Could not change the memory note: {error}": "Impossible de modifier la note de mémoire : {error}"
   } /* fr-end */
 };
 
+// Only the dictionary's own lines count: "constructor" or "toString" (a column name, say) must come back as typed.
+const hasLine = (d, k) => !!d && Object.prototype.hasOwnProperty.call(d, k);
 // t("Move to {col}", { col }) — {name} placeholders are filled after lookup, so the key stays one fixed string.
 function t(s, vars) {
   const d = I18N[LANG];
-  let r = d && d[s] != null ? d[s] : s;
+  let r = hasLine(d, s) ? d[s] : s;
   if (vars) for (const k in vars) r = r.split("{" + k + "}").join(vars[k]);
   return r;
 }
@@ -768,10 +772,10 @@ function translateDom(root) {
   for (let n = w.nextNode(); n; n = w.nextNode()) {
     if (n.nodeType === 1) { els.push(n); continue; }
     const s = n.nodeValue, k = s.trim();
-    if (k && d[k] != null) n.nodeValue = s.replace(k, d[k]);
+    if (k && hasLine(d, k)) n.nodeValue = s.replace(k, d[k]);
   }
   for (const el of els) {
     for (const a of I18N_ATTRS) if (el.hasAttribute(a)) el.setAttribute(a, t(el.getAttribute(a)));
-    if (el.hasAttribute("data-i18n")) { const k = el.innerHTML.trim(); if (d[k] != null) el.innerHTML = d[k]; }
+    if (el.hasAttribute("data-i18n")) { const k = el.innerHTML.trim(); if (hasLine(d, k)) el.innerHTML = d[k]; }
   }
 }

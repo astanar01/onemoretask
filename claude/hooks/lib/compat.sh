@@ -11,6 +11,7 @@
 #   omt_md5 STRING   hex md5 of STRING (md5 on macOS, md5sum elsewhere; cksum as a last resort — shorter, still unique enough for a sentinel name)
 #   omt_json_get KEY-PATH   read a dotted key from the hook JSON on stdin held in $OMT_INPUT; prints "" when
 #                    missing or when there is no Python
+#   omt_cmm_registered ROOT  0 when a codebase-memory-mcp server is registered (ROOT/.mcp.json or the user config)
 [ -n "$_OMT_COMPAT_LOADED" ] && return 0
 _OMT_COMPAT_LOADED=1
 
@@ -56,6 +57,16 @@ omt_md5() {
   elif command -v md5sum >/dev/null 2>&1; then printf '%s' "$1" | md5sum | cut -d' ' -f1
   else printf '%s' "$1" | cksum | cut -d' ' -f1
   fi
+}
+
+# Matches the quoted server key, not the "mcp__codebase-memory-mcp__*" hook matchers every installed
+# settings.json holds (same check as session-gate.sh).
+omt_cmm_registered() {
+  _omt_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  for _omt_f in "$1/.mcp.json" "$_omt_cfg/settings.json" "$_omt_cfg/.claude.json" "$HOME/.claude.json"; do
+    grep -q '"codebase-memory-mcp"' "$_omt_f" 2>/dev/null && return 0
+  done
+  return 1
 }
 
 omt_json_get() {

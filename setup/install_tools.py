@@ -237,10 +237,13 @@ def claude_json_path(claude_dir):
 
 
 def write_json(path, data):
-    """Replace path with data in one rename, the old file kept as path.bak-onemoretask. Raises OSError."""
+    """Replace path with data in one rename, the old file kept as path.bak-onemoretask. A symlink (a dotfiles repo) is
+    written through to its target, so the link stays. Raises OSError."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         shutil.copy2(path, path + ".bak-onemoretask")
+    path = os.path.realpath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path).lstrip(".") + "-", dir=os.path.dirname(path))
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

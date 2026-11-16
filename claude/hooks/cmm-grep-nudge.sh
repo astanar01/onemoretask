@@ -30,11 +30,25 @@ print(d.get('tool_input',{}).get('command','') or '')
   # and `git diff x.py | grep foo` pass. Prints "src <file>" when a nav verb's own arguments name a file
   # CMM parses into functions (.html left out: CMM keeps inline JS as one blob), else "dir" when they name
   # a source dir as a whole path component (`claudeapps/` is not `apps/`). Heredoc bodies and redirect
-  # targets are written content, not navigation; a bare `<` input redirect still counts.
+  # targets are written content, not navigation; a bare `<` input redirect still counts, and so do the
+  # commands after a heredoc's end line.
   GATE=$(BASH_CMD="$BASH_CMD" omt_py - <<'PY' 2>/dev/null
 import os, re, shlex
 full = os.environ.get("BASH_CMD", "")
-cmd = full.split("<<")[0]
+def drop_heredoc_bodies(s):
+    # Drop the body lines after a <<WORD / <<-WORD line up to the line WORD; the lines after it are still checked.
+    # A <<< here-string (one word on the same line) is not a heredoc.
+    lines, out, i = s.split("\n"), [], 0
+    while i < len(lines):
+        out.append(lines[i])
+        words = re.findall(r"(?<!<)<<(?!<)(-?)\s*\\?(['\"]?)([A-Za-z_][\w.-]*)\2", lines[i])
+        i += 1
+        for dash, _q, word in words:
+            while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != word:
+                i += 1
+            i += 1
+    return "\n".join(out)
+cmd = drop_heredoc_bodies(full)
 cmd = re.sub(r"\d*(>&|&>>?|>>?)\|?\s*[^\s|;&()]*", " ", cmd)
 ext = re.compile(r"\.(py|gd|js|jsx|mjs|ts|tsx|go|php|cs|java|kt|c|cc|cpp|h|hpp|cu)$")
 src_dir = re.compile(r"(^|/)(src|app|apps|lib|pkg|internal|hooks|agents|scripts)/")
@@ -139,15 +153,7 @@ PY
     BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && . "$_HOOK_DIR/lib/project-root.sh" && printf '%s' "$PROJECT_ROOT")
     [ -n "$BASH_REPO_ROOT" ] || BASH_REPO_ROOT="${BASH_CWD:-.}"
     BASH_CMM_FOUND=false
-    if [ -f "$BASH_REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$BASH_REPO_ROOT/.mcp.json" 2>/dev/null; then
-      BASH_CMM_FOUND=true
-    fi
-    if [ "$BASH_CMM_FOUND" = false ]; then
-      CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-      if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        BASH_CMM_FOUND=true
-      fi
-    fi
+    omt_cmm_registered "$BASH_REPO_ROOT" && BASH_CMM_FOUND=true
 
     # Only block when CMM sentinel is present (index is ready)
     BASH_PROJECT_HASH=$(omt_md5 "$BASH_REPO_ROOT")
@@ -206,20 +212,8 @@ if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT="${CWD:-.}"
 fi
 
-CMM_FOUND=false
-# Check project .mcp.json
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-  CMM_FOUND=true
-fi
-# Check global settings.json as fallback
-if [ "$CMM_FOUND" = false ]; then
-  CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    CMM_FOUND=true
-  fi
-fi
-# If CMM not found anywhere, allow Grep (fail open)
-[ "$CMM_FOUND" = false ] && exit 0
+# If CMM not found anywhere (project .mcp.json or user config, lib/compat.sh), allow Grep (fail open)
+omt_cmm_registered "$REPO_ROOT" || exit 0
 
 # --- Extra extensions cache (from .codebase-memory.json) ---
 _EXT_CACHE=""

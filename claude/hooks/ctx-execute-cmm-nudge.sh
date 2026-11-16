@@ -63,10 +63,19 @@ if not code.strip():
     emit(tool_name, 'empty', '', '', cwd)
     sys.exit(0)
 
-# Exempt marker anywhere in code
-if '# cmm-exempt' in code:
-    emit(tool_name, 'exempt', '', '', cwd)
-    sys.exit(0)
+# The cmm-exempt marker counts only as the trailing comment of the last line (its # outside quotes, nothing
+# after it), and never for a CMM-indexed source file: same rule as cmm-grep-nudge.sh.
+marker = '# cmm-exempt'
+exempt = False
+_last = (code.rstrip().splitlines() or [''])[-1].rstrip()
+if _last.endswith(marker) and (_last[:-len(marker)][-1:] or ' ').isspace():
+    try:
+        exempt = shlex.split(_last, comments=True) == shlex.split(_last[:-len(marker)], comments=True)
+    except ValueError:
+        pass
+    if exempt:
+        code = code.rstrip()[:-len(marker)]
+SRC_EXT = re.compile(r'\.(py|gd|js|jsx|mjs|ts|tsx|go|php|cs|java|kt|c|cc|cpp|h|hpp|cu)\$')
 
 # Conservative parser: reject any ambiguity -> kind 'other' (fail open)
 # Reject: pipes, semicolons, &&, ||, heredocs, backticks, \$(...), multi-line, leading keyword
@@ -265,13 +274,16 @@ if first in GREP_FAMILY:
     if not pattern or (ti.get('file') and 'CTX_FILE' in target):
         emit(tool_name, 'other', '', '', cwd)
         sys.exit(0)
+    if exempt and not SRC_EXT.search(target):
+        emit(tool_name, 'exempt', '', '', cwd)
+        sys.exit(0)
     emit(tool_name, 'grep-family', pattern, target, cwd)
     sys.exit(0)
 
 if first == 'find':
     kind, pat, target = extract_find_name(tokens)
-    if kind is None:
-        emit(tool_name, 'other', '', '', cwd)
+    if kind is None or exempt:
+        emit(tool_name, 'exempt' if exempt else 'other', '', '', cwd)
         sys.exit(0)
     emit(tool_name, kind, pat, target, cwd)
     sys.exit(0)
@@ -380,7 +392,7 @@ cat >&2 <<EOF
 [ctx-execute-cmm-nudge] BLOCKED -- source-code search via ctx_execute in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-Bypass: add '# cmm-exempt' to your code, or run against a non-indexed / build-artifact path.
+Bypass: end the command with '# cmm-exempt' (not for a .py/.gd/.js/.ts/... file), or run against a non-indexed / build-artifact path.
 EOF
 
 # --- Block counter (best-effort, parity with siblings) ---

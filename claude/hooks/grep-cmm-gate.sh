@@ -39,11 +39,7 @@ CWD_FIELD=$(echo "$PARSED" | sed -n '6p')
 [ "$TOOL_NAME" != "Grep" ] && exit 0
 
 # --- Exempt fast paths ---
-
-# Bypass marker in pattern
-if echo "$PATTERN_FIELD" | grep -q '# cmm-exempt'; then
-    exit 0
-fi
+# (The '# cmm-exempt' pattern marker is checked after the block decision: it never covers a source file.)
 
 # Explicit non-code type → allow
 case "$TYPE_FIELD" in
@@ -83,41 +79,35 @@ if [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
     fi
 fi
 
-# --- CMM availability check (.mcp.json cascade, parity with cmm-nudge.sh / cmm-grep-nudge.sh) ---
-CMM_FOUND=false
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
+# --- CMM availability check (lib/compat.sh; parity with cmm-nudge.sh / cmm-grep-nudge.sh) ---
 # If CMM not registered anywhere, fail open
-[ "$CMM_FOUND" = false ] && exit 0
+omt_cmm_registered "$REPO_ROOT" || exit 0
 
 # --- Indexed-repo sentinel probe (same omt_md5 hash as lib/project-root.sh) ---
 _HOOK_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 PROJECT_HASH=$(cd "$REPO_ROOT" 2>/dev/null && . "$_HOOK_DIR/lib/project-root.sh" && printf '%s' "$PROJECT_HASH")  # a worktree maps to the main checkout
 [ -z "$PROJECT_HASH" ] && exit 0
 CMM_SENTINEL="$OMT_TMP/cmm-session-ready-${PROJECT_HASH}"
-# If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer)
+# If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer).
+# A `stale` sentinel (reindex-after-commit.sh) does not arm the gate either, as in cmm-grep-nudge.sh.
 [ ! -f "$CMM_SENTINEL" ] && exit 0
+grep -q '^stale$' "$CMM_SENTINEL" 2>/dev/null && exit 0
 
 # --- Block-trigger decision tree ---
 SHOULD_BLOCK=false
+MARKER_OK=false
 
 # (a) type is a CMM-indexed language
 case "$TYPE_FIELD" in
-  go|py|python|js|ts|tsx|jsx|sh|bash|rs|rust|java|rb|ruby|c|cpp|h|hpp|swift|kt|kotlin|php|cs|csharp|scala|lua|zig|ex|exs|elixir|hs|haskell|dart|pl|perl|pm|groovy|erl|erlang|r|clj|clojure|fs|fsharp|jl|julia|el|elisp|cu|cuda|sql|vue|svelte|graphql|proto|protobuf|ml|ocaml|m|mm|objc|nix|elm|lean|f90|f95|f03|f08|fortran|v|sv|verilog|glsl|frag|vert)
+  go|py|python|js|ts|tsx|jsx|sh|bash|rs|rust|java|rb|ruby|c|cpp|h|hpp|swift|kt|kotlin|php|cs|csharp|scala|lua|zig|ex|exs|elixir|hs|haskell|dart|pl|perl|pm|groovy|erl|erlang|r|clj|clojure|fs|fsharp|jl|julia|el|elisp|cu|cuda|sql|vue|svelte|graphql|proto|protobuf|ml|ocaml|m|mm|objc|nix|elm|lean|f90|f95|f03|f08|fortran|v|sv|verilog|glsl|frag|vert|gd|gdscript|mjs|cjs)
     SHOULD_BLOCK=true ;;
 esac
 
 # (b) glob matches a code extension
+GLOB_OPEN=false
 if [ "$SHOULD_BLOCK" = false ] && [ -n "$GLOB_FIELD" ]; then
     case "$GLOB_FIELD" in
-      *.go|*.py|*.js|*.jsx|*.ts|*.tsx|*.sh|*.bash|*.rs|*.java|*.rb|*.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.swift|*.kt|*.php|*.cs|*.scala|*.lua|*.zig|*.ex|*.exs|*.hs|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|*.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|*.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert)
+      *.go|*.py|*.js|*.jsx|*.mjs|*.cjs|*.ts|*.tsx|*.sh|*.bash|*.rs|*.java|*.rb|*.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.swift|*.kt|*.php|*.cs|*.scala|*.lua|*.zig|*.ex|*.exs|*.hs|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|*.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|*.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert|*.gd)
         SHOULD_BLOCK=true ;;
       *\{*\}*)
         # Brace expansion like *.{ts,tsx} — inspect each alternative
@@ -125,15 +115,24 @@ if [ "$SHOULD_BLOCK" = false ] && [ -n "$GLOB_FIELD" ]; then
         IFS=',' read -ra _EXTS <<< "$_BRACE"
         for _E in "${_EXTS[@]}"; do
             case ".${_E}" in
-              .go|.py|.js|.jsx|.ts|.tsx|.sh|.bash|.rs|.java|.rb|.c|.cc|.cpp|.cxx|.h|.hpp|.swift|.kt|.php|.cs|.scala|.lua|.zig|.ex|.exs|.hs|.dart|.pl|.pm|.groovy|.erl|.r|.R|.clj|.fs|.jl|.el|.cu|.sql|.vue|.svelte|.graphql|.proto|.ml|.m|.mm|.nix|.elm|.lean|.f90|.f95|.f03|.f08|.cuh|.v|.sv|.glsl|.frag|.vert)
+              .go|.py|.js|.jsx|.mjs|.cjs|.ts|.tsx|.sh|.bash|.rs|.java|.rb|.c|.cc|.cpp|.cxx|.h|.hpp|.swift|.kt|.php|.cs|.scala|.lua|.zig|.ex|.exs|.hs|.dart|.pl|.pm|.groovy|.erl|.r|.R|.clj|.fs|.jl|.el|.cu|.sql|.vue|.svelte|.graphql|.proto|.ml|.m|.mm|.nix|.elm|.lean|.f90|.f95|.f03|.f08|.cuh|.v|.sv|.glsl|.frag|.vert|.gd)
                 SHOULD_BLOCK=true; break ;;
             esac
         done ;;
     esac
+    # A glob that names no fixed extension (`*`, `test_*`, `*.*`) can still match code: use the path check (c).
+    # One that names a non-code extension (`*.csv`) stays allowed.
+    if [ "$SHOULD_BLOCK" = false ]; then
+        _GT="${GLOB_FIELD##*/}"
+        case "$_GT" in
+          *.*) case "${_GT##*.}" in ""|*[\*\?\[]*) GLOB_OPEN=true ;; esac ;;
+          *) GLOB_OPEN=true ;;
+        esac
+    fi
 fi
 
-# (c) neither type nor glob is set AND path is inside an indexed repo
-if [ "$SHOULD_BLOCK" = false ] && [ -z "$TYPE_FIELD" ] && [ -z "$GLOB_FIELD" ]; then
+# (c) neither type nor a code glob is set AND path is inside an indexed repo
+if [ "$SHOULD_BLOCK" = false ] && [ -z "$TYPE_FIELD" ] && { [ -z "$GLOB_FIELD" ] || [ "$GLOB_OPEN" = true ]; }; then
     # Single-file path with a non-code extension → allow (QA M4). The explicit-glob
     # allowlist above never fires in the path-only branch because GLOB_FIELD is empty,
     # so re-check the file's own extension here before blocking Grep on README.md etc.
@@ -149,9 +148,17 @@ if [ "$SHOULD_BLOCK" = false ] && [ -z "$TYPE_FIELD" ] && [ -z "$GLOB_FIELD" ]; 
     fi
     # We already confirmed CMM is registered + sentinel present above
     SHOULD_BLOCK=true
+    # '# cmm-exempt' in the pattern may pass a folder search, never a source file (same rule as cmm-grep-nudge.sh).
+    MARKER_OK=true
+    case "$PATH_FIELD" in
+      *.py|*.gd|*.js|*.jsx|*.mjs|*.ts|*.tsx|*.go|*.php|*.cs|*.java|*.kt|*.c|*.cc|*.cpp|*.h|*.hpp|*.cu) MARKER_OK=false ;;
+    esac
 fi
 
 [ "$SHOULD_BLOCK" = false ] && exit 0
+if [ "$MARKER_OK" = true ]; then
+    case "$PATTERN_FIELD" in *"# cmm-exempt"*) exit 0 ;; esac
+fi
 
 # --- REPLACE WITH classifier (6-line bash regex; per 46-CONTEXT.md) ---
 # Identifier = matches ^[A-Za-z_][A-Za-z0-9_]{2,63}$ AND contains NO regex metacharacters
@@ -177,7 +184,7 @@ cat >&2 <<EOF
 [grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-Bypass: add '# cmm-exempt' to your pattern, or use an explicit non-code type/glob.
+Bypass: use an explicit non-code type/glob. ('# cmm-exempt' in the pattern passes only a folder search with no code glob/type.)
 EOF
 
 # --- Block counter (best-effort, parity with cmm-grep-nudge.sh) ---

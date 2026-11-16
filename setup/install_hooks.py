@@ -46,11 +46,16 @@ def shipped(claude):
 
 
 def write_atomic(path, data):
+    """Replace `path` in one rename, keeping its mode. A symlink (settings.json kept in a dotfiles repo) is written
+    through to its target, so the link stays."""
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+        if path.exists():
+            shutil.copymode(path, tmp)
         os.replace(tmp, path)
     except BaseException:
         os.unlink(tmp)

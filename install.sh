@@ -22,10 +22,12 @@ BIN=$HOME/.local/bin
 for tool in python3 git; do
   command -v $tool >/dev/null || { echo "onemoretask needs $tool — install it first."; exit 1; }
 done
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 7))' || { echo "onemoretask needs Python 3.7 or newer."; exit 1; }
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || { echo "onemoretask needs Python 3.9 or newer."; exit 1; }
 
-here=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
-if [ -f "$here/server.py" ] && [ -f "$here/launch.py" ] && [ -f "$here/bin/onemoretask" ]; then
+# Piped in (curl ... | sh), $0 is the shell's name, not this file: then never treat the current folder as the clone.
+here=
+[ -f "$0" ] && here=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+if [ -n "$here" ] && [ -f "$here/server.py" ] && [ -f "$here/launch.py" ] && [ -f "$here/bin/onemoretask" ]; then
   dir=$here
 else
   dir=${ONEMORETASK_DIR:-$HOME/.onemoretask}

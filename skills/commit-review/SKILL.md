@@ -42,9 +42,10 @@ commits from other work.
    rest is guidance for writing code, not a review checklist.
 2. Write down EVERY question the diff leaves open (a caller of a changed signature, the
    rest of a changed function, where a value comes from, whether an old name is still
-   used). Answer them all in ONE next turn: parallel Read (offset/limit) / Grep calls, or
-   one Bash with several `grep -n` / `sed -n 'a,bp'`. Use the project's code-navigation
-   tools (search_graph / get_code_snippet / search_code) where it has them.
+   used). Answer them all in ONE next turn of parallel calls: for source files, Read
+   (offset/limit) and the project's code-navigation tools (search_code / get_code_snippet /
+   search_graph) where it has them; Bash `grep -n` / `sed -n 'a,bp'` only for non-source
+   files (docs, config, logs). Some environments block shell reads of source files.
 3. Given task notes and the worker's report, compare both with the diff. A part of the
    ask the diff does not do, or that the report claims and the diff does not show, is a
    finding (major) — the cheapest bug to find and the one a diff-only review misses.

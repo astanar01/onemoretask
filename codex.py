@@ -285,7 +285,57 @@ def _tail_from(path, offset):
         return ""
 
 
+def _signal(proc, kill=False):
+    """SIGTERM (SIGKILL with `kill`) to a turn. On POSIX to its whole process group: _spawn starts it in its own
+    session, so the group also holds the commands codex started, which must not outlive it."""
+    if POSIX:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL if kill else signal.SIGTERM)
+            return
+        except OSError:
+            pass
+    (proc.kill if kill else proc.terminate)()
+
+
+def group_alive(pgid):
+    """True while any process of group `pgid` is left (a zombie counts: reap the leader first)."""
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def stop_group(proc, grace=5):
+    """POSIX: SIGTERM to the process group `proc` leads (started with start_new_session), then SIGKILL to whatever is
+    left of it after `grace` seconds. Waits for the whole group, not only `proc`: a leader that quits at once can leave
+    a command it started that ignores SIGTERM. False when `proc` leads no group (nothing was sent)."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except OSError:
+        return False
+    end = time.time() + grace
+    while time.time() < end:
+        if proc.poll() is not None and not group_alive(proc.pid):
+            return True
+        time.sleep(0.05)
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+    for _ in range(40):  # SIGKILL cannot be ignored; the rest of the group is gone within moments
+        if not group_alive(proc.pid):
+            break
+        time.sleep(0.05)
+    return True
+
+
 def _kill(proc):
+    if POSIX and stop_group(proc):
+        return
     proc.terminate()
     try:
         proc.wait(5)

@@ -35,6 +35,11 @@ out({"type": "thread.started", "thread_id": tid or str(uuid.uuid4())})
 out({"type": "turn.started"})
 if prompt.startswith("SLEEP"):
     time.sleep(3)
+if prompt.startswith("CHILD"):  # a long command the turn started, in codex's process group
+    import subprocess
+    with open(prompt.split()[1], "w") as g:
+        g.write(str(subprocess.Popen(["sleep", "60"]).pid))
+    time.sleep(60)
 if prompt.startswith("FAIL"):
     out({"type": "turn.failed", "error": {"message": "boom"}})
     sys.exit(1)
@@ -129,6 +134,31 @@ tid3 = codex.start(BOARD, "t3", "third", "SLEEP again", "", CWD)
 codex.remove(BOARD, tid3)  # kills a running turn
 assert codex.session(BOARD, tid3) is None and tid3 not in codex.PROCS
 print("ok  remove hides the session (and stops a running one), the log stays")
+
+
+def gone(pid, limit=5):
+    end = time.time() + limit
+    while time.time() < end:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+if codex.POSIX:
+    child_file = os.path.join(TMP, "child.pid")
+    tid6 = codex.start(BOARD, "t6", "child", "CHILD " + child_file, "", CWD)
+    end = time.time() + 10
+    while not (os.path.exists(child_file) and open(child_file).read()) and time.time() < end:
+        time.sleep(0.1)
+    child = int(open(child_file).read())
+    codex.remove(BOARD, tid6)
+    if not gone(child):
+        os.kill(child, 9)
+        raise AssertionError("remove left a command the turn started running")
+    print("ok  remove stops the commands a running turn started too (its process group)")
 
 # --- start that fails before thread.started
 try:

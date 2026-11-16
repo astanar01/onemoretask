@@ -48,9 +48,10 @@ os.makedirs(NODE)
 script(os.path.join(NODE, "node"), "exit 0\n")
 CALLS = os.path.join(TMP, "launchctl.log")
 LOADED = os.path.join(TMP, "launchctl.loaded")
+FAIL_BOOT = os.path.join(TMP, "launchctl.fail")  # present: bootstrap fails, as it can right after a bootout
 script(os.path.join(BIN, "launchctl"), f"""echo "$@" >> '{CALLS}'
 case "$1" in
-  bootstrap) touch '{LOADED}' ;;
+  bootstrap) [ -f '{FAIL_BOOT}' ] && {{ echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }}; touch '{LOADED}' ;;
   bootout) rm -f '{LOADED}' ;;
   print) [ -f '{LOADED}' ] || exit 113 ;;
 esac
@@ -116,6 +117,23 @@ rs.install(proj, [0], "09:07")
 os.remove(LOADED)   # the job vanished behind the board's back
 check(rs.status(proj)["missing"], "launchd: a setting with no loaded job shows as missing")
 rs.remove(proj)
+open(FAIL_BOOT, "w").close()
+try:
+    rs.install(proj, [0], "09:07")
+    check(False, "launchd: a failed bootstrap raises")
+except RuntimeError as e:
+    check("Input/output error" in str(e), "launchd: a failed bootstrap raises")
+check(not os.path.exists(p) and not rs.status(proj)["on"], "launchd: a failed bootstrap leaves no plist to load at login")
+os.remove(FAIL_BOOT)
+rs.install(proj, [0], "09:07")
+open(FAIL_BOOT, "w").close()
+try:
+    rs.install(proj, [1], "09:07")  # changing the days: bootout, then a bootstrap that fails
+except RuntimeError:
+    pass
+check(not os.path.exists(p) and rs.status(proj)["missing"], "launchd: a failed re-install shows missing, no plist left")
+os.remove(FAIL_BOOT)
+rs.remove(proj)
 
 # --- cron: one tagged line, other lines kept
 rs.MAC = False
@@ -130,9 +148,22 @@ check(ours and ours[0].startswith("7 9 * * 1,3,5 PATH='" + NODE), "cron: 09:07 M
 check(rs.status(proj)["on"], "cron: status on")
 rs.remove(proj)
 check(open(CRONTAB).read() == "0 1 * * * /usr/bin/backup\n", "cron: remove leaves only the user's line")
+pct = os.path.join(TMP, "Sales 100% plan")
+os.makedirs(pct)
+rs.install(pct, [0], "09:07")
+ours = [x for x in open(CRONTAB).read().splitlines() if rs.CRON_TAG in x]
+check(len(ours) == 1 and "Sales 100\\% plan" in ours[0] and "%" not in ours[0].replace("\\%", ""),
+      "cron: a % in a path is escaped (cron would cut the command there)")
+check(rs.status(pct)["on"], "cron: a job with an escaped % still shows on")
+rs.remove(pct)
+check(open(CRONTAB).read() == "0 1 * * * /usr/bin/backup\n", "cron: a job with an escaped % is removed")
 
 # --- the run: login PATH taken, claude started in the project with the review prompt, all logged
+FAKE_PATH = os.environ["PATH"]
 code = rs.run(proj)
+# run() puts the login PATH (/usr/bin before the fakes) first in this process: without this, the routes below ran the
+# REAL /usr/bin/crontab, which hangs on macOS and could rewrite the user's crontab.
+os.environ["PATH"] = FAKE_PATH
 args = open(CLAUDE_ARGS).read()
 log = open(rs.log_file(proj)).read()
 check(code == 0, "run: exit 0")
@@ -142,6 +173,10 @@ check(f"PATH={NODE}" in args, "run: claude gets the login PATH (node first)")
 check(f"node={NODE}/node" in log and "exit 0" in log, "run: the log names node and the exit code")
 
 # --- the board's routes
+import shutil  # noqa: E402
+
+if shutil.which("crontab") != os.path.join(BIN, "crontab") or shutil.which("launchctl") != os.path.join(BIN, "launchctl"):
+    sys.exit("test_review_schedule: the fake crontab / launchctl are not first on PATH; stopped before touching real ones")
 import server  # noqa: E402
 from http.server import ThreadingHTTPServer  # noqa: E402
 

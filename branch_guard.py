@@ -28,6 +28,8 @@ BRANCH_FLAGS = {"-b", "-B", "--orphan", "-d", "--detach"}
 # Options of `git switch` that make a branch or leave the named one.
 SWITCH_FLAGS = {"-c", "-C", "--create", "--force-create", "--orphan", "-d", "--detach"}
 SHELLS = {"bash", "sh", "zsh", "dash"}
+# Words that may stand before a command and still run it.
+PREFIXES = {"time", "env", "command", "exec", "nohup", "then", "do", "else", "if", "elif", "while", "until", "{", "!"}
 OBSERVER_DIRS = ("skill-observations", "skill-updates", ".claude/skills")  # same as server.OBSERVER_DIRS
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # git subcommands that only read. Some read only with certain arguments: see git_writes.
@@ -72,8 +74,9 @@ def main_checkout(where):
 
 def default_branch(where):
     """Same rule as server.default_branch: origin/HEAD's branch, else main, else master; local branches only."""
-    for b in ((git(where, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD") or "").removeprefix("origin/"),
-              "main", "master"):
+    head = git(where, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD") or ""
+    # A slice, not str.removeprefix: that is Python 3.9+, and a crash here lets every switch through.
+    for b in (head[len("origin/"):] if head.startswith("origin/") else head, "main", "master"):
         if b and git(where, "rev-parse", "--verify", "--quiet", f"refs/heads/{b}") is not None:
             return b
     return None
@@ -109,11 +112,11 @@ def switches(where, sub, args):
     name = names[0]
     if name == "-":
         return True
+    if git(where, "rev-parse", "--verify", "--quiet", name + "^{commit}") is not None:
+        return name != default_branch(where)  # git takes a branch or commit over a file or folder of that name
     if os.path.exists(os.path.join(where, name)):
         return False
-    if git(where, "rev-parse", "--verify", "--quiet", name + "^{commit}") is None:
-        return remote_branch(where, name)
-    return name != default_branch(where)
+    return remote_branch(where, name)
 
 
 def expand(path, where):
@@ -161,7 +164,8 @@ def git_segments(command, cwd):
     segs = list(segments(command))
     where = cwd
     for seg in segs:
-        while seg and "=" in seg[0] and not seg[0].startswith("="):  # FOO=bar git ...
+        # FOO=bar git ..., time git ..., then git ..., { git ...; }
+        while seg and (seg[0] in PREFIXES or "=" in seg[0] and not seg[0].startswith("=")):
             seg = seg[1:]
         if not seg:
             continue

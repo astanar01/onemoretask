@@ -35,6 +35,7 @@ for name in ("a.txt", "src/b.txt"):
 git("add", ".")
 git("commit", "-q", "-m", "Initial commit")
 git("branch", "feature")
+git("branch", "src")  # a branch with the name of a folder: git takes the branch
 git("worktree", "add", "-q", "-b", "w-branch", wt)
 git("update-ref", "refs/remotes/origin/remote-only", "HEAD")  # a branch only the remote has
 
@@ -86,6 +87,16 @@ denied = [
     "cd \"$PWD\" && git checkout -b y",
     "cd \"${PWD}/src\" && git checkout feature",
     "git -C \"$PWD\" checkout feature",
+    "git checkout src",
+    "time git checkout feature",
+    "env git switch feature",
+    "env FOO=1 git switch feature",
+    "command git checkout feature",
+    "exec git switch feature",
+    "! git switch feature",
+    "if true; then git switch feature; fi",
+    "for b in x; do git switch feature; done",
+    "{ git switch feature; }",
 ]
 for cmd in denied:
     check(f"denies in the main checkout: {cmd!r}", guard(cmd) == "deny")
@@ -119,6 +130,9 @@ check("allows a switch outside any repo", guard("git switch feature", cwd=TMP) =
 check("ignores other tools", guard("git switch feature", tool="Read") == "allow")
 for raw in ("", "null", "[]", "not json"):
     check(f"exits quietly on stdin {raw!r}", guard("", raw=raw) == "allow")
+with open(os.path.join(ROOT, "branch_guard.py"), encoding="utf-8") as f:
+    check("no str.removeprefix (Python 3.9+): on 3.8 it crashed and let every switch through",
+          "removeprefix(" not in f.read())
 check("the main checkout is still on main", git("branch", "--show-current") == "main")
 
 git("checkout", "-q", "feature")  # stuck off the default branch, like FableDraft was
