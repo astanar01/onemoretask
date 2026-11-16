@@ -62,6 +62,10 @@ Ask of each changed piece: what input, state, order of events or environment bre
   second click, unicode, huge input, concurrent writers.
 - Regressions: callers that relied on the old behavior; renamed or removed things still
   referenced elsewhere (grep the old name).
+- New rules on shared state: a commit that makes a field keep a new rule (a second array
+  read beside the first, a step every caller must take) but updates only some writers.
+  Search the whole repo for every writer of the field, subclasses included. A writer the
+  commit did not touch is a finding, and so is one whose tests never run the changed path.
 - Error paths: exceptions swallowed, errors shown to nobody, partial writes, resources not freed.
 - Stale state: caches, docs, comments or config that now say something false.
 - Untested paths: behavior the change adds that nothing exercises.
@@ -71,6 +75,14 @@ Ask of each changed piece: what input, state, order of events or environment bre
   diff has one of those shapes.
 
 No style, naming or "could be cleaner" opinions. Only things that can go wrong.
+
+**Who runs the changed path, and how often?** Answer this before rating any finding:
+every user action, every new asset or input, or once (a migration, a one-time fix-up).
+Read the task notes or docs for the tool's real use. Severity is failure × how often the
+path runs: a correct repro on a path nobody runs again is minor at most, and the finding
+says so ("one-shot migration, already run"). Lead with findings on the main path the task
+notes describe. (A review rated "re-running the one-time resize tool shrinks newer copies"
+major; the owner never runs it again, and had to ask twice before it was dropped.)
 
 **Pre-existing bugs.** A bug the diff did not introduce (`git blame` or
 `git show <sha>^:<file>` settles it) is not a Finding: one line after the findings
@@ -136,7 +148,8 @@ or state. Fewer real findings beat many guesses. If nothing survives, say so pla
 ## 5. Report
 
 Most severe first. Severity: critical (data loss, security, crash on a main path) /
-major (wrong result a user will hit) / minor (rare edge case, misleading text).
+major (wrong result a user will hit) / minor (rare edge case, misleading text, or any
+bug on a path that runs once and is done: see "Who runs the changed path" in step 3).
 
 Each finding in exactly this shape — the task board styles it and only finds lines that
 start this way:
@@ -171,6 +184,7 @@ full report there — chat output alone is not seen.
 - [ ] Every arithmetic/geometry case names its `rests on:` premise; untested premise → confidence low.
 - [ ] Every candidate finding had a test run on it, or a stated reason it could not.
 - [ ] No style-only or taste findings. Pre-existing bugs are one line, not a Finding.
+- [ ] Each finding's severity counts how often its path really runs (main path vs one-shot).
 - [ ] Task notes and the worker's report were compared with the diff (when given).
 - [ ] An earlier review on the card: each old finding has its one-line status; only new ones are numbered.
 - [ ] Blocks separated by blank lines; no run-on paragraph anywhere in the report.
