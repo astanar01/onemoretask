@@ -36,7 +36,7 @@ if [ "$PROMPT_LEN" -lt 300 ] && ! echo "$PROMPT" | grep -qiE "$CODE_SIGNALS"; th
 fi
 
 # --- Keyword Check: CMM tool function names ---
-KEYWORDS="search_graph|trace_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_batch|ctx_fetch_and_index|ctx_batch_execute"
+KEYWORDS="search_graph|search_code|get_file_outline|trace_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_batch|ctx_fetch_and_index|ctx_batch_execute"
 if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
   exit 0
 fi
@@ -77,6 +77,12 @@ Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
 
 7. index_repository — Index or refresh the code graph
    Example: index_repository()
+
+8. search_code — Text search in code (string literals, error messages, TODOs)
+   Example: search_code(pattern="not indexed")
+
+9. get_file_outline — List the functions and classes in one file
+   Example: get_file_outline(file_path="src/app.py")
 
 Workflow: search_graph → trace_path → get_code_snippet
 Prefer these over Read/Grep for understanding code structure and relationships.

@@ -25,7 +25,7 @@ A PreToolUse hook (`cmm-grep-nudge.sh`) blocks Bash commands that pair a navigat
 
 **Marker placement: the marker must be the LAST thing on the command line.** Everything after `#` is a shell comment, so `cmd1 # cmm-exempt (reason); cmd2; cmd3` silently never runs cmd2/cmd3 — and the output looks complete, so the miss is invisible (this ate a staged-index check in a real session). When chaining commands, put the marker only at the very end of the full chain, or split into separate invocations.
 
-**One command cannot carry two bypass markers.** Each gate matches its own marker as an exact suffix, so `… # ctx-exempt cmm-exempt` satisfies neither. When a command would trip both the engine-pipe (ctx) gate and the CMM gate — e.g. it runs the engine AND greps a `.import` file — split it: the engine run redirects its output to a file under the job's tmp dir (no pipe, so no ctx marker needed), and the grep/read step goes in its own call ending in `# cmm-exempt`.
+**Two bypass markers on one command: `# cmm-exempt` goes last.** The engine-pipe (ctx) gate accepts `# ctx-exempt` anywhere in the command; the CMM gate accepts `# cmm-exempt` only as the trailing comment. So `… | grep ERROR; grep -rn foo src/ # ctx-exempt # cmm-exempt` passes both gates, while `… # cmm-exempt # ctx-exempt` is still blocked by the CMM gate. The marker still never covers a read of a CMM-indexed source file.
 
 Outside these three classes, treat a gate firing as a routing signal, not an obstacle to disable:
 

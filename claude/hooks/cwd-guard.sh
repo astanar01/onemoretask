@@ -32,12 +32,30 @@
 . "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
 [ -z "$PROJECT_ROOT" ] && exit 0   # fail-open: cannot resolve root
 
+# In a linked git worktree the root to stay in is the worktree itself. project-root.sh folds a worktree into
+# the main checkout (for the sentinel hash); a `cd` there would run later edits and commits on the main branch.
+CWD_ROOT="$PROJECT_ROOT"
+_CG_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+[ "$_CG_TOP" = "$PROJECT_ROOT" ] && _CG_TOP=   # the usual case: not a worktree, nothing more to ask git
+while [ -n "$_CG_TOP" ]; do
+  _CG_UP=$(git -C "$_CG_TOP" rev-parse --show-superproject-working-tree 2>/dev/null)
+  [ -z "$_CG_UP" ] && break
+  _CG_TOP=$_CG_UP
+done
+if [ -n "$_CG_TOP" ]; then
+  _CG_GD=$(git -C "$_CG_TOP" rev-parse --git-dir 2>/dev/null)
+  _CG_GC=$(git -C "$_CG_TOP" rev-parse --git-common-dir 2>/dev/null)
+  case "$_CG_GD" in ""|/*|[A-Za-z]:*) ;; *) _CG_GD="$_CG_TOP/$_CG_GD" ;; esac
+  case "$_CG_GC" in ""|/*|[A-Za-z]:*) ;; *) _CG_GC="$_CG_TOP/$_CG_GC" ;; esac
+  [ -n "$_CG_GD" ] && [ -n "$_CG_GC" ] && [ "$_CG_GD" != "$_CG_GC" ] && CWD_ROOT="$_CG_TOP"
+fi
+
 INPUT=$(cat)
 
 # Fail open if Python is unavailable — never wedge every Bash call.
 omt_has_py || exit 0
 
-DECISION=$(CWD_GUARD_ROOT="$PROJECT_ROOT" omt_py - "$INPUT" <<'PY' 2>/dev/null
+DECISION=$(CWD_GUARD_ROOT="$CWD_ROOT" omt_py - "$INPUT" <<'PY' 2>/dev/null
 import sys, json, os, re, shlex
 
 root = os.environ.get("CWD_GUARD_ROOT", "")
@@ -206,10 +224,10 @@ The Bash tool's working directory persists between calls, and a drifted cwd make
 the CMM / Context Mode sentinels stop matching (they are keyed on the project
 root), so the session gate wrongly reports "not indexed". Keep commands
 cwd-independent instead:
-  - absolute paths:        cat ${PROJECT_ROOT}/some/file
+  - absolute paths:        cat ${CWD_ROOT}/some/file
   - per-repo git:          git -C apps/rest-api status
   - local cd in subshell:  ( cd apps/rest-api && make test )
-  - re-anchor to root:     cd "${PROJECT_ROOT}"
+  - re-anchor to root:     cd "${CWD_ROOT}"
 
 Operator bypass (rare, intentional drift): append '# cwd-exempt' to the command.
 EOF
