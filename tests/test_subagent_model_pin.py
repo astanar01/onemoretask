@@ -24,7 +24,9 @@ assert server.pinned_worker({"delegate": False, "subagentModel": "opus"}, "fable
 assert server.pinned_worker({"delegate": True}, "fable") == ""
 assert server.pinned_worker({"delegate": True, "subagentModel": "opus"}, "gpt-5.5") == ""  # a Codex session
 
-# inbox_settings: env only with a worker
+# inbox_settings: env only with a worker (it reads the card: answer-only cards get no inbox hook)
+card = {"id": "x", "title": "card", "delegate": True, "subagentModel": "opus", "agent": {"model": "fable", "effort": ""}}
+server.load_tasks = lambda p: {"tasks": [card]}
 s = json.loads(server.inbox_settings(p, "x", "opus"))
 assert s["env"] == {"CLAUDE_CODE_SUBAGENT_MODEL": "opus", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"}, s
 assert "env" not in json.loads(server.inbox_settings(p, "x")), "no pin without a worker"
@@ -32,8 +34,6 @@ assert "env" not in json.loads(server.inbox_settings(p, "x")), "no pin without a
 # reopen: a closed delegating card starts its new session with the pin
 calls = []
 server.start_session = lambda *a, **k: calls.append(a) or "aid1"
-card = {"id": "x", "title": "card", "delegate": True, "subagentModel": "opus", "agent": {"model": "fable", "effort": ""}}
-server.load_tasks = lambda p: {"tasks": [card]}
 server.reports.read_recap = lambda board, task_id: "recap"
 server.reports.append = lambda *a, **k: None
 server.renew_worktree = lambda p, t: None

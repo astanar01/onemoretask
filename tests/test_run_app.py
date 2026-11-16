@@ -112,13 +112,14 @@ server.worktree_action(p, "t1", "run")
 check("run again: the old one stopped", first.wait(timeout=10) is not None, True)
 check("run again: running again", wait_for(lambda: len(board_msgs()) == 2), True)
 
-# Delete worktree stops it (the delete itself then refuses: the branch holds unmerged work).
+# A refused Delete worktree (the branch holds unmerged work) leaves the app running: the user may cancel.
 proc = server.RUNS[(p.id, "t1")]
 try:
     server.delete_worktree(p, "t1")
 except server.UnsavedWorkError:
     pass
-check("delete worktree: app stopped", (proc.wait(timeout=10) is not None, (p.id, "t1") in server.RUNS), (True, False))
+check("refused delete: app still running", (proc.poll() is None, (p.id, "t1") in server.RUNS), (True, True))
+server.stop_run(p, "t1")
 
 # A saved way that fails: stopped, and Claude gets the job with the end of its output.
 recipe("echo boom-from-the-app; exit 3")
@@ -144,6 +145,14 @@ server.stop_run(p, "t1")
 # The card stays finished with Claude's report through all of it.
 server.WATCH.poll()
 check("card still finished", server.WATCH.snapshot(p.id)["t1"]["phase"], "finished")
+
+# A confirmed Delete worktree stops the app before it removes the folder.
+k = len(board_msgs())
+server.worktree_action(p, "t1", "run")
+wait_for(lambda: len(board_msgs()) > k)
+proc = server.RUNS[(p.id, "t1")]
+server.delete_worktree(p, "t1", force=True)
+check("confirmed delete: app stopped", (proc.wait(timeout=10) is not None, (p.id, "t1") in server.RUNS), (True, False))
 
 print("FAILED" if fails else "all passed")
 sys.exit(1 if fails else 0)

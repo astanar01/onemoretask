@@ -142,6 +142,7 @@ takes a model (GET /api/codex-models lists the OpenAI ones), so a Codex reviewer
 """
 import argparse
 import base64
+import functools
 import hashlib
 import importlib.util
 import json
@@ -472,7 +473,15 @@ def open_project(path):
 
 def forget_project(pid):
     with REG_LOCK:
-        _write_registry([e for e in _read_registry() if Project(e["path"]).id != pid])
+        entries = _read_registry()
+        _write_registry([e for e in entries if Project(e["path"]).id != pid])
+    # Its scheduled skill review goes too: with the project off the board, nothing could turn it off any more.
+    for e in entries:
+        if Project(e["path"]).id == pid and os.path.realpath(e["path"]) in review_schedule._load():
+            try:
+                review_schedule.remove(e["path"])
+            except (OSError, RuntimeError, subprocess.SubprocessError) as err:
+                print("forget project: skill review not removed:", err)
 
 
 def pick_folder():
@@ -1095,7 +1104,7 @@ def settings_model(path):
     if os.environ.get("ANTHROPIC_MODEL"):
         return os.environ["ANTHROPIC_MODEL"]
     for f in (os.path.join(path, ".claude", "settings.local.json"), os.path.join(path, ".claude", "settings.json"),
-              os.path.expanduser("~/.claude/settings.json")):
+              os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "settings.json")):
         try:
             with open(f, encoding="utf-8") as fh:
                 m = json.load(fh).get("model")
@@ -1200,7 +1209,9 @@ def codex_models():
             "codex": codex.installed()}
 
 
-CLAUDE_JSON = os.path.expanduser("~/.claude.json")
+# With CLAUDE_CONFIG_DIR set, the CLI keeps .claude.json in that folder (its configPath), not in the home folder.
+def claude_json():
+    return os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~"), ".claude.json")
 
 
 class UntrustedError(Exception):
@@ -1210,20 +1221,25 @@ class UntrustedError(Exception):
 def trust_folder(p):
     """Record what accepting Claude's trust prompt records: projects[<path>].hasTrustDialogAccepted.
     Running sessions rewrite this file too, so read-modify-replace in one short step, then read back."""
-    with open(CLAUDE_JSON, encoding="utf-8") as f:
-        cfg = json.load(f)
+    path = claude_json()
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        mode = os.stat(path).st_mode & 0o777
+    except FileNotFoundError:
+        cfg, mode = {}, 0o600
     keys = {p.path, shell_path(p.path)}  # unverified which spelling the Windows CLI keys projects by
     for k in keys:
         cfg.setdefault("projects", {}).setdefault(k, {})["hasTrustDialogAccepted"] = True
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CLAUDE_JSON), suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    os.chmod(tmp, os.stat(CLAUDE_JSON).st_mode & 0o777)
-    replace_file(tmp, CLAUDE_JSON)
-    with open(CLAUDE_JSON, encoding="utf-8") as f:
+    os.chmod(tmp, mode)
+    replace_file(tmp, path)
+    with open(path, encoding="utf-8") as f:
         saved = json.load(f).get("projects", {})
         if not all(saved.get(k, {}).get("hasTrustDialogAccepted") for k in keys):
-            raise RuntimeError("trust was not saved (a running Claude session rewrote ~/.claude.json) — retry")
+            raise RuntimeError(f"trust was not saved (a running Claude session rewrote {path}) — retry")
 
 
 def no_worktree_tag(t):
@@ -1232,6 +1248,30 @@ def no_worktree_tag(t):
 
 LAUNCHING = set()  # (project id, task id) whose session is starting: a second send would start a twin
 LAUNCHING_LOCK = threading.Lock()
+_CARD_LOCKS = {}
+
+
+def card_lock(p, task_id):
+    """Held while a card's session is resumed or a reviewer started, up to WATCH.expect: the card only reads
+    "working" from then on, so a second message in that window (another tab, a note hand-over) would resume the
+    same session again, and --resume on a running session starts a copy."""
+    with LAUNCHING_LOCK:
+        return _CARD_LOCKS.setdefault((p.id, task_id), threading.RLock())
+
+
+def one_per_card(f):
+    """Run f(p, task_id, ...) under the card's lock (card_lock)."""
+    @functools.wraps(f)
+    def locked(p, task_id, *args, **kw):
+        with card_lock(p, task_id):
+            return f(p, task_id, *args, **kw)
+    return locked
+
+
+def resumed_since(p, task_id, info):
+    """True when the card's session was started or resumed after the watcher decided to resume it (info["seen"]:
+    the card's WATCH.expect count then): a card message got there first, while this waited for card_lock."""
+    return "seen" in info and WATCH.expected.get((p.id, task_id), 0) != info["seen"]
 
 
 def launch(p, task_id, model="", effort=""):
@@ -1476,7 +1516,10 @@ def init_repo(p, leave_out=()):
         _init_busy.add(key)
     try:
         info = git_info(p)
-        if not info["repo"]:
+        top = info["repo"] and git_try(p.path, "rev-parse", "--show-toplevel")
+        # An empty repo in a folder ABOVE the project (a home folder git-inited by mistake): committing there would
+        # take that whole folder (keys, other projects). Give the project its own repo instead.
+        if not info["repo"] or not info["commits"] and top and os.path.realpath(top) != key:
             git_run(p.path, "init", "-q")
         if not info["commits"]:
             exclude_local(p)
@@ -1709,6 +1752,7 @@ def own_commits(p, log, since, ref="HEAD"):
     return [c for c in commits if any(w.startswith(c[0]) or c[0].startswith(w) for w in words)]
 
 
+@one_per_card
 def review(p, task_id, model=None):
     """Start a fresh session that code-reviews the task's commits and posts the findings on its card. The card
     then follows the reviewer, so a reply ("fix 1 and 3") goes to the session that holds the findings.
@@ -1732,10 +1776,17 @@ def review(p, task_id, model=None):
         raise PermissionError("This task made no commits — nothing to review")
     branch = ref[len("refs/heads/"):] if ref != "HEAD" else None
     wt = branch and live_worktree(t)
-    # The task's own report, not an earlier reviewer's findings: stop at the first review.
-    first_review = next((i for i, e in enumerate(log) if e.get("status") == "review"), len(log))
-    report = next((e["message"] for e in reversed(log[:first_review]) if e.get("from") == "claude"
-                   and e.get("status") in ("done", "answer")), "(no final report)")
+    # The task's own reports, not an earlier reviewer's findings (what it posts after a review, until the next card
+    # reply). Fix reports after a reply or a hand-back count: they name the fix commits this review must keep.
+    said, findings = [], False
+    for e in log:
+        if e.get("status") == "review":
+            findings = True
+        elif e.get("from") == "you" and e.get("status") == "reply":
+            findings = False
+        elif e.get("from") == "claude" and e.get("status") in ("done", "answer") and not findings:
+            said.append(e["message"])
+    report = "\n\n".join(said[-3:]) or "(no final report)"
     board_rel = os.path.relpath(p.board, p.path)
     rep = report_cmd(p, task_id)
     skill = shell_path(os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md'))
@@ -1747,14 +1798,15 @@ def review(p, task_id, model=None):
     prompt = "\n".join([
         f"Code review for a task on the project task board ({board_rel}).", "",
         f"Task: {t['title']}", f"Task id: {task_id}", *(["", "Task notes:", t["notes"]] if t.get("notes") else []),
-        "", f"Another {who(t['agent'].get('model'))} session did this task. It was sent at {since}. Its last report on the card:", report, "",
+        "", f"Another {who(t['agent'].get('model'))} session did this task. It was sent at {since}. "
+        + ("Its last report on the card:" if len(said) < 2 else "Its last reports on the card, oldest first:"), report, "",
         (f"Commits on the task's branch `{branch}` since then, newest first:" if branch else
          "Commits on HEAD since then, newest first. Other sessions commit to the same branch, so some may belong "
          "to other tasks:"), *[f"- {sha} {subj}" for sha, subj in commits], "",
-        *([f"The work is on branch `{branch}` in the git worktree {shell_path(wt['path'])}: review it there (cd into "
-           "it first). Later fixes go there too, committed on that branch.", ""] if wt else []),
+        *([f"The work is on branch `{branch}` in the git worktree {shell_path(wt['path'])}: review it there, with "
+           "`git -C <that path>` and absolute paths (a bare `cd` is often refused). Later fixes go there too, committed on that branch.", ""] if wt else []),
         "Steps:",
-        step1 + " It keeps only the commits that match the report above. Keep to its turn budget. Do not use "
+        step1 + " It keeps only the commits that match the reports above. Keep to its turn budget. Do not use "
         "/code-review, subagents or workflows. Review only in this turn: no file changes, no commits.",
         f'2. Post its report with `{rep} done "..."`, naming the commits you reviewed. If nothing survived, say so. '
         "End by asking which findings to fix.",
@@ -1787,6 +1839,7 @@ def review_worker(log, t):
     return next((e["session"] for e in reversed(log[:i]) if e.get("session")), t["agent"]["id"])
 
 
+@one_per_card
 def handback(p, task_id, text=""):
     """Send the last code review's findings to the session that did the work, e.g. a Codex review back to the Claude
     session. The card follows that session again. `text` is the user's word on which findings to fix."""
@@ -1971,11 +2024,13 @@ TASK_GIT_MAX_FILES = 200
 
 def _changed_files(cwd):
     """(uncommitted changes in the work tree at `cwd`, truncated). Paths are relative to that work tree's top."""
-    raw = _git_raw(cwd, "status", "--porcelain=v1", "-z", "--no-renames")
+    # Every untracked file, not its folder: a folder row has no diff to show.
+    raw = _git_raw(cwd, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all")
     entries = [e for e in raw.split("\0") if e]
     truncated = len(entries) > TASK_GIT_MAX_FILES
     counts = {}
-    for line in _git_raw(cwd, "diff", "--numstat", "--no-renames", "HEAD", "--").splitlines():
+    # -z: raw names, as status gives them (without it, git quotes names with accents or quotes).
+    for line in _git_raw(cwd, "diff", "--numstat", "-z", "--no-renames", "HEAD", "--").split("\0"):
         parts = line.split("\t", 2)
         if len(parts) == 3:
             counts[parts[2]] = (None if parts[0] == "-" else int(parts[0]), None if parts[1] == "-" else int(parts[1]))
@@ -2262,8 +2317,15 @@ def popup_questions(session):
 
 def list_sessions(cwd):
     r = run_claude(["agents", "--json", "--all"], cwd=cwd, timeout=30)
+    # A failed call is not "no sessions": read as empty, every working card would show "Session was removed".
+    if r.returncode != 0:
+        raise RuntimeError(f"claude agents exited {r.returncode}: {(r.stderr or r.stdout or '').strip()[:200]}")
+    try:
+        listed = json.loads(r.stdout or "[]")
+    except ValueError:
+        raise RuntimeError("claude agents printed no JSON") from None
     # Interactive terminal sessions are listed too, without an id: the board only drives --bg ones.
-    return [s for s in json.loads(r.stdout or "[]") if isinstance(s, dict) and s.get("id")]
+    return [s for s in listed if isinstance(s, dict) and s.get("id")] if isinstance(listed, list) else []
 
 
 def all_sessions(p):
@@ -2821,14 +2883,16 @@ def _skill_calls(path):
                 e = json.loads(line)
             except ValueError:
                 continue
-            content = isinstance(e, dict) and (e.get("message") or {}).get("content")
+            msg = e.get("message") if isinstance(e, dict) else None
+            content = msg.get("content") if isinstance(msg, dict) else None
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
-                if b.get("type") == "tool_use" and b.get("name") == "Skill" and (b.get("input") or {}).get("skill"):
-                    memo[1][b.get("id")] = (str(b["input"]["skill"]), e.get("timestamp") or "")
+                inp = b.get("input")
+                if b.get("type") == "tool_use" and b.get("name") == "Skill" and isinstance(inp, dict) and inp.get("skill"):
+                    memo[1][str(b.get("id"))] = (str(inp["skill"]), str(e.get("timestamp") or ""))
                 elif b.get("type") == "tool_result" and b.get("is_error"):
-                    memo[2].add(b.get("tool_use_id"))
+                    memo[2].add(str(b.get("tool_use_id")))
         memo[0] += end
     return memo[1], memo[2]
 
@@ -3129,176 +3193,187 @@ class Watcher:
         # card by card instead of all at once when the pass ends.
         work.sort(key=lambda pt: pt[1].get("column") in done_cols)
         for p, t in work:
-            log = reports.read(p.board, t["id"])
-            aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
-            s = sessions.get(aid)
-            delivered = reports.delivered(p.board, t["id"])
-            phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
-            said = spoken(log)
-            asked, parts = ("", []) if is_codex(s) else popup_questions(s)
-            if parts and not (said and said[-1].get("status") == "question" and said[-1].get("parts") == parts):
-                # It asked in an AskUserQuestion pop-up (a session started before the board turned that tool off):
-                # only an attach shows it. Put it on the card; a reply resumes the session with the answer.
-                reports.append(p.board, t["id"], "question", asked, "claude", parts=parts)
+            try:
                 log = reports.read(p.board, t["id"])
-                said = spoken(log)
+                aid = next((e["session"] for e in reversed(log) if e.get("session")), t["agent"]["id"])
+                s = sessions.get(aid)
+                delivered = reports.delivered(p.board, t["id"])
                 phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
-            if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
-                # It stopped after a card reply without calling report.py: its answer is only in the chat, which
-                # the user never sees. Copy that answer onto the card.
-                try:
-                    text = (codex.last_answer(s["log"], said[-1]["message"]) if is_codex(s) else
-                            last_answer(s.get("sessionId"), said[-1]["message"]))
-                except OSError:
-                    text = ""
-                if text:
-                    reports.append(p.board, t["id"], "answer", text, "claude")
+                said = spoken(log)
+                asked, parts = ("", []) if is_codex(s) else popup_questions(s)
+                if parts and not (said and said[-1].get("status") == "question" and said[-1].get("parts") == parts):
+                    # It asked in an AskUserQuestion pop-up (a session started before the board turned that tool off):
+                    # only an attach shows it. Put it on the card; a reply resumes the session with the answer.
+                    reports.append(p.board, t["id"], "question", asked, "claude", parts=parts)
                     log = reports.read(p.board, t["id"])
+                    said = spoken(log)
                     phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
-            busy = bool(s) and s.get("status") == "busy"
-            last_claude = next((e["at"] for e in reversed(log) if e.get("from") == "claude"), "")
-            if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
-                                                    for e in reports.pending_notes(log, "")):
-                phase, reason = "working", ""  # the Stop hook handed it a note after its done report
-            # While the recap is written, notes wait for the new session (_close): a resume would be removed.
-            pending = (s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
-                       and (p.id, t["id"]) not in self.closing)
-            # A Codex session has no attach: its notes wait until the process exits, then deliver_notes resumes it.
-            if (pending and busy and phase == "working" and attach.available() and not is_codex(s) and s.get("state") != "blocked"
-                    and time.time() - self.typed_fail.get((p.id, t["id"]), 0) > TYPE_RETRY):
-                # Type it into the live session like a message at its terminal: read at its next step, or at once
-                # if it sits idle waiting on a background shell. The inbox hook stays as the backup.
-                self.delivering.add((p.id, t["id"]))
-                threading.Thread(target=self._type, args=(p, t["id"], aid), daemon=True).start()
-                pending = False
-            # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
-            try:
-                waiting = (pending and busy and phase == "working" and not attach.available() and not is_codex(s) and time.time() - (
-                    turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
-            except OSError:
-                waiting = False
-            if pending and (phase in ("finished", "needs_you") and not busy or waiting):
-                self.delivering.add((p.id, t["id"]))
-                threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
-                                                             waiting), daemon=True).start()
-            key, closed = (p.id, t["id"]), t.get("column") in done_cols
-            # The CLI ends the turn when auto mode's safety check keeps failing, then waits for a message: resume it.
-            try:
-                stalled = (phase == "needs_you" and not busy and not closed and not reason.startswith("Claude asks permission")
-                           and not (said and said[-1].get("status") == "question") and not is_codex(s)
-                           and auto_mode_stall(s.get("sessionId")))
-            except OSError:
-                stalled = None
-            unstalling = bool(stalled) and stall_retries(said) < STALL_TRIES and self.unstall_fail.get(key) != stalled
-            if stalled:
-                reason = ("Claude Code's safety check kept failing, so Claude stopped. The board tries again in a minute."
-                          if unstalling else "Claude Code's safety check kept failing, so Claude stopped. Reply to try again.")
-            if (unstalling and not pending and key not in self.delivering and key not in self.closing
-                    and time.time() - stalled > STALL_RETRY):
-                self.delivering.add(key)
-                threading.Thread(target=self._unstall, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId")},
-                                                             stalled), daemon=True).start()
-            # Prompt cache and skills are read from Claude transcripts: none for a Codex session. Its workers come
-            # from its event log and their rollouts.
-            try:
-                cache = None if is_codex(s) else cache_info(s and s.get("sessionId"))
-            except OSError:
-                cache = None
-            try:
-                fit = fresh_start(t, log, s.get("sessionId"), cache) if cache and cache["expires"] < time.time() else None
-            except OSError:
-                fit = None
-            try:
-                ctx =codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
-            except OSError:
-                ctx = None
-            try:
-                mcp = None if is_codex(s) else mcp_state(s and s.get("sessionId"))
-            except OSError:
-                mcp = None
-            try:
-                subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
-            except OSError:
-                subs = []
-            if not is_codex(s):  # a Claude session's Codex workers (codex_worker.py), started since its launch
-                try:
-                    since = _ts(t["agent"]["started"]) if t["agent"].get("started") else 0
-                    subs = sorted(subs + codex.worker_rows(p.board, t["id"], since), key=lambda r: r["started"])
-                except (OSError, ValueError):
-                    pass
-            ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
-            try:
-                used = skills(sessions[i].get("sessionId") for i in ids if i in sessions and not is_codex(sessions[i]))
-            except OSError:
-                used = []
-            try:
-                paths = task_transcripts(p, t["id"], [sessions[i].get("sessionId") for i in ids if i in sessions])
-            except OSError:
-                paths = None
-            try:
-                spent = tokens(paths, (p.board, t["id"])) if paths is not None else None
-            except OSError:
-                spent = None
-            # A finished card keeps the rows it has: reading every old chat after a board restart cost 6 s (4 GB).
-            had = old[key].get("mcp_uses") or [] if key in old else reports.read_mcp(p.board, t["id"])
-            try:
-                fresh_uses = [] if closed and not s else mcp_uses(paths or [])
-            except OSError:
-                fresh_uses = []
-            uses = keep_mcp_uses(p.board, t["id"], had, fresh_uses)
-            # A sha lands on the card only after its commit, so the answer can change only when the log grows.
-            done = self.committed.get((p.id, t["id"]))
-            if phase != "working" and (not done or done[0] != len(log)):
-                found = own_commits(p, log, launched_at(log, t), commit_ref(p, t))
-                done = (len(log), bool(found)) if found is not None else None
-                if done:
-                    self.committed[(p.id, t["id"])] = done
-            recapped = any(e.get("status") == "recap" for e in log)
-            marker = reports.close_path(p.board, t["id"])
-            # A marker newer than this pass's read of the board is a move to done this pass has not seen: keep it.
-            if not closed:
-                try:
-                    if os.path.getmtime(marker) < read_at[p.id]:
-                        os.remove(marker)
-                except FileNotFoundError:
-                    pass
-            with self.lock:
-                # Recap saved and no session left (a new task closed this card first): nothing to close, so a move
-                # to done must not read as "writing the recap" for good.
-                if closed and not s and said and said[-1].get("status") == "recap" and key not in self.closing:
+                if phase == "needs_you" and s and s.get("state") != "blocked" and said and said[-1].get("from") == "you":
+                    # It stopped after a card reply without calling report.py: its answer is only in the chat, which
+                    # the user never sees. Copy that answer onto the card.
                     try:
-                        os.remove(marker)
+                        text = (codex.last_answer(s["log"], said[-1]["message"]) if is_codex(s) else
+                                last_answer(s.get("sessionId"), said[-1]["message"]))
+                    except OSError:
+                        text = ""
+                    if text:
+                        reports.append(p.board, t["id"], "answer", text, "claude")
+                        log = reports.read(p.board, t["id"])
+                        phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
+                busy = bool(s) and s.get("status") == "busy"
+                last_claude = next((e["at"] for e in reversed(log) if e.get("from") == "claude"), "")
+                if phase == "finished" and busy and any(last_claude < e["at"] <= delivered
+                                                        for e in reports.pending_notes(log, "")):
+                    phase, reason = "working", ""  # the Stop hook handed it a note after its done report
+                # While the recap is written, notes wait for the new session (_close): a resume would be removed.
+                pending = (s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
+                           and (p.id, t["id"]) not in self.closing)
+                # A Codex session has no attach: its notes wait until the process exits, then deliver_notes resumes it.
+                if (pending and busy and phase == "working" and attach.available() and not is_codex(s) and s.get("state") != "blocked"
+                        and time.time() - self.typed_fail.get((p.id, t["id"]), 0) > TYPE_RETRY):
+                    # Type it into the live session like a message at its terminal: read at its next step, or at once
+                    # if it sits idle waiting on a background shell. The inbox hook stays as the backup.
+                    self.delivering.add((p.id, t["id"]))
+                    threading.Thread(target=self._type, args=(p, t["id"], aid), daemon=True).start()
+                    pending = False
+                # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
+                try:
+                    waiting = (pending and busy and phase == "working" and not attach.available() and not is_codex(s) and time.time() - (
+                        turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
+                except OSError:
+                    waiting = False
+                if pending and (phase in ("finished", "needs_you") and not busy or waiting):
+                    self.delivering.add((p.id, t["id"]))
+                    threading.Thread(target=self._deliver, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId"),
+                                                                     "seen": expected.get((p.id, t["id"]), 0)},
+                                                                 waiting), daemon=True).start()
+                key, closed = (p.id, t["id"]), t.get("column") in done_cols
+                # The CLI ends the turn when auto mode's safety check keeps failing, then waits for a message: resume it.
+                try:
+                    stalled = (phase == "needs_you" and not busy and not closed and not reason.startswith("Claude asks permission")
+                               and not (said and said[-1].get("status") == "question") and not is_codex(s)
+                               and auto_mode_stall(s.get("sessionId")))
+                except OSError:
+                    stalled = None
+                unstalling = bool(stalled) and stall_retries(said) < STALL_TRIES and self.unstall_fail.get(key) != stalled
+                if stalled:
+                    reason = ("Claude Code's safety check kept failing, so Claude stopped. The board tries again in a minute."
+                              if unstalling else "Claude Code's safety check kept failing, so Claude stopped. Reply to try again.")
+                if (unstalling and not pending and key not in self.delivering and key not in self.closing
+                        and time.time() - stalled > STALL_RETRY):
+                    self.delivering.add(key)
+                    threading.Thread(target=self._unstall, args=(p, t["id"], {"id": aid, "sessionId": s.get("sessionId"),
+                                                                     "seen": expected.get(key, 0)},
+                                                                 stalled), daemon=True).start()
+                # Prompt cache and skills are read from Claude transcripts: none for a Codex session. Its workers come
+                # from its event log and their rollouts.
+                try:
+                    cache = None if is_codex(s) else cache_info(s and s.get("sessionId"))
+                except OSError:
+                    cache = None
+                try:
+                    fit = fresh_start(t, log, s.get("sessionId"), cache) if cache and cache["expires"] < time.time() else None
+                except OSError:
+                    fit = None
+                try:
+                    ctx =codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
+                except OSError:
+                    ctx = None
+                try:
+                    mcp = None if is_codex(s) else mcp_state(s and s.get("sessionId"))
+                except OSError:
+                    mcp = None
+                try:
+                    subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
+                except OSError:
+                    subs = []
+                if not is_codex(s):  # a Claude session's Codex workers (codex_worker.py), started since its launch
+                    try:
+                        since = _ts(t["agent"]["started"]) if t["agent"].get("started") else 0
+                        subs = sorted(subs + codex.worker_rows(p.board, t["id"], since), key=lambda r: r["started"])
+                    except (OSError, ValueError):
+                        pass
+                ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
+                try:
+                    used = skills(sessions[i].get("sessionId") for i in ids if i in sessions and not is_codex(sessions[i]))
+                except OSError:
+                    used = []
+                try:
+                    paths = task_transcripts(p, t["id"], [sessions[i].get("sessionId") for i in ids if i in sessions])
+                except OSError:
+                    paths = None
+                try:
+                    spent = tokens(paths, (p.board, t["id"])) if paths is not None else None
+                except OSError:
+                    spent = None
+                # A finished card keeps the rows it has: reading every old chat after a board restart cost 6 s (4 GB).
+                had = old[key].get("mcp_uses") or [] if key in old else reports.read_mcp(p.board, t["id"])
+                try:
+                    fresh_uses = [] if closed and not s else mcp_uses(paths or [])
+                except OSError:
+                    fresh_uses = []
+                uses = keep_mcp_uses(p.board, t["id"], had, fresh_uses)
+                # A sha lands on the card only after its commit, so the answer can change only when the log grows.
+                done = self.committed.get((p.id, t["id"]))
+                if phase != "working" and (not done or done[0] != len(log)):
+                    found = own_commits(p, log, launched_at(log, t), commit_ref(p, t))
+                    done = (len(log), bool(found)) if found is not None else None
+                    if done:
+                        self.committed[(p.id, t["id"])] = done
+                recapped = any(e.get("status") == "recap" for e in log)
+                marker = reports.close_path(p.board, t["id"])
+                # A marker newer than this pass's read of the board is a move to done this pass has not seen: keep it.
+                if not closed:
+                    try:
+                        if os.path.getmtime(marker) < read_at[p.id]:
+                            os.remove(marker)
                     except FileNotFoundError:
                         pass
-                # Closed again after a reopen: that new session goes too once it stops, unless it waits on a question.
-                close = closed and s and not busy and phase != "working" and key not in self.closing and (
-                    os.path.exists(marker) and key not in self.close_failed
-                    or recapped and key not in self.close_failed and phase != "needs_you"
-                    and said[-1].get("status") != "recap")
+                with self.lock:
+                    # Recap saved and no session left (a new task closed this card first): nothing to close, so a move
+                    # to done must not read as "writing the recap" for good.
+                    if closed and not s and said and said[-1].get("status") == "recap" and key not in self.closing:
+                        try:
+                            os.remove(marker)
+                        except FileNotFoundError:
+                            pass
+                    # Closed again after a reopen: that new session goes too once it stops, unless it waits on a question.
+                    close = closed and s and not busy and phase != "working" and key not in self.closing and (
+                        os.path.exists(marker) and key not in self.close_failed
+                        or recapped and key not in self.close_failed and phase != "needs_you"
+                        and said[-1].get("status") != "recap")
+                    if close:
+                        self.closing.add(key)
+                    # Moved to done, recap not posted yet: the board holds replies until it is (they would only queue).
+                    recapping = closed and key not in self.close_failed and (key in self.closing or os.path.exists(marker))
                 if close:
-                    self.closing.add(key)
-                # Moved to done, recap not posted yet: the board holds replies until it is (they would only queue).
-                recapping = closed and key not in self.close_failed and (key in self.closing or os.path.exists(marker))
-            if close:
-                threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
-            # A review by the other CLI (Codex on Claude's work, or the reverse) can hand its findings back.
-            worker = review_worker(log, t)
-            ws = worker != aid and sessions.get(worker)
-            handback_to = ("Codex" if is_codex(ws) else "Claude") if ws and s and is_codex(ws) != is_codex(s) else ""
-            fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
-                                      "archived": not s and bool(said) and said[-1].get("status") == "recap",
-                                      "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                      "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
-                                      "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
-                                      "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
-                                      "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
-                                      else "claude"}
-            with self.lock:
-                if self.expected.get(key) != expected.get(key) and key in self.cache:
-                    fresh[key] = {**fresh[key], **self.cache[key]}  # a resume started during this pass: newer
-                fresh[key] = self._put(key, fresh[key])
+                    threading.Thread(target=self._close, args=(p, t["id"]), daemon=True).start()
+                # A review by the other CLI (Codex on Claude's work, or the reverse) can hand its findings back.
+                worker = review_worker(log, t)
+                ws = worker != aid and sessions.get(worker)
+                handback_to = ("Codex" if is_codex(ws) else "Claude") if ws and s and is_codex(ws) != is_codex(s) else ""
+                fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
+                                          "archived": not s and bool(said) and said[-1].get("status") == "recap",
+                                          "commits": bool(done and done[1]), "phase": phase, "reason": reason,
+                                          "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
+                                          "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
+                                          "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
+                                          "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
+                                          else "claude"}
+                with self.lock:
+                    if self.expected.get(key) != expected.get(key) and key in self.cache:
+                        fresh[key] = {**fresh[key], **self.cache[key]}  # a resume started during this pass: newer
+                    fresh[key] = self._put(key, fresh[key])
+            except Exception as err:  # noqa: BLE001 — one card's odd data must not stop every other card
+                print("watcher card", t.get("id"), ":", repr(err))
+                with self.lock:
+                    if (p.id, t["id"]) in self.cache:
+                        fresh[(p.id, t["id"])] = self.cache[(p.id, t["id"])]
         with self.lock:
             fresh.update({k: v for k, v in self.cache.items() if k[0] in unread})
+            # A resume that started after its card was read this pass: its "working" entry is newer than this pass.
+            fresh.update({k: {**fresh.get(k, {}), **v} for k, v in self.cache.items()
+                          if self.expected.get(k) != expected.get(k)})
             # A copy: a resume thread's expect() writes the cache while the alert loop below still reads `fresh`.
             self.cache = dict(fresh)
             self.revs ={k: r for k, r in self.revs.items() if k in fresh}
@@ -3312,6 +3387,8 @@ class Watcher:
             return
         for p, t in work:
             key = (p.id, t["id"])
+            if key not in fresh:
+                continue
             was, now_ = (old.get(key) or {}).get("phase"), fresh[key]["phase"]
             with self.lock:
                 if key in self.alerts and self.alerts[key]["phase"] != now_:
@@ -3431,6 +3508,7 @@ def report_cmd(p, task_id):
     return script_cmd(p, task_id, "report.py")
 
 
+@one_per_card
 def reply(p, task_id, text, images=(), extra=""):
     """Send a card message. While Claude works it is logged as a note for the session's inbox hook; else it
     resumes the session. Returns True when it was queued as a note. `extra` goes to the session after `text`
@@ -3506,8 +3584,11 @@ def stall_retries(said):
     return n
 
 
+@one_per_card
 def unstall(p, task_id, info):
     """Resume a session whose turn the CLI ended because auto mode's safety check kept failing."""
+    if resumed_since(p, task_id, info):
+        return  # a card message woke it while this waited for the lock
     aid = resume(p, info, STALL_MESSAGE + board_tail(p, task_id))
     reports.append(p.board, task_id, "resume", STALL_NOTE, "you", session=aid)
     WATCH.expect(p, task_id, aid)
@@ -3521,7 +3602,11 @@ def resume(p, info, message):
     # running one starts a copy instead of waking it.
     run_claude(["stop", info["id"]], cwd=p.path, timeout=30)
     for _ in range(40):
-        s = next((x for x in all_sessions(p) if x["id"] == info["id"]), None)
+        try:
+            s = next((x for x in all_sessions(p) if x["id"] == info["id"]), None)
+        except (RuntimeError, subprocess.SubprocessError):  # a failed listing: look again, the stop already ran
+            time.sleep(0.25)
+            continue
         if not s or "pid" not in s:
             break
         time.sleep(0.25)
@@ -3683,6 +3768,10 @@ def _kill(proc):
         else:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)  # an app that ignores SIGTERM would run on, forgotten
             except ProcessLookupError:
                 pass  # the group is already gone
         proc.wait(timeout=10)
@@ -3702,6 +3791,14 @@ def start_saved_run(p, t, wt):
     recipe = run_recipe(p)
     if not recipe:
         return ""
+    with RUN_START_LOCK:  # two Run app clicks at once: both would start an app, and RUNS would keep only one
+        return _start_saved_run(p, t, wt, recipe)
+
+
+RUN_START_LOCK = threading.Lock()
+
+
+def _start_saved_run(p, t, wt, recipe):
     stop_run(p, t["id"])
     port = str(free_port())
     cmd, url = recipe["command"].replace("{port}", port), recipe["url"].replace("{port}", port)
@@ -3799,7 +3896,6 @@ def delete_worktree(p, task_id, force=False):
     info = WATCH.snapshot(p.id).get(task_id)
     if info and info["phase"] == "working":
         raise PermissionError("Claude is still working — wait until it stops")
-    stop_run(p, task_id)
     if board_runs_from(wt["path"]):
         raise PermissionError(STILL_RUNNING_HERE)
     branch = wt["branch"]
@@ -3814,6 +3910,7 @@ def delete_worktree(p, task_id, force=False):
                           "--not", f"--exclude={branch}", "--branches"))
     if (changes or commits) and not force:
         raise UnsavedWorkError({"changes": changes, "commits": commits})
+    stop_run(p, task_id)  # only now: a refused or cancelled delete leaves the app running
     git_run(p.path, "worktree", "remove", *(["--force"] if changes else []), wt["path"])
     if has_branch:
         git_run(p.path, "branch", "-D", branch)  # its commits are on another branch, or the user confirmed losing them
@@ -3876,9 +3973,12 @@ def type_notes(p, task_id, aid):
     return typed
 
 
+@one_per_card
 def deliver_notes(p, task_id, info, waiting=False):
     """Fallback for notes the inbox hook never handed over (the turn ended first, or the session predates the hook):
     resume the idle session with them. `waiting`: its turn had ended while a background shell still ran."""
+    if resumed_since(p, task_id, info):
+        return  # a card message woke it while this waited for the lock: the notes go by its inbox hook
     notes, since = reports.take_notes(p.board, task_id)
     if not notes:
         return
@@ -5019,7 +5119,7 @@ class Handler(SimpleHTTPRequestHandler):
         path, _ = self._route()
         routes = ("/api/agent", "/api/agent/reply", "/api/agent/review", "/api/agent/handback", "/api/agent/permission",
                   "/api/agent/worktree", "/api/agent/worktree/delete", "/api/agent/spawn", "/api/git/init",
-                  "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
+                  "/api/git/scan", "/api/image", "/api/projects", "/api/projects/pick", "/api/projects/forget", "/api/projects/trust",
                   "/api/update", "/api/app-copy", "/api/push", "/api/autofill", "/api/which-project",
                   "/api/task/move", "/api/claude-version", "/api/plan/suggest", "/api/memory-cleanup",
                   "/api/review-schedule")

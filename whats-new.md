@@ -5,6 +5,10 @@
 - When Claude asks about several things, each with its own paragraph, the choices for each one now sit right under its paragraph instead of all at the bottom. A last line like "Want any of these?" sits below all the choices.
 - Each question Claude asks now has an "Add a note" link under its choices. Click it to write a few extra words for that question, and they go with your answer, even when you type your own answer in the reply box. When Claude asks several things at once, a note on its own now counts as the answer for that question, so you can send without also clicking a choice.
 - Setup now brings the helper that keeps long outputs out of the way up to date. If something on your computer is too old for it, setup now says so plainly instead of leaving it half working.
+- Making a repo for a project now shows the list of big folders you can leave out, and it only ever saves that project's own folder, never a folder above it.
+- Two quick replies on one card no longer wake two copies of Claude: the second one waits and is passed on as a note. A short hiccup in Claude's session list no longer makes cards say "Session was removed".
+- With the board open in two tabs, a card that moves by itself no longer shows "Please redo your last change". A half-typed subtask and a column name you are typing no longer get wiped while cards update.
+- Deleting a worktree you then cancel leaves its running app alone, and an app that will not stop is now stopped for real. Removing a project from the board also turns off its weekly skill review.
 
 ## 2026-11-14
 
