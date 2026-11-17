@@ -192,14 +192,58 @@ print("ok  writable=: start and resume carry the lock, the session works from an
 # --- models
 assert codex.is_model("gpt-5.5") and codex.is_model("O3-mini") and codex.is_model("codex-auto")
 assert not codex.is_model("opus") and not codex.is_model("") and not codex.is_model(None)
-assert codex.models() == codex.FALLBACK_MODELS
-os.makedirs(os.path.join(os.environ["HOME"], ".codex"))
-with open(os.path.join(os.environ["HOME"], ".codex", "models_cache.json"), "w", encoding="utf-8") as f:
+REFRESH = os.path.join(TMP, "fake_refresh.py")  # stands in for `codex debug models`: rewrites the cache
+CACHE = os.path.join(os.environ["HOME"], ".codex", "models_cache.json")
+with open(REFRESH, "w", encoding="utf-8") as f:
+    f.write(r'''import json, sys, time
+assert sys.argv[1:] == ["debug", "models"], sys.argv
+time.sleep(0.5)
+with open(%r, "w", encoding="utf-8") as g:
+    json.dump({"models": [{"slug": "gpt-6.2-sol", "display_name": "GPT-6.2-Sol", "visibility": "list"}]}, g)
+with open(%r, "a", encoding="utf-8") as g:
+    g.write("refresh\n")
+''' % (CACHE, os.path.join(TMP, "refreshes.txt")))
+real_cmd, codex.CODEX_CMD = codex.CODEX_CMD, [sys.executable, REFRESH]
+codex.MODELS_RETRY = 0
+
+
+def wait_refresh():
+    for _ in range(100):
+        if not codex.refreshing():
+            return
+        time.sleep(0.05)
+    raise AssertionError("model refresh still running")
+
+
+def refreshes():
+    try:
+        return len(open(os.path.join(TMP, "refreshes.txt"), encoding="utf-8").read().split())
+    except OSError:
+        return 0
+
+
+os.makedirs(os.path.dirname(CACHE))
+assert codex.models() == codex.FALLBACK_MODELS and codex.refreshing()  # no cache: a refresh starts
+assert codex.models() == codex.FALLBACK_MODELS  # one refresh at a time
+wait_refresh()
+assert refreshes() == 1, refreshes()
+assert codex.models() == [{"id": "gpt-6.2-sol", "name": "GPT-6.2-Sol"}] and not codex.refreshing()  # fresh: no refresh
+with open(CACHE, "w", encoding="utf-8") as f:
     json.dump({"models": [{"slug": "gpt-b", "display_name": "B", "visibility": "list"},
                           {"slug": "gpt-h", "display_name": "H", "visibility": "hide"},
                           {"slug": "gpt-a", "display_name": "A", "visibility": "list"}]}, f)
 assert codex.models() == [{"id": "gpt-b", "name": "B"}, {"id": "gpt-a", "name": "A"}], codex.models()
-print("ok  is_model and models (fallback, then the cache file)")
+old = time.time() - codex.MODELS_TTL - 60
+os.utime(CACHE, (old, old))  # an hour-old list: shown as it is while Codex fetches a new one
+assert codex.models() == [{"id": "gpt-b", "name": "B"}, {"id": "gpt-a", "name": "A"}] and codex.refreshing()
+wait_refresh()
+assert refreshes() == 2 and codex.models() == [{"id": "gpt-6.2-sol", "name": "GPT-6.2-Sol"}], refreshes()
+codex.MODELS_RETRY = 600
+os.utime(CACHE, (old, old))  # still old (offline, say): not asked again within MODELS_RETRY of the last try
+codex.models()
+assert not codex.refreshing() and refreshes() == 2, refreshes()
+codex.CODEX_CMD = real_cmd
+print("ok  is_model and models (fallback, the cache file, a stale cache refreshed by `codex debug models`)")
 
 # --- two threads writing one meta at once: no clash on the temp file
 import subprocess  # noqa: E402

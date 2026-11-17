@@ -42,11 +42,50 @@ def installed():
     return os.path.exists(CODEX_CMD[0])
 
 
-def models():
-    """The OpenAI models Codex lists, from its own cache; a fixed list when there is none."""
+MODELS_TTL = 3600  # refresh Codex's model list once its cache file is this old (seconds)
+MODELS_RETRY = 600  # and try again no sooner than this after a refresh that changed nothing
+_models_lock = threading.Lock()
+_models_refreshing = False
+_models_tried = 0.0
+
+
+def _models_cache():
+    return os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "models_cache.json")
+
+
+def _refresh_models():
+    # Codex only rewrites models_cache.json when Codex itself runs; `codex debug models` fetches the catalog
+    # and rewrites the cache when it is older than Codex's own few-minute limit (measured on 0.169.1).
+    global _models_refreshing
     try:
-        home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
-        with open(os.path.join(home, "models_cache.json"), encoding="utf-8") as f:
+        subprocess.run(CODEX_CMD + ["debug", "models"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        print("codex model refresh:", e)
+    finally:
+        _models_refreshing = False
+
+
+def refreshing():
+    return _models_refreshing
+
+
+def models():
+    """The OpenAI models Codex lists, from its own cache; a fixed list when there is none.
+    A cache over MODELS_TTL old starts one background refresh, so new models show up without a Codex run."""
+    global _models_refreshing, _models_tried
+    path = _models_cache()
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        age = float("inf")
+    if age > MODELS_TTL and installed():
+        with _models_lock:
+            if not _models_refreshing and time.time() - _models_tried > MODELS_RETRY:
+                _models_refreshing, _models_tried = True, time.time()
+                threading.Thread(target=_refresh_models, daemon=True).start()
+    try:
+        with open(path, encoding="utf-8") as f:
             out = [{"id": m["slug"], "name": m.get("display_name") or m["slug"]}
                    for m in json.load(f)["models"] if m.get("visibility") == "list"]
         return out or list(FALLBACK_MODELS)

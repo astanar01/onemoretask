@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-17
+
+- The list of OpenAI models you can pick now stays up to date by itself, so new ones like GPT-6.2 show up without you having to open Codex first. A board left open picks them up too.
+
 ## 2026-11-15
 
 - When Claude asks about several things, each with its own paragraph, the choices for each one now sit right under its paragraph instead of all at the bottom. A last line like "Want any of these?" sits below all the choices.

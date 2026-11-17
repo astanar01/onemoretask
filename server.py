@@ -1206,7 +1206,7 @@ def codex_models():
     """GET /api/codex-models: the OpenAI models the pickers offer for Codex, which CLIs are installed,
     and the versions behind Claude's short model names."""
     return {"models": codex.models(), "claude": os.path.exists(CLAUDE_CMD[-1]), "claude_models": claude_versions(),
-            "codex": codex.installed()}
+            "codex": codex.installed(), "codex_refreshing": codex.refreshing()}
 
 
 # With CLAUDE_CONFIG_DIR set, the CLI keeps .claude.json in that folder (its configPath), not in the home folder.

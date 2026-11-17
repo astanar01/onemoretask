@@ -2822,20 +2822,26 @@ function renderSubmodel(t) {
   $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + html;
   $("#d-submodel").value = subModel(t);
 }
+let codexHtml = null;
 async function loadCodexModels(tries = 0) {
-  let list = CODEX_MODELS;
+  let list = CODEX_MODELS, codexRefreshing = false;
   try {
     const r = await fetch("/api/codex-models", { cache: "no-store" });
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
     if (res && typeof res.claude === "boolean") clis = { claude: res.claude, codex: !!res.codex };
     if (res && res.claude_models) claudeVersions = res.claude_models;
+    codexRefreshing = !!(res && res.codex_refreshing);
   } catch (e) { /* built-in list */ }
   codexList = list;
   labelClaudeModels();
-  // The first probe takes a few seconds per name: ask again until every name has its version.
-  if (clis.claude && tries < 6 && CLAUDE_SUBMODELS.some((m) => !claudeVersions[m.id])) setTimeout(() => loadCodexModels(tries + 1), 15000);
+  // The first probe takes a few seconds per name, and Codex may be fetching a newer model list:
+  // ask again until both are in.
+  const claudeMissing = clis.claude && CLAUDE_SUBMODELS.some((m) => !claudeVersions[m.id]);
+  if (tries < 6 && (codexRefreshing || claudeMissing)) setTimeout(() => loadCodexModels(tries + 1), codexRefreshing ? 5000 : 15000);
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
+  if (html === codexHtml) return;   // unchanged: leave the pickers alone, an open dropdown stays open
+  codexHtml = html;
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
   // The saved picks may be OpenAI models that had no option until now.
   $("#d-model").value = sendModel(openId && state && task(openId));
@@ -2850,6 +2856,7 @@ function sendLabel() {
   if (t) renderSubmodel(t);
 }
 loadCodexModels();
+setInterval(() => loadCodexModels(), 30 * 60 * 1000);   // a board left open still gets new models
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
 function renderAgent(t) {

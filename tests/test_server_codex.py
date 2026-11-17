@@ -33,6 +33,9 @@ def models():
 def installed():
     return True
 
+def refreshing():
+    return False
+
 def log_dir(board):
     return os.path.join(board, "agent_reports", "codex")
 
@@ -382,6 +385,7 @@ server._probe_model = fake_probe
 cmd, server.CLAUDE_CMD = server.CLAUDE_CMD, [sys.executable]  # an existing file: Claude Code counts as installed
 res = server.codex_models()
 assert res["models"] == codex.MODELS and res["claude"] is True and res["codex"] is True, res
+assert res["codex_refreshing"] is False, res
 assert res["claude_models"] == {}, res  # no cache yet: the probe starts in the background
 for _ in range(100):
     if not server._alias_probing:
