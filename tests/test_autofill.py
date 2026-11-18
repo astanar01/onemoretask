@@ -194,7 +194,7 @@ check("a waiting claude ends when its input closes", last.wait(5), 0)
 node = shutil.which("node")
 if node:
     src = open(os.path.join(os.path.dirname(HERE), "index.html"), encoding="utf-8").read()
-    fn = re.search(r"const autoFilling = new Map\(\);[\s\S]*?\n}\n[\s\S]*?\n}\n", src).group(0)
+    fn = re.search(r"const autoFilling = new Map\(\)[\s\S]*?\n}\n[\s\S]*?\n}\n", src).group(0)
     check("no first-sentence title left", "titleFromNotes" in src, False)
     harness = """
 let calls = 0, saved = 0, openId = null, resolveCall;
@@ -288,6 +288,30 @@ const post = (url, body) => { calls.push(url); return url === "/api/autofill"
     got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
     check("The project check runs behind the swapped panel; another project puts the form back and asks",
           got, [[[[], ["launch"]]], [[[], ["launch"]], [[], []]], 0, 1, []])
+
+    # A card closed with only a picture is named "Untitled" before it has notes. Once notes come, Send still asks
+    # Claude for a title (it used to ask only for tags and launch as "Untitled", 11 cards on the user's boards).
+    untitled = (harness.replace('const card = { id: "a", title: "",', 'let asked = []; const card = { id: "a", title: "Untitled",')
+                       .replace("const post = (url, body) => { calls.push(url);", "const post = (url, body) => { calls.push(url); if (body && 'title' in body) asked.push(body.title);")
+                       .replace("console.log(JSON.stringify([before, calls, card.title, card.tags, card.agent && card.agent.id]));",
+                                "console.log(JSON.stringify([asked, calls, card.title]));"))
+    out = subprocess.run([node, "-e", untitled], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("A card left as Untitled still gets Claude's title on Send",
+          got, [[True], ["/api/autofill", "/api/agent"], "Fix column scroll jump"])
+
+    # Closing a card with no notes twice names it "Untitled" once: no second save, no call.
+    blank = """
+let saved = 0, calls = 0, openId = null;
+const card = { id: "a", title: "", tags: [], notes: "", agent: null };
+const task = () => card, touch = () => saved++, render = () => {}, $ = () => ({}), tagSuggestions = () => [];
+const post = () => { calls++; return Promise.resolve({}); };
+""" + fn + """
+(async () => { await autoFill(card); await autoFill(card); console.log(JSON.stringify([card.title, saved, calls])); })();
+"""
+    out = subprocess.run([node, "-e", blank], capture_output=True, text=True)
+    got = json.loads(out.stdout or "null") if out.returncode == 0 else out.stderr[-300:]
+    check("No notes: Untitled once, no call", got, ["Untitled", 1, 0])
 
     # Another window's board swapped in while the title was coming (the move not on disk yet): Send still launches.
     reload = (harness.replace("resolveCall(); await send;", 'boardGen++; card.column = "todo"; resolveCall(); await send;')

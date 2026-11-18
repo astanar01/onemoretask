@@ -2133,15 +2133,17 @@ function closeDetail() { dtZoom(null); showPanelError(""); settleDraft(); openId
 // server folds twins like bug/bugs into the board's spelling). An untitled task shows "Untitled" meanwhile, and keeps
 // it when Claude fails. Returns once Claude answered or failed; a title or tags the user typed meanwhile are kept.
 // One call per card at a time: a second caller (Send right after the title box lost focus) waits for the running one.
-const autoFilling = new Map();
+// "Untitled" still counts as no title: a card closed with only a picture gets it before it has notes to name it from.
+const autoFilling = new Map(), UNTITLED = "Untitled";
+const needsTitle = (t) => !t.title.trim() || t.title === UNTITLED;
 function autoFill(t) {
   if (!autoFilling.has(t.id)) autoFilling.set(t.id, autoFillOnce(t).finally(() => autoFilling.delete(t.id)));
   return autoFilling.get(t.id);
 }
 async function autoFillOnce(t) {
-  const wantTitle = !t.title.trim(), wantTags = !t.tags.length && !t.agent && !!t.notes.trim();
-  const first = wantTitle ? "Untitled" : t.title;
-  if (wantTitle) { t.title = first; touch(t); if (openId === t.id) $("#d-title").value = first; }
+  const wantTitle = needsTitle(t), wantTags = !t.tags.length && !t.agent && !!t.notes.trim();
+  const first = wantTitle ? UNTITLED : t.title;
+  if (wantTitle && t.title !== first) { t.title = first; touch(t); if (openId === t.id) $("#d-title").value = first; }
   if (!t.notes.trim() || (!wantTitle && !wantTags)) return;
   try {
     const res = await post("/api/autofill", { notes: t.notes, title: wantTitle, tags: wantTags, known: wantTags ? tagSuggestions(t, 80) : [] });
@@ -3726,7 +3728,7 @@ async function sendToClaude(t) {
   if (prog && t.column !== prog.id) moveTask(t.id, prog.id, null);
   render(); if (openId === t.id) $("#d-col").value = t.column;
   // The launch needs the title (session name, branch), so it waits for Claude's title and tags; the card fills them in when they come.
-  if (autoFilling.has(t.id) || !t.title.trim() || (!t.tags.length && t.notes.trim())) {
+  if (autoFilling.has(t.id) || needsTitle(t) || (!t.tags.length && t.notes.trim())) {
     await autoFill(t); t = task(t.id) || t;
     // Another window's board may have been swapped in meanwhile, without the move: move the card again.
     if (prog && task(t.id) && t.column !== prog.id) { moveTask(t.id, prog.id, null); render(); if (openId === t.id) $("#d-col").value = t.column; }

@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-18
+
+- A card you first closed with only a picture now still gets a real name when you send it, instead of staying "Untitled". This works for Claude and Codex.
+
 ## 2026-11-17
 
 - The list of OpenAI models you can pick now stays up to date by itself, so new ones like GPT-6.2 show up without you having to open Codex first. A board left open picks them up too.
