@@ -11,6 +11,7 @@ the process (alive: working; exited non-zero: blocked; else idle). A reply is `c
 import glob
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -845,10 +846,36 @@ _mcp_logs_read = set()  # logs read since the board started: on the first read t
 _mcp_use_memo = {}  # log path -> ((mtime, size), rows)
 
 
+_SHELL_WRAP = re.compile(r"^\S*/(?:zsh|bash|sh) -l?c (['\"])(.*)\1$", re.S)
+SAY_MAX = 300  # as server.SAY_MAX
+
+
+def _step(item):
+    """A Codex item as the row fields of one step ({tool, server, what, kind}), or None for an item that is not one."""
+    kind = item.get("type")
+    if kind == "mcp_tool_call":
+        return {"server": str(item.get("server") or ""), "tool": str(item.get("tool") or ""),
+                "what": mcp_what(item.get("arguments")), "kind": "mcp"}
+    if kind == "command_execution":
+        cmd = str(item.get("command") or "").strip()
+        m = _SHELL_WRAP.match(cmd)
+        cmd = (m.group(2) if m else cmd).strip()
+        return {"server": "", "tool": "shell", "what": mcp_what({"query": (cmd.splitlines() or [""])[0]}), "kind": "tool"}
+    if kind == "file_change":
+        changes = item.get("changes") if isinstance(item.get("changes"), list) else []
+        paths = ["/".join(str(c.get("path") or "").split("/")[-2:]) for c in changes if isinstance(c, dict)]
+        return {"server": "", "tool": "edit", "what": mcp_what({"query": ", ".join(p for p in paths if p)}), "kind": "tool"}
+    if kind == "agent_message":
+        text = " ".join(str(item.get("text") or "").split())
+        text = text[:SAY_MAX - 1] + "…" if len(text) > SAY_MAX else text
+        return {"server": "", "tool": "", "what": text, "kind": "say"} if text else None
+    return None
+
+
 def mcp_uses(log_path):
-    """Each MCP call in a Codex log, oldest first, in server.mcp_uses's row shape. Item ids start again each turn, so
-    the turn is part of a row's id. A call first seen live gets a time within one pass; calls from before a board
-    restart all get the log's last write time."""
+    """Each step in a Codex log (MCP calls, commands, file edits, Codex's own words), oldest first, in
+    server.mcp_uses's row shape. Item ids start again each turn, so the turn is part of a row's id. A step first seen
+    live gets a time within one pass; steps from before a board restart all get the log's last write time."""
     try:
         st = os.stat(log_path)
     except OSError:
@@ -863,17 +890,22 @@ def mcp_uses(log_path):
         if e.get("type") == "turn.started":
             turn += 1
         item = e.get("item")
-        if e.get("type") not in ("item.started", "item.completed") or not isinstance(item, dict) \
-                or item.get("type") != "mcp_tool_call":
+        if e.get("type") not in ("item.started", "item.completed") or not isinstance(item, dict):
+            continue
+        step = _step(item)
+        if not step:
             continue
         key = (log_path, turn, item.get("id"))
         row = rows.get(key)
         if not row:
-            row = rows[key] = {"id": f"{name}:{turn}:{item.get('id')}", "server": str(item.get("server") or ""),
-                               "tool": str(item.get("tool") or ""), "what": mcp_what(item.get("arguments")),
+            row = rows[key] = {"id": f"{name}:{turn}:{item.get('id')}", **step,
                                "at": _mcp_seen.setdefault(key, now), "state": "open", "sub": False}
+        elif step["what"] and not row["what"]:
+            row["what"] = step["what"]  # a file change names its files only once it is done
         if e.get("type") == "item.completed":
-            row["state"] = "done" if item.get("status") == "completed" else "failed"
+            # A message has no status; a command that ran but exited non-zero did not work either.
+            ok = item.get("status", "completed") == "completed" and item.get("exit_code") in (None, 0, "0")
+            row["state"] = "done" if ok else "failed"
     found = list(rows.values())
     _mcp_use_memo[log_path] = ((st.st_mtime, st.st_size), found)
     return [dict(r) for r in found]

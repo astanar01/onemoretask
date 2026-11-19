@@ -379,6 +379,7 @@ body.view-plan #search { visibility: hidden; }
 #fresh-modal .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
 #fresh-msg { color: var(--muted); }
 #fresh-msg.err { color: #c0392b; }
+.card .agent-now .tool { color: var(--text); }
 .card .agent-note { margin-top: 5px; font-size: calc(12px * var(--ts)); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #waiting { display: none; background: var(--wait); color: #fff; border: 0; border-radius: 12px; padding: 3px 10px; font-size: calc(12px * var(--ts)); }
 #d-log li .msg { white-space: pre-wrap; }
@@ -448,6 +449,9 @@ body.view-plan #search { visibility: hidden; }
 #d-log li.k-uses li .tool { color: var(--text); }
 #d-log li.k-uses li.failed .mark-word { color: var(--danger); }
 #d-log li.k-uses .mark-word { font-style: italic; }
+#d-log li.k-uses li.say .what { color: var(--text); font-style: italic; }
+#d-log li.k-uses ul.now { margin: 2px 0 0; }
+#d-log li.k-uses details[open] + ul.now { display: none; }   /* the open list already shows them */
 #d-log li.k-done, #d-log li.k-answer { border-left-color: var(--ok); }
 #d-log li.k-you { border-left-color: var(--accent); }
 #d-log li .who { font-size: calc(11px * var(--ts)); color: var(--muted); display: block; }
@@ -1613,6 +1617,7 @@ function cardEl(t, top, nestedCount) {
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
     ${ag && ag.reason && ag.phase !== "working" ? `<div class="agent-note">${inl(esc(window.t(ag.reason)))}</div>` : ""}
+    ${nowStep(ag) ? `<div class="agent-note agent-now">${stepText(nowStep(ag))}</div>` : ""}
     ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}
     ${freshRow(t, ag)}`;
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
@@ -2986,21 +2991,62 @@ function mcpRunStart(shown) {
   const starts = shown.filter((e) => (e.from === "you" || e.from === "board") && e.status !== "note").map((e) => Date.parse(e.at) / 1000);
   return Math.max(0, ...starts.filter(Number.isFinite));
 }
-// One small line for a run of MCP uses; click it to see each one. Only a use in the newest group and the current run can
+// A step is an MCP use ("mcp"), a built-in tool use ("tool") or Claude's own words between them ("say"). Rows saved
+// before steps had a kind were all MCP uses.
+const stepKind = (r) => r.kind || (r.server ? "mcp" : "tool");
+// A built-in tool in plain words (Claude's names, and Codex's shell/edit); a tool not listed shows its own name.
+function stepName(tool) {
+  switch (tool) {
+    case "Bash": case "shell": return window.t("Command");
+    case "Read": return window.t("Read");
+    case "Edit": case "MultiEdit": case "NotebookEdit": case "edit": return window.t("Edit");
+    case "Write": return window.t("Write");
+    case "Grep": return window.t("Search the code");
+    case "Glob": return window.t("Find files");
+    case "Agent": case "Task": return window.t("Start a helper");
+    case "Skill": return window.t("Skill");
+    case "WebFetch": return window.t("Web page");
+    case "WebSearch": return window.t("Web search");
+    case "TodoWrite": case "TaskCreate": case "TaskUpdate": return window.t("To-do list");
+    default: return tool;
+  }
+}
+// The newest step of the run a working session is on, for the card on the board; null before its first step.
+function nowStep(ag) {
+  if (!ag || ag.phase !== "working") return null;
+  const r = (ag.mcp_uses || []).at(-1);
+  return r && r.at >= mcpRunStart(ag.log || []) ? r : null;
+}
+function stepText(r) {
+  const k = stepKind(r);
+  if (k === "say") return `<i>${esc(r.what)}</i>`;
+  return `<span class="tool">${esc(k === "mcp" ? `${r.server} · ${r.tool}` : stepName(r.tool))}</span>${r.what ? ` ${esc(r.what)}` : ""}`;
+}
+function stepItem(r, mark) {
+  const time = new Date(r.at * 1000).toLocaleTimeString(LOCALE, { timeStyle: "medium" });
+  const k = stepKind(r);
+  const head = k === "say" ? "" : `<span class="tool">${esc(k === "mcp" ? `${r.server} · ${r.tool}` : stepName(r.tool))}</span> `;
+  const what = r.what ? `<span class="what">${esc(r.what)}</span>` : "";
+  return `<time>${esc(time)}</time> ${head}${what}${r.sub ? ` <span class="mark-word">${esc(window.t("helper"))}</span>` : ""}${mark ? ` <span class="mark-word">${esc(mark)}</span>` : ""}`;
+}
+// One small line for a run of steps; click it to see each one. Only a step in the newest group and the current run can
 // be live, so one left open by a killed session never spins after a resume: it reads "no answer", true of a slow use too.
+// While the session works on the current run, its newest words and newest step show under the line without a click.
 function usesLine(rows, ag, newest, runAt) {
   if (!rows.length) return "";
   const live = (r) => r.state === "open" && newest && r.at >= runAt && (ag.phase === "working" || ag.phase === "needs_you");
+  const mark = (r) => r.state === "failed" ? window.t("did not work") : live(r) ? window.t("running") : r.state === "open" ? window.t("no answer") : "";
   const n = rows.length;
-  const head = ag.phase === "working" && rows.some(live) ? `${turning(14)} ${esc(window.t("Using MCP tools ({n} so far)…", { n }))}`
-    : esc(n === 1 ? window.t("Used 1 MCP tool") : window.t("Used {n} MCP tools", { n }));
-  const items = rows.map((r) => {
-    const mark = r.state === "failed" ? window.t("did not work") : live(r) ? window.t("running") : r.state === "open" ? window.t("no answer") : "";
-    const time = new Date(r.at * 1000).toLocaleTimeString(LOCALE, { timeStyle: "medium" });
-    return `<li${r.state === "failed" ? ` class="failed"` : ""}><time>${esc(time)}</time> <span class="tool">${esc(r.server)} · ${esc(r.tool)}</span>${r.what ? ` <span class="what">${esc(r.what)}</span>` : ""}${r.sub ? ` <span class="mark-word">${esc(window.t("helper"))}</span>` : ""}${mark ? ` <span class="mark-word">${esc(mark)}</span>` : ""}</li>`;
-  }).join("");
+  const now = ag.phase === "working" && newest ? rows.filter((r) => r.at >= runAt) : [];
+  const head = now.length ? `${turning(14)} ${esc(n === 1 ? window.t("Working (1 step so far)…") : window.t("Working ({n} steps so far)…", { n }))}`
+    : esc(n === 1 ? window.t("1 step") : window.t("{n} steps", { n }));
+  const items = rows.map((r) => `<li class="${stepKind(r) === "say" ? "say" : "step"}${r.state === "failed" ? " failed" : ""}">${stepItem(r, mark(r))}</li>`).join("");
+  // Claude's last words and its last step, oldest first: where it is, and what it does right now.
+  const said = now.filter((r) => stepKind(r) === "say").pop(), did = now.filter((r) => stepKind(r) !== "say").pop();
+  const latest = [said, did].filter(Boolean).sort((a, b) => a.at - b.at);
+  const nowLines = latest.length ? `<ul class="now">${latest.map((r) => `<li class="${stepKind(r) === "say" ? "say" : "step"}${r.state === "failed" ? " failed" : ""}">${stepItem(r, mark(r))}</li>`).join("")}</ul>` : "";
   const g = rows[0].id;
-  return `<li class="k-uses" data-g="${esc(g)}"><details${usesOpen.has(g) ? " open" : ""}><summary>${head}</summary><ul>${items}</ul></details></li>`;
+  return `<li class="k-uses${now.length ? " live" : ""}" data-g="${esc(g)}"><details${usesOpen.has(g) ? " open" : ""}><summary>${head}</summary><ul>${items}</ul></details>${nowLines}</li>`;
 }
 
 // Agent status, worded apart from the task's column: "Finished" never means approved, merged or done.

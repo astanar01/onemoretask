@@ -3,6 +3,7 @@
 ## 2026-11-19
 
 - Claude no longer gives you an answer button like "I will type it" that sends nothing you typed. When it needs you to write something, it asks that as its own question.
+- You can now watch Claude work. While it works, the card shows each step it takes and the last thing it said, as it happens, and the small card on the board shows its newest step. Click the "Working" line to see every step with its time. Codex cards show their steps too.
 
 ## 2026-11-18
 

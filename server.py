@@ -2549,14 +2549,50 @@ def mcp_state(session_id):
     return info
 
 
-MCP_USES_SHOWN = 300
+MCP_USES_SHOWN = 400
 _mcp_use_memo = {}  # transcript path -> [bytes read, {tool_use id: row}, {ids with no result yet}]
+# What a built-in tool works on, by the input key that says it best. Anything else falls back to codex.mcp_what.
+_TOOL_WHAT_KEYS = {"Bash": ("description", "command"), "Read": ("file_path",), "Edit": ("file_path",),
+                   "MultiEdit": ("file_path",), "Write": ("file_path",), "NotebookEdit": ("notebook_path",),
+                   "Grep": ("pattern",), "Glob": ("pattern",), "Agent": ("description", "prompt"),
+                   "Task": ("description", "prompt"), "Skill": ("skill",), "WebFetch": ("url",), "WebSearch": ("query",),
+                   "ToolSearch": ("query",), "TaskCreate": ("subject",), "SendMessage": ("to",)}
+_PATH_KEYS = ("file_path", "notebook_path")
+
+
+def tool_what(name, args):
+    """What a built-in tool call works on, in one short line: a command's description, a file's last two path parts,
+    a search's pattern. "" when nothing fits."""
+    if not isinstance(args, dict):
+        return ""
+    keys = _TOOL_WHAT_KEYS.get(name)
+    if not keys:
+        return codex.mcp_what(args)
+    key = next((k for k in keys if isinstance(args.get(k), str) and args[k].strip()), None)
+    if not key:
+        return ""
+    text = args[key].strip()
+    if key in _PATH_KEYS:
+        text = "/".join(text.rstrip("/").split("/")[-2:])
+    elif key in ("command", "prompt"):
+        text = text.splitlines()[0]
+    return codex.mcp_what({"query": text})
+
+
+SAY_MAX = 300  # Claude's own words between steps: enough to read where it is, short enough for every poll
+
+
+def say_text(text):
+    """Claude's words as one line, cut to SAY_MAX."""
+    text = " ".join(str(text or "").split())
+    return text[:SAY_MAX - 1] + "…" if len(text) > SAY_MAX else text
 
 
 def _mcp_calls(path):
-    """MCP tool uses in one transcript as {tool_use id: row}. Reads only the bytes added since the last call. Only
-    assistant entries count: api-request-blob entries hold copies with no time. The byte checks keep it cheap, as
-    a tool result is the most common big line and few uses are ever waiting for one."""
+    """Every step in one transcript as {id: row}: each tool use (MCP or built-in) and each piece of text Claude wrote
+    between them. Reads only the bytes added since the last call. Only assistant entries count: api-request-blob
+    entries hold copies with no time. The byte checks keep it cheap, as a tool result is the most common big line and
+    few uses are ever waiting for one."""
     size = os.path.getsize(path)
     memo = _mcp_use_memo.get(path)
     if not memo or size < memo[0]:
@@ -2568,7 +2604,7 @@ def _mcp_calls(path):
             chunk = f.read(size - memo[0])
         end = chunk.rfind(b"\n") + 1  # a half-written last line is read next time
         for line in chunk[:end].splitlines():
-            if not (b'"mcp__' in line and b'"tool_use"' in line) and not (
+            if not (b'"assistant"' in line and (b'"tool_use"' in line or b'"text"' in line)) and not (
                     waiting and b'"tool_result"' in line and any(i.encode() in line for i in waiting)):
                 continue
             try:
@@ -2578,19 +2614,32 @@ def _mcp_calls(path):
             kind = isinstance(e, dict) and e.get("type")
             message = e.get("message") if kind in ("assistant", "user") else None
             content = message.get("content") if isinstance(message, dict) else None
-            for b in content if isinstance(content, list) else []:
+            if kind == "assistant" and isinstance(message, dict) and message.get("model") == "<synthetic>":
+                continue  # the CLI's own filler ("No response requested."), not Claude's words
+            for i, b in enumerate(content if isinstance(content, list) else []):
                 if not isinstance(b, dict):
                     continue
                 # One bad entry must not stop the memo moving past this line: the poll only catches OSError.
                 try:
-                    if kind == "assistant" and b.get("type") == "tool_use" and str(b.get("name")).startswith("mcp__"):
+                    if kind == "assistant" and b.get("type") == "tool_use" and isinstance(b.get("name"), str):
                         uid = b.get("id")
                         if isinstance(uid, str) and uid and uid not in rows:
-                            server, _, tool = b["name"][len("mcp__"):].partition("__")
-                            rows[uid] = {"id": uid, "server": mcp_label(server), "tool": tool,
-                                         "what": codex.mcp_what(b.get("input")), "at": _ts(e["timestamp"]),
-                                         "state": "open", "sub": False}
+                            name = b["name"]
+                            if name.startswith("mcp__"):
+                                server, _, tool = name[len("mcp__"):].partition("__")
+                                row = {"server": mcp_label(server), "tool": tool, "what": codex.mcp_what(b.get("input")),
+                                       "kind": "mcp"}
+                            else:
+                                row = {"server": "", "tool": name, "what": tool_what(name, b.get("input")), "kind": "tool"}
+                            rows[uid] = {"id": uid, **row, "at": _ts(e["timestamp"]), "state": "open", "sub": False}
                             waiting.add(uid)
+                    elif kind == "assistant" and b.get("type") == "text":
+                        text = say_text(b.get("text"))
+                        # The entry's uuid: a resume copies history into a new file with the same uuids.
+                        sid = f"say:{e.get('uuid') or message.get('id')}:{i}"
+                        if text and sid not in rows and (e.get("uuid") or message.get("id")):
+                            rows[sid] = {"id": sid, "server": "", "tool": "", "what": text, "kind": "say",
+                                         "at": _ts(e["timestamp"]), "state": "done", "sub": False}
                     elif kind == "user" and b.get("type") == "tool_result" and b.get("tool_use_id") in waiting:
                         rows[b["tool_use_id"]]["state"] = "failed" if b.get("is_error") else "done"
                         waiting.discard(b["tool_use_id"])
@@ -2601,8 +2650,9 @@ def _mcp_calls(path):
 
 
 def mcp_uses(paths):
-    """Each MCP tool use in the given main transcripts (or Codex logs) and their subagents, oldest first, at most
-    MCP_USES_SHOWN: [{id, server, tool, what, at, state ("open", "done", "failed"), sub}]. Always new dicts, never the
+    """Each step in the given main transcripts (or Codex logs) and their subagents, oldest first, at most
+    MCP_USES_SHOWN: [{id, server, tool, what, kind ("mcp", "tool", "say"), at, state ("open", "done", "failed"), sub}].
+    The name is from when only MCP uses were kept; the card field and its saved file keep it. Always new dicts, never the
     memo's: Watcher._put keeps the old entry when old == entry, so rows the memo changes in place would compare equal
     and a use going from open to done would never reach the page."""
     rows = {}
