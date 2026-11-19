@@ -112,5 +112,15 @@ r = cli("question", "Q", "--part", "1?", "--image", os.path.join(TMP, "missing.p
 check("refused: a missing part image", r.returncode != 0 and "missing.png" in r.stderr)
 check("card_lines tells agents to put a part's image after it", "--image <file> --option" in text)
 
+# A button sends only its label, so an option asking for typed text is refused (exit 2) and nothing is posted.
+n = len(reports.read(BOARD, "t1"))
+r = cli("question", "Which name?", "--option", "A. Keep it", "--option", "C. Something else (I will type it)")
+check("refused: option asking for typed text", r.returncode == 2 and "as its own question with no --option" in r.stderr)
+r = cli("question", "Q", "--part", "1?", "--option", "a) yes", "--option", "b) tell me the name")
+check("refused: typed-text option inside a part", r.returncode == 2)
+check("nothing posted by typed-text options", len(reports.read(BOARD, "t1")) == n)
+r = cli("question", "Where?", "--option", "A. Center the logo", "--option", "B. Rewrite the header")
+check("allowed: words that only contain enter/write", r.returncode == 0)
+
 print("FAILED: " + ", ".join(fails) if fails else "all question option checks passed")
 sys.exit(1 if fails else 0)

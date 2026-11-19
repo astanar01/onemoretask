@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-19
+
+- Claude no longer gives you an answer button like "I will type it" that sends nothing you typed. When it needs you to write something, it asks that as its own question.
+
 ## 2026-11-18
 
 - A card you first closed with only a picture now still gets a real name when you send it, instead of staying "Untitled". This works for Claude and Codex.

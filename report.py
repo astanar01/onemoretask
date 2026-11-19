@@ -34,6 +34,8 @@ It does not go in the card's conversation and alerts nobody.
 
 A question can list its choices with `--option "<short label>"` (repeatable, 2 to 6, all different);
 the card shows one button per choice that sends it as the answer. Only for `question`.
+A button sends only its label, so a label asking for typed text ("type", "write", "tell me", "name it",
+"enter", "I will") is refused (exit 2): ask free text as its own question with no --option.
 A question with several parts gives each part as `--part "<its question>"` followed by that part's
 `--option`s (1 to 8 parts, 2 to 6 options each); the card shows a row of choices per part and one
 send button, and the answer arrives as one line per part: "<part> → <option>".
@@ -54,12 +56,14 @@ the card is refused. When the user asked for that language, pass
 """
 import json
 import os
+import re
 import shlex
 import sys
 
 import reports
 
 STATUSES = ("progress", "question", "done")
+TYPED_TEXT = re.compile(r"\b(type|write|tell me|name it|enter|I will)\b", re.I)
 
 args, files, board, lang, options, parts, msg_file = [], [], None, None, [], [], None
 it = iter(sys.argv[1:])
@@ -115,6 +119,12 @@ if parts:
         parts = reports.check_parts(parts)
     except ValueError as e:
         sys.exit(f"question: {e}")
+typed = next((o for o in options + [o for p in parts for o in p["options"]] if TYPED_TEXT.search(o)), None)
+if typed:
+    # A button sends only its label, so "C. Other (I will type it)" came back with nothing typed.
+    print(f'question: option "{typed}" asks for typed text, but a button sends only its label. Ask free text '
+          "as its own question with no --option.", file=sys.stderr)
+    sys.exit(2)
 decision = None
 if status == "decision":
     try:
