@@ -1,4 +1,4 @@
-"""The small "Used 5 MCP tools" line between chat messages: where rows land, what each row says, that an opened list
+"""The small "5 steps" line between chat messages: where rows land, what each row says, that an opened list
 survives a redraw, and what is left of the old MCP lines. Drives the real index.html + i18n.js in headless Chrome over
 raw CDP, with /api faked by a stub server on a free port (never the live board, never .task_board).
 
@@ -48,6 +48,18 @@ def row(rid, minute, state="done", what="what it looked for", sub=False, server=
     return {"id": rid, "server": server, "tool": tool, "what": what, "at": at(minute), "state": state, "sub": sub}
 
 
+def step(rid, minute, tool, what, state="done"):
+    return {"id": rid, "server": "", "tool": tool, "what": what, "kind": "tool", "at": at(minute), "state": state, "sub": False}
+
+
+def say(rid, minute, text):
+    return {"id": rid, "server": "", "tool": "", "what": text, "kind": "say", "at": at(minute), "state": "done", "sub": False}
+
+
+STEPS = [say("p1", 1, "I am reading the code."), step("p2", 2, "Read", "server.py"), row("p3", 3),
+         step("p4", 6, "Bash", "Run the tests", "open"), say("p5", 7, "Now running the tests.")]
+
+
 # card id: (phase, log, rows, extra agent fields)
 CARDS = {
     "groups": ("finished", [msg(0), msg(10)],
@@ -70,6 +82,11 @@ CARDS = {
                                                  "calls": [{"server": "muninn", "tool": "recall", "since": at(1)}]}}),
     "oldfin": ("finished", [msg(0)], [], {"mcp": {"failed": [{"name": "wp-log", "error": "no node"}]}}),
     "long": ("finished", [msg(i) for i in range(0, 40)], [row("x1", 2), row("x2", 5), row("x3", 20, what="in a gap")], {}),
+    # Every kind of step while the session works, and the same once it finished.
+    "steps": ("working", [you(0), msg(5)], STEPS, {}),
+    "stepsdone": ("finished", [you(0), msg(5)], STEPS, {}),
+    # A reply started a new run that has no step yet: nothing is "now".
+    "stepsold": ("working", [you(0), msg(5), you(9)], STEPS[:3], {}),
 }
 TASKS, AGENTS = [], {}
 for i, (tid, (phase, log, rows, extra)) in enumerate(CARDS.items()):
@@ -171,8 +188,10 @@ const load = async (lang, theme) => {
 // What the log holds, in order: a message, or a uses line with its summary and rows.
 const READ = `[...document.querySelectorAll('#d-log > li')].map((li) => li.classList.contains('k-uses')
   ? { uses: li.querySelector('summary').textContent.trim(), spin: !!li.querySelector('summary .turning'), open: li.querySelector('details').open,
-      noi: !li.hasAttribute('data-i'), rows: [...li.querySelectorAll('ul li')].map((x) => ({ text: x.textContent, failed: x.classList.contains('failed'),
-      time: x.querySelector('time').textContent, imgs: x.querySelectorAll('img, b, i').length })) }
+      noi: !li.hasAttribute('data-i'), rows: [...li.querySelectorAll('details ul li')].map((x) => ({ text: x.textContent, failed: x.classList.contains('failed'),
+      say: x.classList.contains('say'), time: x.querySelector('time').textContent, imgs: x.querySelectorAll('img, b, i').length })),
+      now: [...li.querySelectorAll('ul.now li')].map((x) => x.textContent),
+      nowShown: !!li.querySelector('ul.now') && getComputedStyle(li.querySelector('ul.now')).display !== 'none' }
   : { cls: li.className, i: li.dataset.i ?? null, text: li.querySelector('.msg')?.textContent ?? '' })`;
 const results = { cards: {} };
 results.ready = await load('en', 'light');
@@ -182,6 +201,24 @@ for (const c of ids) {
   results.cards[c] = await ev(READ);
 }
 results.xss = await ev(`window.__xss === undefined`);
+// The cards on the board: the newest step shows on a working card only.
+await ev(`closeDetail ? closeDetail() : null`); await sleep(60);
+results.tiles = await ev(`Object.fromEntries([...document.querySelectorAll('.card[data-id]')].map((c) => [c.dataset.id, c.querySelector('.agent-now')?.textContent ?? null]))`);
+await ev(`document.querySelector('.card[data-id="steps"]').scrollIntoView({ block: 'center' })`); await sleep(300);
+writeFileSync(`${outdir}/steps-board.png`, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'));
+// Opening the live list hides the lines under it (the list shows them), and closing it shows them again.
+await ev(`openDetail('steps'); showTab('conversation')`); await sleep(60);
+await ev(`[...document.querySelectorAll('#d-log li.k-uses summary')].pop().click()`); await sleep(120);
+results.stepsOpen = await ev(READ);
+await ev(`[...document.querySelectorAll('#d-log li.k-uses summary')].pop().click()`); await sleep(120);
+results.stepsClosed = await ev(READ);
+for (const [theme, name] of [['light', 'light'], ['dark', 'dark']]) {
+  await ev(`document.documentElement.dataset.theme = '${theme}'`);
+  await sleep(500);
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(`${outdir}/steps-${name}.png`, Buffer.from(shot.result.data, 'base64'));
+}
+await ev(`document.documentElement.dataset.theme = 'light'`);
 
 // The pure function, with a pending entry on the page's clock.
 results.groups = await ev(`(() => {
@@ -232,6 +269,8 @@ await ev(`openDetail('live')`); await sleep(60);
 results.frLive = await ev(READ);
 await ev(`openDetail('marks')`); await sleep(60);
 results.frMarks = await ev(READ);
+await ev(`openDetail('steps')`); await sleep(60);
+results.frSteps = await ev(READ);
 results.errors = errors;
 console.log(JSON.stringify(results));
 quit(0);
@@ -277,14 +316,14 @@ def main():
 
     check("groups: 3 before the second message, 2 after the last", shape(c["groups"]), ["msg", "uses", "msg", "uses"])
     g = uses(c["groups"])
-    check("groups: summaries", [x["uses"] for x in g], ["Used 3 MCP tools", "Used 2 MCP tools"])
+    check("groups: summaries", [x["uses"] for x in g], ["3 steps", "2 steps"])
     check("groups: rows in each", [len(x["rows"]) for x in g], [3, 2])
     check("groups: closed at first", [x["open"] for x in g], [False, False])
     check("groups: no scroll anchor on the line", [x["noi"] for x in g], [True, True])
     r0 = g[0]["rows"][0]
     check("a row has the tool and what it looked for", "muninn · muninn_recall" in r0["text"] and "what it looked for" in r0["text"], True)
     check("a row has a time with seconds", r0["time"].count(":") == 2 and r0["time"] in r0["text"], True)
-    check("one row: singular", [x["uses"] for x in uses(c["one"])], ["Used 1 MCP tool"])
+    check("one row: singular", [x["uses"] for x in uses(c["one"])], ["1 step"])
     check("no rows: no line at all", uses(c["none"]), [])
     check("short log: rows before the first message show above it", shape(c["short"]), ["uses", "msg"])
     check("a pending message: a later row lands in the last slot", res["groups"]["pending"], [0, 0, 1])
@@ -296,20 +335,20 @@ def main():
 
     live = uses(c["live"])
     check("live: the older open row has no spinner and reads no answer",
-          (live[0]["spin"], live[0]["uses"], "no answer" in live[0]["rows"][0]["text"]), (False, "Used 1 MCP tool", True))
+          (live[0]["spin"], live[0]["uses"], "no answer" in live[0]["rows"][0]["text"]), (False, "1 step", True))
     check("live: the newest open row spins and counts",
-          (live[1]["spin"], live[1]["uses"], "running" in live[1]["rows"][0]["text"]), (True, "Using MCP tools (1 so far)…", True))
+          (live[1]["spin"], live[1]["uses"], "running" in live[1]["rows"][0]["text"]), (True, "Working (1 step so far)…", True))
     waits = uses(c["waits"])
     check("needs you: reads running, no spinner, says Used",
-          (waits[0]["spin"], waits[0]["uses"], "running" in waits[0]["rows"][0]["text"]), (False, "Used 1 MCP tool", True))
+          (waits[0]["spin"], waits[0]["uses"], "running" in waits[0]["rows"][0]["text"]), (False, "1 step", True))
     a = uses(c["again"])[0]
     check("a new run with no tool yet: the old open row does not spin and reads no answer",
           (a["spin"], a["uses"], "no answer" in a["rows"][0]["text"], "running" in a["rows"][0]["text"]),
-          (False, "Used 1 MCP tool", True, False))
+          (False, "1 step", True, False))
     for name in ("report", "noted"):
         x = uses(c[name])[0]
         check(f"same run, then {name}: the open row still spins",
-              (x["spin"], x["uses"], "running" in x["rows"][0]["text"]), (True, "Using MCP tools (1 so far)…", True))
+              (x["spin"], x["uses"], "running" in x["rows"][0]["text"]), (True, "Working (1 step so far)…", True))
     n = uses(c["newrun"])
     check("a new run's own open row spins, the old one does not",
           [(x["spin"], "no answer" in x["rows"][0]["text"]) for x in n], [(False, True), (True, False)])
@@ -332,25 +371,61 @@ def main():
     check("long: the first shown message is number 10", c["long"][0].get("i"), "10")
     lng = uses(c["long"])
     check("long: rows older than the oldest shown message do not show",
-          [[("x1" if "x1" in r["text"] else "") for r in x["rows"]] for x in lng if "Used 2" in x["uses"]], [])
-    check("long: only the row in a gap shows", [(x["uses"], x["rows"][0]["text"].count("in a gap")) for x in lng], [("Used 1 MCP tool", 1)])
+          [[("x1" if "x1" in r["text"] else "") for r in x["rows"]] for x in lng if "2 steps" in x["uses"]], [])
+    check("long: only the row in a gap shows", [(x["uses"], x["rows"][0]["text"].count("in a gap")) for x in lng], [("1 step", 1)])
 
     check("clicking opens the list and is remembered", res["openedNow"], ["g1"])
     check("the node really was rebuilt", res["rebuilt"])
     after = uses(res["afterRebuild"])
     check("an opened list stays open over a rebuild", after[0]["open"])
-    check("... and shows the new row", (after[0]["uses"], len(after[0]["rows"])), ("Used 4 MCP tools", 4))
+    check("... and shows the new row", (after[0]["uses"], len(after[0]["rows"])), ("4 steps", 4))
     check("... and the other list stayed closed", after[1]["open"], False)
     check("another card and back: closed", [x["open"] for x in uses(res["comeBack"])], [False, False])
 
     check("French: page loaded", res["readyFr"])
-    check("French: summaries", [x["uses"] for x in uses(res["fr"])], ["4 outils MCP utilisés", "2 outils MCP utilisés"])
-    check("French: one row", uses(res["frLive"])[0]["uses"], "1 outil MCP utilisé")
-    check("French: live", uses(res["frLive"])[1]["uses"], "Utilise des outils MCP (1 pour l'instant)…")
+    check("French: summaries", [x["uses"] for x in uses(res["fr"])], ["4 étapes", "2 étapes"])
+    check("French: one row", uses(res["frLive"])[0]["uses"], "1 étape")
+    check("French: live", uses(res["frLive"])[1]["uses"], "Au travail (1 étape pour l'instant)…")
     check("French: no answer", "pas de réponse" in uses(res["frLive"])[0]["rows"][0]["text"], True)
     fm = uses(res["frMarks"])[0]["rows"]
     check("French: did not work, helper", ("n'a pas marché" in fm[0]["text"], "sous-agent" in fm[1]["text"]), (True, True))
-    print("screenshots:", os.path.join(SHOTS, "mcp-uses-light.png"), os.path.join(SHOTS, "mcp-uses-dark.png"))
+
+    # ---- every kind of step, and what shows while the session works
+    st = uses(c["steps"])
+    check("steps: a finished run and the run going on now", [x["uses"] for x in st], ["3 steps", "Working (2 steps so far)…"])
+    check("steps: the run going on spins, the older one does not", [x["spin"] for x in st], [False, True])
+    first = [r["text"] for r in st[0]["rows"]]
+    check("steps: Claude's words show as they are, marked as words", ("I am reading the code." in first[0], st[0]["rows"][0]["say"]),
+          (True, True))
+    check("steps: a built-in tool shows in plain words with what it worked on",
+          "Read" in first[1] and "server.py" in first[1] and not st[0]["rows"][1]["say"], True)
+    check("steps: an MCP use still shows server and tool", "muninn · muninn_recall" in first[2], True)
+    check("steps: the older run has no lines under it", st[0]["now"], [])
+    now = st[1]["now"]
+    check("steps: under the live line, the newest step then Claude's newest words",
+          (len(now), "Command" in now[0] and "Run the tests" in now[0] and "running" in now[0], "Now running the tests." in now[1]),
+          (2, True, True))
+    check("steps: those lines show while the list is closed", st[1]["nowShown"], True)
+    sd = uses(c["stepsdone"])
+    check("finished: no spinner, no lines under it", [(x["uses"], x["spin"], x["now"]) for x in sd],
+          [("3 steps", False, []), ("2 steps", False, [])])
+    check("finished: an open step reads no answer", "no answer" in sd[1]["rows"][0]["text"], True)
+    so = uses(c["stepsold"])
+    check("a new run with no step yet: nothing is shown as now", [(x["spin"], x["now"]) for x in so], [(False, [])])
+    tiles = res["tiles"]
+    check("board card: a working card shows its newest step", tiles.get("steps"), "Now running the tests.")
+    check("board card: an MCP use shows server and tool", tiles.get("live"), "muninn · muninn_recall what it looked for")
+    check("board card: a finished card shows none", tiles.get("stepsdone"), None)
+    check("board card: a new run with no step yet shows none", tiles.get("stepsold"), None)
+    check("board card: waiting on you shows none", tiles.get("waits"), None)
+    so_open, so_closed = uses(res["stepsOpen"])[-1], uses(res["stepsClosed"])[-1]
+    check("opening the live list hides the lines under it", (so_open["open"], so_open["nowShown"]), (True, False))
+    check("closing it shows them again", (so_closed["open"], so_closed["nowShown"]), (False, True))
+    fs = uses(res["frSteps"])
+    check("French: steps", [x["uses"] for x in fs], ["3 étapes", "Au travail (2 étapes pour l'instant)…"])
+    check("French: a command in plain words", "Commande" in fs[1]["now"][0] and "en cours" in fs[1]["now"][0], True)
+    print("screenshots:", os.path.join(SHOTS, "mcp-uses-light.png"), os.path.join(SHOTS, "mcp-uses-dark.png"),
+          os.path.join(SHOTS, "steps-light.png"), os.path.join(SHOTS, "steps-dark.png"))
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     return 1 if fails else 0
 

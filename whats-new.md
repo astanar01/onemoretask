@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-19
+
+- You can now watch Claude work. While it works, the card shows each step it takes and the last thing it said, as it happens, and the small card on the board shows its newest step. Click the "Working" line to see every step with its time. Codex cards show their steps too.
+
 ## 2026-11-18
 
 - A card you first closed with only a picture now still gets a real name when you send it, instead of staying "Untitled". This works for Claude and Codex.

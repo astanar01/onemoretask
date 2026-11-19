@@ -165,6 +165,30 @@ write(log, [{"type": "item.completed", "item": {**item, "id": "item_9", "status"
 check(codex.mcp_uses(log)[-1]["state"] == "done", "Codex: a completed call with no start still gives a row")
 check(codex.mcp_uses(os.path.join(TMP, "gone.jsonl")) == [], "Codex: a missing log gives nothing")
 
+# Codex's other steps: commands, file edits, its own words.
+steps_log = os.path.join(TMP, "codex-steps.jsonl")
+cmd = {"id": "item_1", "type": "command_execution", "command": "/bin/zsh -lc 'cat a.txt\nsecond'"}
+fc = {"id": "item_2", "type": "file_change", "changes": [{"path": "/repo/sub/server.py", "kind": "update"},
+                                                        {"path": "/repo/index.html", "kind": "update"}]}
+write(steps_log, [{"type": "turn.started"},
+                  {"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "I am  looking\nnow."}},
+                  {"type": "item.started", "item": {**cmd, "status": "in_progress"}},
+                  {"type": "item.started", "item": {"id": "item_2", "type": "file_change"}},
+                  {"type": "item.completed", "item": {"id": "item_5", "type": "reasoning", "text": "hidden"}},
+                  {"type": "item.completed", "item": {"id": "item_6", "type": "agent_message", "text": "  "}}])
+rows = codex.mcp_uses(steps_log)
+check([(r["kind"], r["tool"], r["what"], r["state"]) for r in rows]
+      == [("say", "", "I am looking now.", "done"), ("tool", "shell", "cat a.txt", "open"), ("tool", "edit", "", "open")],
+      "Codex: words, a command without its shell wrapper, an edit; reasoning and empty words left out", rows)
+write(steps_log, [{"type": "item.completed", "item": {**cmd, "status": "completed", "exit_code": 1}},
+                  {"type": "item.completed", "item": {**fc, "status": "completed"}},
+                  {"type": "item.completed", "item": {"id": "item_7", "type": "command_execution", "command": "ls",
+                                                      "status": "completed", "exit_code": 0}}], "a")
+rows = codex.mcp_uses(steps_log)
+check([(r["what"], r["state"]) for r in rows[1:]] == [("cat a.txt", "failed"), ("sub/server.py, repo/index.html", "done"),
+                                                      ("ls", "done")],
+      "Codex: a non-zero exit did not work, an edit names its files once done", rows)
+
 # Through the server, under a path codex.is_log accepts.
 real_log = os.path.join(TMP, "agent_reports", "codex", "abc.jsonl")
 os.makedirs(os.path.dirname(real_log))
@@ -180,20 +204,73 @@ write(u, [use(T1, "a1", "mcp__muninn__muninn_recall", {"context": ["task board"]
           use(T0, "a0", "mcp__plugin_context-mode_context-mode__ctx_search", {"queries": ["x", "y"]}),
           use(T1, "b1", "Bash", {"command": "mcp__not_really"})])
 rows = server.mcp_uses([u])
-check([(r["server"], r["tool"], r["what"], r["state"]) for r in rows]
-      == [("context-mode", "ctx_search", "x, y", "open"), ("muninn", "muninn_recall", "task board", "open")],
-      "two uses and a Bash call give two rows, oldest first, short plugin names", rows)
+check([(r["server"], r["tool"], r["what"], r["kind"], r["state"]) for r in rows]
+      == [("context-mode", "ctx_search", "x, y", "mcp", "open"), ("muninn", "muninn_recall", "task board", "mcp", "open"),
+          ("", "Bash", "mcp__not_really", "tool", "open")],
+      "two MCP uses and a Bash call give three rows, oldest first, short plugin names", rows)
 check(rows[0]["at"] == server._ts(T0) and rows[0]["sub"] is False, "a row has its time and sub false", rows)
 
 # The trap: a list already handed out must not change when a result arrives.
 old = server.mcp_uses([u])
 write(u, [result(T2, "a1")], "a")
 new = server.mcp_uses([u])
-check([r["state"] for r in old] == ["open", "open"], "the list handed out earlier still says open", old)
+check([r["state"] for r in old] == ["open", "open", "open"], "the list handed out earlier still says open", old)
 check(old != new, "old and new lists differ once a result arrives")
 check(new[1]["state"] == "done" and new[0]["state"] == "open", "a use gets done from its result", new)
 write(u, [result(T2, "a0", error=True)], "a")
 check(server.mcp_uses([u])[0]["state"] == "failed", "a result with is_error gives failed")
+write(u, [result(T2, "b1", error=True)], "a")
+check(server.mcp_uses([u])[2]["state"] == "failed", "a built-in tool's error result gives failed too")
+
+
+# ---- every step: built-in tools and Claude's own words
+def said(at, uuid, *texts, model="claude-opus-5-5", msg_id=None):
+    return {"type": "assistant", "timestamp": at, "uuid": uuid, "isSidechain": False,
+            "message": {"id": msg_id or "m-" + uuid, "model": model,
+                        "content": [{"type": "text", "text": t} if isinstance(t, str) else t for t in texts]}}
+
+
+s = os.path.join(tdir, "steps.jsonl")
+write(s, [use(T0, "t1", "Bash", {"command": "python3 tests/x.py\nmore", "description": "Run the tests"}),
+          use(T0, "t2", "Bash", {"command": "ls -la\nsecond line"}),
+          use(T0, "t3", "Read", {"file_path": "/Users/me/claudeapps/board/tests/test_x.py"}),
+          use(T0, "t4", "Edit", {"file_path": "server.py", "old_string": "a", "new_string": "b"}),
+          use(T0, "t5", "Grep", {"pattern": "def main", "path": "/x"}),
+          use(T0, "t6", "Agent", {"description": "Find the bug", "prompt": "long brief"}),
+          use(T0, "t7", "Skill", {"skill": "task-observer"}),
+          use(T0, "t8", "SomethingNew", {"query": "fallback text"}),
+          use(T0, "t9", "TodoWrite", {"todos": [{"content": "x"}]}),
+          use(T0, "t10", "Read", {"file_path": "   "}),
+          said(T1, "u-1", "  I found it.\n\nNow   fixing  it. "),
+          said(T1, "u-2", "x" * 500),
+          said(T1, "u-3", "", "   "),
+          said(T1, "u-4", "No response requested.", model="<synthetic>"),
+          said(T1, "u-5", {"type": "thinking", "thinking": "hidden"}, "after thinking"),
+          {"type": "user", "timestamp": T1, "uuid": "you-1", "message": {"content": [{"type": "text", "text": "the user's prompt"}]}},
+          {"type": "assistant", "timestamp": T1, "message": {"content": [{"type": "text", "text": "no ids at all"}]}}])
+rows = server.mcp_uses([s])
+by = {r["id"]: r for r in rows}
+check([(by[i]["kind"], by[i]["tool"], by[i]["what"]) for i in ("t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10")]
+      == [("tool", "Bash", "Run the tests"), ("tool", "Bash", "ls -la"), ("tool", "Read", "tests/test_x.py"),
+          ("tool", "Edit", "server.py"), ("tool", "Grep", "def main"), ("tool", "Agent", "Find the bug"),
+          ("tool", "Skill", "task-observer"), ("tool", "SomethingNew", "fallback text"), ("tool", "TodoWrite", ""),
+          ("tool", "Read", "")],
+      "built-in tools: the description, the first command line, the last two path parts, the pattern, a fallback",
+      [(r["id"], r["tool"], r["what"]) for r in rows])
+says = [r for r in rows if r["kind"] == "say"]
+check([r["what"] for r in says] == ["I found it. Now fixing it.", "x" * 299 + "…", "after thinking"],
+      "Claude's words: one line, cut at the limit; empty, synthetic, thinking, user text and id-less text left out",
+      [r["what"] for r in says])
+check(says[0]["id"] == "say:u-1:0" and says[2]["id"] == "say:u-5:1" and says[0]["state"] == "done"
+      and says[0]["server"] == "" and says[0]["at"] == server._ts(T1), "a said row: an id from the entry's uuid, done, its time",
+      says)
+check(len(server.say_text("y" * 300)) == 300 and not server.say_text("y" * 300).endswith("…"), "exactly the limit is not cut")
+copy = os.path.join(tdir, "steps-copy.jsonl")
+write(copy, [said(T1, "u-1", "  I found it.\n\nNow   fixing  it. ")])
+check(sum(r["kind"] == "say" for r in server.mcp_uses([s, copy])) == 3, "the same words copied by a resume give one row")
+check(server.tool_what("Read", None) == "" and server.tool_what("Bash", {"command": 5}) == "",
+      "tool_what: no input or no text gives nothing")
+check(server.tool_what("Read", {"file_path": "/a/b/c/"}) == "b/c", "tool_what: a folder path keeps its last two parts")
 
 # A copy in another entry type. Its id is new and it has a time, so only the type check can drop it.
 b = os.path.join(tdir, "u2.jsonl")
