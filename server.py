@@ -1596,7 +1596,9 @@ def renew_worktree(p, t):
     """A message to a "use worktrees" task whose worktree was deleted or merged away: make a fresh one, same folder
     and branch name (the card's record stays valid), from the default branch. Returns it, else None."""
     wt = (t.get("agent") or {}).get("worktree")
-    if not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or live_worktree(t):
+    # "Use a worktree" switched off since the launch: the work goes on in the project folder.
+    if (not isinstance(wt, dict) or not wt.get("branch") or t.get("answerOnly") or not t.get("worktree", True)
+            or live_worktree(t)):
         return None
     branch = wt["branch"]
     # A branch left behind with nothing main lacks would check out stale; drop it so the new one starts fresh.
@@ -3558,6 +3560,28 @@ def report_cmd(p, task_id):
     return script_cmd(p, task_id, "report.py")
 
 
+WORKTREE_OFF = ("\"Use a worktree\" is now off for this card: the user looks at your work in the project folder "
+                "({path}), for example in the game editor, and cannot see the worktree. Commit your work on branch "
+                "{branch}, merge it into the default branch in the project folder (never push), remove the worktree "
+                "and its branch, then carry on in {path} itself, with no worktree or branch.")
+
+
+def worktree_off(p, task_id):
+    """Switch "Use a worktree" off on the card (a sender asked for it: mage's cutscene editor, whose user previews the
+    work in the project folder). Returns True when it changed."""
+    with board_lock(p):
+        try:
+            state = load_tasks(p)
+        except FileNotFoundError:
+            return False
+        t = next((x for x in state.get("tasks") or [] if isinstance(x, dict) and x.get("id") == task_id), None)
+        if not t or t.get("worktree") is False:
+            return False
+        t["worktree"] = False
+        write_board(p, state)
+    return True
+
+
 def out_of_done(p, task_id):
     """A message to a card in a done column puts Claude back to work on it, so the card goes to the top of the In
     Progress column, with the subtasks nested under it (what index.html sendReply does before its own reply).
@@ -3599,15 +3623,21 @@ def out_of_done(p, task_id):
 
 
 @one_per_card
-def reply(p, task_id, text, images=(), extra=""):
+def reply(p, task_id, text, images=(), extra="", worktree=None):
     """Send a card message. While Claude works it is logged as a note for the session's inbox hook; else it
     resumes the session. Returns True when it was queued as a note. `extra` goes to the session after `text`
     but not onto the card's log (the note and reopen paths keep it with the text). A card in a done column
-    moves to In Progress first (out_of_done)."""
+    moves to In Progress first (out_of_done). worktree=False switches the card's "Use a worktree" off first."""
     info = WATCH.snapshot(p.id).get(task_id)
     if not info:
         raise LookupError("no Claude session for this task")
     out_of_done(p, task_id)
+    if worktree is False and worktree_off(p, task_id):
+        # A session still on its worktree hears it now; a resume hears it from board_tail.
+        t = next((x for x in load_tasks(p)["tasks"] if x.get("id") == task_id), {})
+        live = None if t.get("answerOnly") else live_worktree(t)
+        if live and (info["phase"] == "working" or info.get("archived")):
+            extra += "\n\n" + WORKTREE_OFF.format(path=p.path, branch=live["branch"])
     if info["phase"] == "working":
         reports.append(p.board, task_id, "note", text + extra, "you", images=list(images))
         return True
@@ -3642,6 +3672,8 @@ def board_tail(p, task_id):
     wt = t and renew_worktree(p, t)
     if wt:
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
+    elif t and t.get("worktree") is False and not t.get("answerOnly") and live_worktree(t):
+        extra += "\n\n" + WORKTREE_OFF.format(path=p.path, branch=live_worktree(t)["branch"])
     extra += delegate_reminder(t, script_cmd(p, task_id, "codex_worker.py"))
     if t and t.get("planMode"):
         extra += "\n\n" + plan_reminder(p, t)
@@ -4573,7 +4605,8 @@ def reopen(p, task_id, text, images=(), handed=0):
         raise LookupError("no Claude session for this task")
     fresh = renew_worktree(p, t)
     model = t["agent"].get("model") or ""
-    prompt = "\n".join([build_prompt(p, state, t, fresh or live_worktree(t), model), "",
+    wt = fresh or (live_worktree(t) if t.get("worktree", True) else None)
+    prompt = "\n".join([build_prompt(p, state, t, wt, model), "",
                         *((renewed_lines(fresh, p.path)[0], "") if fresh else ()),
                         "This task was worked on before. Its sessions were closed when the card moved to done, and "
                         "this recap was written from them:", "", recap, "",
@@ -5301,7 +5334,7 @@ class Handler(SimpleHTTPRequestHandler):
                 images = [n for n in body.get("images", [])
                           if os.path.exists(reports.image_path(reports.log_images(p.board), n))]
                 text = body["text"].strip() or ("See the attached images." if images else "Go ahead.")
-                queued = reply(p, body["taskId"], text, images)
+                queued = reply(p, body["taskId"], text, images, worktree=False if body.get("worktree") is False else None)
                 # The page keeps its copy pending until the log holds this exact text.
                 self._json(200, {"ok": True, "queued": queued, "message": text})
         self._errors(handle)
