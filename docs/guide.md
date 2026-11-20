@@ -366,6 +366,12 @@ your skills and asks you on the card which changes to make.
   on. It turns orange on a task's worktree; pick another copy to jump to it.
 - **↑ N unpushed** (orange) shows when the project has commits not pushed to its remote yet. Click it for the
   list, and **Push to remote…** there to push them to the remote branch you pick.
+- **MCP** lists every MCP server Claude can use in this project: whether it works, how many tools it gives, and
+  why not when it fails. The number on the button counts the ones that do not work. The board asks Claude Code
+  itself when the page loads, when you open the list (the answer is kept for a minute) and every half hour while
+  the page is in view; **Check again** asks anew. Each check starts the servers for a few seconds, as a new
+  session would. context-mode shows as "Works only in part" when only its health check loads, which is what a
+  Node too old for it looks like.
 - **Update** (see [Update](#update)), a button that shows when a newer Claude Code is out (click it and
   confirm, and the board runs `claude update`), and a count of cards waiting on you.
 

@@ -106,6 +106,8 @@ SERVER_SENTENCES = [
     "Nothing to update.",
     "Could not find Claude Code.",
     "Claude Code took too long to update. Try again later.",
+    "Claude Code did not answer.",
+    "This Claude Code cannot list its MCP servers. Update it.",
 ]
 
 

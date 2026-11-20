@@ -104,6 +104,8 @@ GET /api/update compares the app's own git clone with GitHub (fetch, cached 10 m
 setup/run_setup.py --if-needed in the background, so a pull that changes the Claude Code tools, hooks or skills
 sets them up; GET /api/update says settingUp: true meanwhile. The app's version is the number of commits on the
 first-parent line (app_version), so each push to main raises it; GET /api/update gives version and latestVersion.
+GET /api/mcp?p=<pid> lists the MCP servers a session in that project gets, each with its state and its number of
+tools, as Claude Code itself reports them (mcp_watch; ?force=1 checks again; `checking` is true while a check runs).
 GET /api/claude-version compares `claude --version` with npm's dist-tag for the user's autoUpdatesChannel (cached
 like the update check); POST /api/claude-version runs `claude update`.
 
@@ -4904,6 +4906,159 @@ class ClaudeUpdater:
 CLAUDE_UPDATER = ClaudeUpdater()
 
 
+# ---------------------------------------------------------------- MCP servers
+MCP_TTL = 60     # seconds a finished check stays fresh
+MCP_WAIT = 40    # seconds one check may run: Claude Code gives a silent server 30 s before it calls it failed
+MCP_SETTLE = 3   # seconds before a list with nothing left starting counts as whole (claude.ai connectors join late)
+MCP_ORDER = ("failed", "limited", "needs-auth", "pending", "connected", "disabled")
+
+
+def folder_trusted(path):
+    """True when Claude's trust prompt was accepted for `path` or a folder above it (a task's worktree is covered
+    by its project's entry in .claude.json)."""
+    try:
+        with open(claude_json(), encoding="utf-8") as f:
+            saved = json.load(f).get("projects", {})
+    except (OSError, ValueError, AttributeError):
+        return False
+    at = os.path.abspath(path)
+    while True:
+        if any(isinstance(saved.get(k), dict) and saved[k].get("hasTrustDialogAccepted") for k in {at, shell_path(at)}):
+            return True
+        up = os.path.dirname(at)
+        if up == at:
+            return False
+        at = up
+
+
+def mcp_row(s):
+    """One MCP server as the page lists it, from an entry of Claude Code's mcp_status answer. Its command, URL and
+    env stay on the server: they can hold keys."""
+    name = str(s.get("name") or "")
+    tools = [t.get("name") for t in s.get("tools") or [] if isinstance(t, dict)]
+    row = {"name": name, "label": name.rsplit(":", 1)[-1] if name.startswith("plugin:") else name,
+           "status": str(s.get("status") or "unknown"), "tools": len(tools), "error": str(s.get("error") or "")[:300],
+           "from": str(s.get("source") or s.get("scope") or "")}
+    # context-mode on a Node older than it needs still connects, with its health check as its only tool.
+    if row["status"] == "connected" and row["label"] == "context-mode" and tools == ["ctx_doctor"]:
+        row["status"] = "limited"
+    return row
+
+
+def mcp_rows(servers):
+    rows = [mcp_row(s) for s in servers if isinstance(s, dict)]
+    rank = {s: i for i, s in enumerate(MCP_ORDER)}
+    return sorted(rows, key=lambda r: (rank.get(r["status"], len(rank)), r["label"].lower()))
+
+
+def mcp_watch(cwd, publish, wait=None, settle=None, every=1.0):
+    """Ask Claude Code which MCP servers a session started in `cwd` gets, and call publish(rows) each time the
+    answer changes, until every server has settled or `wait` seconds passed. Returns an error text, "" when fine.
+    A short-lived `claude -p` in stream-json mode answers the control request `mcp_status` with what its own
+    session sees (state, tools, error). No prompt is sent, so no model runs. Hooks are off for it
+    (disableAllHooks): its SessionStart hooks would run on every check. Closing its stdin ends it and its servers.
+    It runs with the board's own environment, the PATH the board hands its sessions (SESSION_PATH)."""
+    wait = MCP_WAIT if wait is None else wait
+    settle = MCP_SETTLE if settle is None else settle
+    args = ["-p", *ReadyClaude.STREAM, "--no-session-persistence", "--settings", json.dumps({"disableAllHooks": True})]
+    try:
+        proc = subprocess.Popen(claude_command(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, cwd=cwd, **TEXT)
+    except (OSError, RuntimeError, ValueError):
+        return "Could not find Claude Code."
+    lines = queue.Queue()
+
+    def pump():
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    def ask(request_id, subtype):
+        proc.stdin.write(json.dumps({"type": "control_request", "request_id": request_id,
+                                     "request": {"subtype": subtype}}) + "\n")
+        proc.stdin.flush()
+
+    threading.Thread(target=pump, daemon=True).start()
+    started, last, asked, answered, error = time.time(), None, 0, False, ""
+    try:
+        ask("init", "initialize")
+        ask("mcp0", "mcp_status")
+        while time.time() - started < wait:
+            try:
+                line = lines.get(timeout=every)
+            except queue.Empty:
+                continue
+            if line is None:
+                break   # Claude Code ended by itself
+            try:
+                reply = json.loads(line).get("response") or {}
+            except (ValueError, AttributeError):
+                continue
+            if not str(reply.get("request_id") or "").startswith("mcp"):
+                continue
+            if reply.get("subtype") != "success":
+                error = "This Claude Code cannot list its MCP servers. Update it."
+                break
+            rows = mcp_rows((reply.get("response") or {}).get("mcpServers") or [])
+            answered = True
+            same, last = rows == last, rows
+            if not same:
+                publish(rows)
+            elif time.time() - started >= settle and not any(r["status"] == "pending" for r in rows):
+                break
+            time.sleep(every)
+            asked += 1
+            ask(f"mcp{asked}", "mcp_status")
+    except (OSError, ValueError):   # the pipe closed under a write
+        pass
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    return error or ("" if answered else "Claude Code did not answer.")
+
+
+class McpCheck:
+    """GET /api/mcp: each project folder's MCP servers. A check runs in the background and the answer comes at once
+    with what is known so far (`checking` while it runs), so the page can show servers as they come up. A folder
+    Claude does not trust yet is checked from the temp folder: only the user's own servers show (`folder` false)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.state = {}
+
+    def status(self, path, force=False):
+        with self.lock:
+            st = self.state.get(path)
+            stale = not st or force or time.time() - st["at"] > MCP_TTL
+            if not st or (stale and not st["checking"]):
+                st = self.state[path] = {"servers": st["servers"] if st else [], "at": st["at"] if st else 0,
+                                         "checking": True, "error": "", "folder": folder_trusted(path)}
+                threading.Thread(target=self.run, args=(path, st), daemon=True).start()
+            return dict(st)
+
+    def run(self, path, st):
+        def publish(rows):
+            with self.lock:
+                st["servers"] = rows
+
+        try:
+            error = mcp_watch(path if st["folder"] else tempfile.gettempdir(), publish)
+        except Exception as e:   # a check must always end: the page waits on `checking`
+            error = f"The MCP check failed: {e}"[:300]
+        with self.lock:
+            st.update(checking=False, at=time.time(), error=error)
+
+
+MCP_CHECK = McpCheck()
+
+
 def app_copies():
     """The checkouts of the app's repo (the main one first, then its worktrees) and which one this server runs
     from. Empty when the app is not a git checkout."""
@@ -5249,6 +5404,9 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/api/claude-version":
             force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
             self._errors(lambda: self._json(200, CLAUDE_UPDATER.status(force)))
+        elif path == "/api/mcp":
+            force = parse_qs(urlsplit(self.path).query).get("force", [""])[0] not in ("", "0")
+            self._errors(lambda: self._json(200, MCP_CHECK.status(project(pid).path, force)))
         elif path in ("/", "/index.html"):
             # Only the page itself: the app folder also holds .git/ and the board data.
             with open(os.path.join(HERE, "index.html"), "rb") as f:

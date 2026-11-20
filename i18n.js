@@ -752,7 +752,22 @@ const I18N = {
     "Pick at least one day": "Choisissez au moins un jour",
     "Could not save the schedule: {err}": "Impossible d’enregistrer la planification : {err}",
     "Could not measure the folder: {error}": "Impossible de mesurer le dossier : {error}",
-    "Could not change the memory note: {error}": "Impossible de modifier la note de mémoire : {error}"
+    "Could not change the memory note: {error}": "Impossible de modifier la note de mémoire : {error}",
+    "The MCP servers Claude can use in this project, and if each one works": "Les serveurs MCP que Claude peut utiliser dans ce projet, et si chacun fonctionne",
+    "MCP servers": "Serveurs MCP",
+    "Works · 1 tool": "Fonctionne · 1 outil",
+    "Works · {n} tools": "Fonctionne · {n} outils",
+    "Works": "Fonctionne",
+    "Works only in part": "Ne fonctionne qu’en partie",
+    "Does not work": "Ne fonctionne pas",
+    "Needs sign-in": "Connexion requise",
+    "Switched off": "Désactivé",
+    "Checked at {time}": "Vérifié à {time}",
+    "Only its health check loads. It needs a newer Node.": "Seul son contrôle de santé se charge. Il lui faut un Node plus récent.",
+    "Claude does not trust this folder yet, so the project's own MCP servers are not listed.": "Claude ne fait pas encore confiance à ce dossier : les serveurs MCP propres au projet ne sont pas listés.",
+    "No MCP servers here.": "Aucun serveur MCP ici.",
+    "Claude Code did not answer.": "Claude Code n’a pas répondu.",
+    "This Claude Code cannot list its MCP servers. Update it.": "Cette version de Claude Code ne sait pas lister ses serveurs MCP. Mettez-la à jour."
   } /* fr-end */
 };
 
