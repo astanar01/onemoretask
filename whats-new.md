@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-20
+
+- Claude's space-saving helper (context mode) works again in tasks you start from the board. Before, it stayed off in every task when the board was opened from a window left open for days.
+
 ## 2026-11-19
 
 - Claude no longer gives you an answer button like "I will type it" that sends nothing you typed. When it needs you to write something, it asks that as its own question.

@@ -37,6 +37,7 @@ PLUGIN = "context-mode@context-mode"
 PLUGIN_CMDS = [["plugin", "marketplace", "add", "mksglu/context-mode"],
                ["plugin", "install", PLUGIN, "--scope", "user"]]
 # Below this the context-mode 2.x server offers only ctx_doctor and its hooks do nothing.
+# shell_env.py holds the same number (the board gives its sessions such a Node); a test keeps the two equal.
 NODE_MIN = (24, 15, 0)
 # 2.x swaps Bash/Read output over 4 KB for a preview; 0/empty/invalid mean 4096, so a big number turns it off.
 CTX_ENV = ("CTX_REPLACE_TRIGGER_BYTES", "1048576")
@@ -445,9 +446,10 @@ def setup_context_mode(claude_dir, dry):
               "Install a newer Node, then run setup again — context-mode plugin skipped.")
         nvm = newer_nvm_node()
         if nvm:
-            print(f"  Node {nvm} is already installed with nvm, but the board started with another one. "
-                  f"Make it the default (nvm alias default {nvm.lstrip('v')}), then restart the board "
-                  "from a new terminal so its Claude sessions use it too.")
+            print(f"  Node {nvm} is already installed with nvm, but an older one comes first on PATH here. "
+                  "When the board starts, it puts that newer Node first for its Claude sessions and runs this "
+                  f"step again. For sessions you start yourself: nvm alias default {nvm.lstrip('v')}, then open "
+                  "a new terminal window (a terminal keeps the Node it opened with).")
         FAILED.append("context-mode")
         return
     set_settings_env(claude_dir, *CTX_ENV, dry)

@@ -1627,11 +1627,31 @@ def commit_ref(p, t):
     return "HEAD"
 
 
+SESSION_PATH = ""  # main() sets it: session_path()
+
+
+def session_path(env=None):
+    """The PATH a session gets through its settings: the board's own when its first `node` is new enough for
+    context-mode, "" to leave the session's PATH alone (also on Windows, untested there, and with
+    ONEMORETASK_KEEP_PATH=1).
+    The board's environment does not reach a background session by itself: the session takes the one of Claude
+    Code's background runner (`claude daemon run`), which keeps the PATH of the first `claude --bg` that started it,
+    through its own upgrades, for days. Measured 2026-11-20: a runner started from a terminal opened before a Node
+    upgrade gave every card Node 24.12.0 for five days, so context-mode offered only ctx_doctor; the same runner
+    with PATH in the session's settings env ran the context-mode server and its hooks on the newer Node."""
+    env = os.environ if env is None else env
+    path = env.get("PATH", "")
+    if WINDOWS or env.get("ONEMORETASK_KEEP_PATH") or not shell_env.node_ok(path):
+        return ""
+    return path
+
+
 def inbox_settings(p, task_id, worker=""):
     """--settings JSON that installs inbox.py, so card messages sent mid-work reach the running session, and
     branch_guard.py, so no session switches the branch of the main checkout that other tasks share (and an
     answer-only card edits no files and writes nothing with git; its shell runs in a read-only sandbox). `worker`: the
-    card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request)."""
+    card's subagent model; the env pins every subagent to it (the brief's per-call model is only a request). The env
+    also carries SESSION_PATH, so the session's MCP servers and hooks find the board's Node."""
     hook = [{"hooks": [{"type": "command", "command": script_cmd(p, task_id, "inbox.py")}]}]
     # Edit tools too: on an answer-only card the guard also refuses file edits and git writes in a repo.
     guard = [{"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
@@ -1642,8 +1662,13 @@ def inbox_settings(p, task_id, worker=""):
     s = {"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}}
     if answer_only_task(p, task_id):
         s["sandbox"] = answer_only_sandbox(p, task_id)
+    env = {}
     if worker:
-        s["env"] = {"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"}
+        env.update({"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"})
+    if SESSION_PATH:
+        env["PATH"] = SESSION_PATH
+    if env:
+        s["env"] = env
     return json.dumps(s)
 
 
@@ -5408,14 +5433,21 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    global PERMISSION_MODE, SERVER_ARGS, CLAUDE_CMD
+    global PERMISSION_MODE, SERVER_ARGS, CLAUDE_CMD, SESSION_PATH
     SERVER_ARGS = sys.argv[1:]
     # Opened from a desktop launcher or a login item, the board has the system's short PATH, and every session it
     # starts then fails to start MCP servers run by node/npx (shell_env). Take the login shell's PATH first.
     added = shell_env.fix_path()
-    if added:
+    # A terminal opened before a Node upgrade still has the old Node, and so does the login shell asked above.
+    node_dir = shell_env.fix_node()
+    if added or node_dir:
         CLAUDE_CMD = claude_cmd()
+    if added:
         print(f"Took the PATH of your login shell ({len(added)} more folders), so sessions find node/npx.")
+    if node_dir:
+        print(f"Sessions use the Node in {node_dir}: the one this terminal has is too old for context-mode "
+              "(ONEMORETASK_KEEP_PATH=1 keeps yours).")
+    SESSION_PATH = session_path()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--project", help="open this folder's board (default with none remembered: the current git repo)")
