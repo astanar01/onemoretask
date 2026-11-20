@@ -3558,14 +3558,56 @@ def report_cmd(p, task_id):
     return script_cmd(p, task_id, "report.py")
 
 
+def out_of_done(p, task_id):
+    """A message to a card in a done column puts Claude back to work on it, so the card goes to the top of the In
+    Progress column, with the subtasks nested under it (what index.html sendReply does before its own reply).
+    Senders that post straight to /api/agent/reply, like mage's cutscene editor, left a working card in Done.
+    Returns True when it moved."""
+    with board_lock(p):
+        try:
+            state = load_tasks(p)
+        except FileNotFoundError:
+            return False
+        cols = [c for c in state.get("columns") or [] if isinstance(c, dict)]
+        tasks = [t for t in state.get("tasks") or [] if isinstance(t, dict)]
+        done = {c.get("id") for c in cols if c.get("done")}
+        t = next((x for x in tasks if x.get("id") == task_id), None)
+        if not t or t.get("column") not in done:
+            return False
+        # index.html colRole: the column with the role, or on a board with no such role, one named like it.
+        if any(c.get("role") == "progress" for c in cols):
+            prog = next((c for c in cols if not c.get("done") and c.get("role") == "progress"), None)
+        else:
+            prog = next((c for c in cols if not c.get("done") and re.search(r"progress|doing", str(c.get("name") or ""), re.I)), None)
+        if not prog:
+            return False
+        src = t["column"]
+
+        moving, seen = [t], {task_id}
+        for parent in moving:  # grows while it runs: each subtask's own subtasks follow it
+            for x in tasks:
+                if x.get("parent") == parent["id"] and x.get("column") == src and x.get("id") not in seen:
+                    seen.add(x.get("id"))
+                    moving.append(x)
+        top = min((x.get("order", 0) for x in tasks if x.get("column") == prog["id"]), default=0)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        for i, x in enumerate(moving):
+            x.update(column=prog["id"], order=top - len(moving) + i)
+        t["updated"] = stamp
+        write_board(p, state)
+    return True
+
+
 @one_per_card
 def reply(p, task_id, text, images=(), extra=""):
     """Send a card message. While Claude works it is logged as a note for the session's inbox hook; else it
     resumes the session. Returns True when it was queued as a note. `extra` goes to the session after `text`
-    but not onto the card's log (the note and reopen paths keep it with the text)."""
+    but not onto the card's log (the note and reopen paths keep it with the text). A card in a done column
+    moves to In Progress first (out_of_done)."""
     info = WATCH.snapshot(p.id).get(task_id)
     if not info:
         raise LookupError("no Claude session for this task")
+    out_of_done(p, task_id)
     if info["phase"] == "working":
         reports.append(p.board, task_id, "note", text + extra, "you", images=list(images))
         return True
