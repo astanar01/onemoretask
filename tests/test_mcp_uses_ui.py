@@ -252,7 +252,8 @@ await ev(`document.documentElement.dataset.theme = 'light'`);
 await ev(`fetch('/__change', { method: 'PUT' })`);
 let gone = false;
 for (let i = 0; i < 30 && !gone; i++) {
-  await ev(`await pollAgents()`); await sleep(100);
+  // A poll keeps unchanged rows (patchLog): forget them so this poll draws the list from scratch.
+  await ev(`delete document.querySelector('#d-log')._parts; await pollAgents()`); await sleep(100);
   gone = await ev(`document.querySelector('#d-log li.k-uses details').__tag === undefined`);
 }
 results.rebuilt = gone;

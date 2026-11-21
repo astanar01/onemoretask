@@ -4,6 +4,7 @@
 
 - A new MCP button at the top lists every MCP Claude can use in your project and shows if each one works. A small number on the button counts the ones that do not.
 - Claude's space-saving helper (context mode) works again in tasks you start from the board. Before, it stayed off in every task when the board was opened from a window left open for days.
+- Typing on the board no longer stutters while Claude works. The board now only redraws the cards that changed, and waits while you type.
 
 ## 2026-11-19
 

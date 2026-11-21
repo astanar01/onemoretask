@@ -1599,8 +1599,8 @@ function groupEl(t, kidsOf, top) {
   g.className = "group" + (collapsed.has(t.id) ? " collapsed" : "");
   g.dataset.id = t.id;
   const kids = kidsOf(t.id);
-  const card = cardEl(t, top, kids.length);
-  cardDrag(card, g);
+  const make = (x) => { const c = cardEl(x, top, kids.length); cardDrag(c, g); c._make = make; return c; };
+  const card = make(t);
   g.appendChild(card);
   const box = document.createElement("div");
   box.className = "children";
@@ -1639,6 +1639,7 @@ function cardEl(t, top, nestedCount) {
     ${nowStep(ag) ? `<div class="agent-note agent-now">${stepText(nowStep(ag))}</div>` : ""}
     ${cardReview(t) ? `<button class="btn review" title="${window.t("A fresh {who} session code-reviews this task's commits", { who: reviewer(t) })}">${window.t("Review code")}</button>` : ""}
     ${freshRow(t, ag)}`;
+  el._html = el.innerHTML;   // as built, before tickCache fills the cache chip: refreshCards compares this
   el.addEventListener("click", (e) => { if (!e.target.closest("a.url")) openDetail(t.id); });
   const rv = el.querySelector(".review");
   if (rv) rv.addEventListener("click", (e) => { e.stopPropagation(); startReview(t); });
@@ -1734,6 +1735,8 @@ function listRowEl(x, depth) {
   el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${esc(x.priority)}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
     ${l2.trim() ? `<div class="l2">${l2}</div>` : ""}
     ${freshRow(x, ag)}`;
+  el._html = el.innerHTML;
+  el._make = (y) => listRowEl(y, depth);
   const fr = el.querySelector(".fresh .btn");
   if (fr) fr.addEventListener("click", (e) => { e.stopPropagation(); openFresh(x); });
   el.onclick = () => openDetail(x.id);
@@ -2885,6 +2888,44 @@ loadCodexModels();
 setInterval(() => loadCodexModels(), 30 * 60 * 1000);   // a board left open still gets new models
 function moveToDone(id) { moveTask(id, doneCol(), null); render(); }
 
+// Draws the conversation from its parts and keeps the elements of every part that did not change, so a poll that
+// only brings new steps adds rows instead of rebuilding hundreds. A part with a control in it (choices, a note box, a
+// button) is always drawn fresh: code elsewhere disables or fills those in place, and a kept one would keep that state.
+const tplEl = document.createElement("template");
+function patchLog(box, parts, key) {
+  const prev = box._parts && box._partsFor === key && box._parts.every((p) => p.nodes.every((n) => n.parentNode === box)) ? box._parts : [];
+  const pool = new Map(), usesBy = new Map(), used = new Set(), out = [];
+  for (const p of prev) { if (!pool.has(p.html)) pool.set(p.html, []); pool.get(p.html).push(p); if (p.g) usesBy.set(p.g, p); }
+  for (const html of parts) {
+    if (!html) continue;
+    const same = !/<(button|textarea|input|select)\b/.test(html) && (pool.get(html) || []).find((p) => !used.has(p));
+    if (same) { used.add(same); out.push(same); continue; }
+    tplEl.innerHTML = html;
+    const nodes = [...tplEl.content.childNodes];
+    const g = nodes.length === 1 && nodes[0].matches && nodes[0].matches("li.k-uses") ? nodes[0].dataset.g : null;
+    const old = g && usesBy.get(g);
+    // The same run of steps grew: add its new rows to the rows already there.
+    if (old && !used.has(old) && old.nodes.length === 1) { used.add(old); syncUses(old.nodes[0], nodes[0]); out.push({ html, nodes: old.nodes, g }); continue; }
+    out.push({ html, nodes, g });
+  }
+  for (const p of prev) if (!used.has(p)) p.nodes.forEach((n) => n.remove());
+  let at = box.firstChild;
+  for (const p of out) for (const n of p.nodes) { if (n === at) at = at.nextSibling; else box.insertBefore(n, at); }
+  while (at) { const nx = at.nextSibling; at.remove(); at = nx; }
+  box._parts = out; box._partsFor = key;
+}
+function syncUses(o, n) {
+  o.className = n.className;
+  const od = o.querySelector("details"), nd = n.querySelector("details");
+  const os = od.querySelector("summary"), ns = nd.querySelector("summary");
+  if (os.innerHTML !== ns.innerHTML) os.innerHTML = ns.innerHTML;
+  const a = od.querySelector("ul"), ak = a.children, bk = [...nd.querySelector("ul").children];
+  bk.forEach((x, i) => { const y = ak[i]; if (!y) a.appendChild(x); else if (y.outerHTML !== x.outerHTML) y.replaceWith(x); });
+  while (ak.length > bk.length) ak[ak.length - 1].remove();
+  const on = o.querySelector(":scope > ul.now"), nn = n.querySelector(":scope > ul.now");
+  if (on) on.remove();
+  if (nn) o.appendChild(nn);
+}
 function renderAgent(t) {
   queueMicrotask(tickCache);   // fill the cache chips this render creates
   const ag = t.agent && agents[t.id];
@@ -2945,7 +2986,16 @@ function renderAgent(t) {
   const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
   // A suggested card older than the shown messages and not added yet stays reachable at the top.
   const keepCards = log.slice(0, start).map((e, k) => e.card && (!cardAdded(e) || cardsJustAdded.has(cardKey(e))) ? `<li class="k-progress k-oldcard"><span class="who">${who(t)} · ${esc(window.t("earlier"))} · ${fmt(e.at)}</span>${cardSuggest(e, k)}</li>` : "").join("");
-  $("#d-log").innerHTML = keepCards + shown.map((e, i) => usesLine(groups[i], ag, i === lastG, runAt) + `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) + qChoices(shown, i) : msgChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`).join("") + usesLine(groups[shown.length], ag, shown.length === lastG, runAt);
+  const parts = [keepCards];
+  shown.forEach((e, i) => parts.push(usesLine(groups[i], ag, i === lastG, runAt), `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) + qChoices(shown, i) : msgChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`));
+  parts.push(usesLine(groups[shown.length], ag, shown.length === lastG, runAt));
+  // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
+  // from the CLI's record) or on something only `claude attach` can show.
+  const said = log.filter((e) => e.status !== "note" && e.from !== "board").pop();
+  if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
+    parts.push(`<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
+  parts.push(mcpLines(ag));
+  patchLog(dl, parts, t.id);
   if (fk) {
     const box = [...dl.querySelectorAll("textarea[data-qnote]")].find((x) => x.dataset.qnote === fk);
     if (box && !box.disabled) { box.focus({ preventScroll: true }); box.setSelectionRange(caret[0], caret[1]); }
@@ -2956,14 +3006,8 @@ function renderAgent(t) {
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-model").value = reviewModel();
   $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
-  // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
-  // from the CLI's record) or on something only `claude attach` can show.
-  const said = log.filter((e) => e.status !== "note" && e.from !== "board").pop();
-  if (ag && ag.phase === "needs_you" && (ag.permission || !(said && said.from === "claude" && said.status === "question")))
-    $("#d-log").insertAdjacentHTML("beforeend", `<li class="k-question"><span class="who">${window.t("Board")}</span><div class="msg md">${fmtMsg(window.t(ag.reason))}</div></li>`);
   const busy = ag && ag.phase === "working";
   const nm = who(t);
-  $("#d-log").insertAdjacentHTML("beforeend", mcpLines(ag));
   $("#d-reply").placeholder = busy ? window.t("Add to what {who} is doing — it goes in right away and {who} reads it as soon as it can. Cmd+Enter to send, paste pictures or files to attach", { who: nm })
     : window.t("Answer {who} — Cmd+Enter to send, paste pictures or files to attach", { who: nm });
   $("#d-reply-send").textContent = busy ? window.t("Send note") : window.t("Send reply");
@@ -3041,8 +3085,15 @@ function stepText(r) {
   if (k === "say") return `<i>${esc(r.what)}</i>`;
   return `<span class="tool">${esc(k === "mcp" ? `${r.server} · ${r.tool}` : stepName(r.tool))}</span>${r.what ? ` ${esc(r.what)}` : ""}`;
 }
+// Formatting a time is slow next to the rest of a step row, and every poll redraws hundreds: keep each one made.
+const stepTimes = new Map();
+function stepTime(at) {
+  let s = stepTimes.get(at);
+  if (s === undefined) { if (stepTimes.size > 5000) stepTimes.clear(); stepTimes.set(at, s = new Date(at * 1000).toLocaleTimeString(LOCALE, { timeStyle: "medium" })); }
+  return s;
+}
 function stepItem(r, mark) {
-  const time = new Date(r.at * 1000).toLocaleTimeString(LOCALE, { timeStyle: "medium" });
+  const time = stepTime(r.at);
   const k = stepKind(r);
   const head = k === "say" ? "" : `<span class="tool">${esc(k === "mcp" ? `${r.server} · ${r.tool}` : stepName(r.tool))}</span> `;
   const what = r.what ? `<span class="what">${esc(r.what)}</span>` : "";
@@ -4079,12 +4130,36 @@ $("#board").addEventListener("pointerdown", (e) => { if (e.target.closest(".card
 $("#board").addEventListener("wheel", () => (scrollWheelAt = Date.now()), { passive: true });
 for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, () => (scrollGrab = false));
 // It also waits while a column name is being typed: the rebuilt box would drop the cursor (change saves it and redraws).
+// And while someone types in any box: a full redraw of a big board blocks the page for about 100 ms.
+let typedAt = 0;
+addEventListener("input", (e) => { if (e.target.matches && e.target.matches("input, textarea, [contenteditable]")) typedAt = Date.now(); }, true);
 function pollRender() {
   clearTimeout(pollRenderTimer);
   // Only while the box holds unsaved typing: a name box that just has the cursor must not stop cards updating.
   const a = document.activeElement, naming = a && a.matches && a.matches("#board .col-head .name") && a.value !== a.defaultValue;
-  if (naming || scrollGrab || Date.now() - scrollWheelAt < 500) { pollRenderTimer = setTimeout(pollRender, 250); return; }
+  const typing = a && a.matches && a.matches("input, textarea, [contenteditable]") && Date.now() - typedAt < 1500;
+  if (naming || typing || scrollGrab || Date.now() - scrollWheelAt < 500) { pollRenderTimer = setTimeout(pollRender, 250); return; }
   render();
+}
+// A poll that only brought news for some cards redraws just those cards, in place; the others stay the same elements.
+// Measured 2026-11-20: a full redraw of a 340-card board took 91-126 ms in the list view.
+function refreshCards(ids) {
+  if (view === "plan") return pollRender();   // the plan keeps its own check for changes
+  let n = 0;
+  for (const id of ids) {
+    const t = task(id);
+    if (!t) continue;
+    for (const old of document.querySelectorAll(`#board .card[data-id="${CSS.escape(id)}"], #board .lcard[data-id="${CSS.escape(id)}"]`)) {
+      if (!old._make) continue;
+      const el = old._make(t);
+      if (el._html === old._html && el.className === old.className) continue;
+      const focused = old === document.activeElement;
+      old.replaceWith(el);
+      if (focused) el.focus({ preventScroll: true });
+      n++;
+    }
+  }
+  if (n) queueMicrotask(tickCache);
 }
 
 async function pollAgents() {
@@ -4103,8 +4178,10 @@ async function pollAgents() {
     if (pid !== P) return;   // switched projects while this was in flight
     // A change token means only the cards that changed came back: the others are kept from the last poll.
     const newRev = r.headers.get("X-Agents-Rev");
-    let changedCards = null;
+    let changedCards = null, changedIds = null, sameIds = false;
     if (newRev) {
+      changedIds = Object.keys(next.cards);
+      sameIds = next.ids.length === Object.keys(agents).length && next.ids.every((id) => id in agents);
       changedCards = Object.keys(next.cards).length + (next.ids.length !== Object.keys(agents).length);
       const merged = {};
       for (const id of next.ids) {
@@ -4119,8 +4196,9 @@ async function pollAgents() {
     // Another window saved: take its board before the moves below, unless an edit of ours is on its way
     // (its PUT will 409 and reload) or we saved since this poll left (then the header is just older than rev).
     const diskRev = r.headers.get("X-Board-Rev");
+    let reloaded = false;
     if (rev !== null && diskRev !== null && diskRev !== rev && rev === revBefore && !saveTimer && !saving
-        && await reloadBoard()) setStatus(t("Board updated from another window"));
+        && (reloaded = await reloadBoard())) setStatus(t("Board updated from another window"));
     if (pid !== P) return;
     // Column moves happen on phase CHANGES only, so a card you moved by hand stays put.
     let moved = false;
@@ -4137,10 +4215,12 @@ async function pollAgents() {
       if (missed && !isDone(t)) { moveTask(t.id, review.id, topCard(review.id, t.id)); moved = true; continue; }
       if (!polledOnce || was === a.phase) continue;
       // Newest finished work goes on top of Review, even if the card was already there.
-      if (a.phase === "finished" && review && !isDone(t)) moveTask(t.id, review.id, topCard(review.id, t.id));
-      if (a.phase === "working" && prog && (review && t.column === review.id || isDone(t))) moveTask(t.id, prog.id, null);
+      if (a.phase === "finished" && review && !isDone(t)) { moveTask(t.id, review.id, topCard(review.id, t.id)); moved = true; }
+      if (a.phase === "working" && prog && (review && t.column === review.id || isDone(t))) { moveTask(t.id, prog.id, null); moved = true; }
     } } finally { pollMoving = false; }
     const changed = moved || (changedCards !== null ? changedCards > 0 : JSON.stringify(next) !== JSON.stringify(agents));
+    // Only a card's own news (no move, no card in or out, no board from another window): redraw just those cards.
+    const onlyCards = changed && !moved && !reloaded && polledOnce && changedCards !== null && sameIds;
     // The open card's git state is re-read when its agent's phase changes (a commit or merge may have landed).
     const op = openId && agents[openId] && agents[openId].phase;
     agents = next;
@@ -4155,7 +4235,11 @@ async function pollAgents() {
     if (changed) { loadObservations(true); checkUnpushed(); } else loadObservations();
     renderProjects();
     // Refresh only the Claude block and column so a poll never resets text being typed in the panel.
-    if (changed) { pollRender(); const o = openId && task(openId); if (o) { renderAgent(o); $("#d-col").value = o.column; } }
+    if (changed) {
+      if (onlyCards) refreshCards(changedIds); else pollRender();
+      const o = openId && task(openId);
+      if (o && (!onlyCards || changedIds.includes(o.id))) { renderAgent(o); $("#d-col").value = o.column; }
+    }
   } catch (e) {
     setStatus(t("Claude status check failed: {error}", { error: t(e.message) }), true);
   }
@@ -4636,7 +4720,15 @@ function fmtTable(rows) {
   const tr = (cs, tag) => `<tr>${cs.map((c) => `<${tag}>${inl(c)}</${tag}>`).join("")}</tr>`;
   return `<table>${head ? `<thead>${tr(head, "th")}</thead>` : ""}<tbody>${body.map((cs) => tr(cs, "td")).join("")}</tbody></table>`;
 }
+// The same messages are formatted again on every poll of an open card: keep what each text gave.
+const fmtMsgMemo = new Map();
 function fmtMsg(text) {
+  if (typeof text !== "string") return fmtMsgRaw(text);
+  let h = fmtMsgMemo.get(text);
+  if (h === undefined) { if (fmtMsgMemo.size > 500) fmtMsgMemo.clear(); fmtMsgMemo.set(text, h = fmtMsgRaw(text)); }
+  return h;
+}
+function fmtMsgRaw(text) {
   let out = "", gap = false, fence = null, table = null, fnd = false;
   const flushTable = () => { if (table) { out += fmtTable(table); table = null; } };
   // A review finding ("Finding N (major): title" and the bullets under it) is one boxed card; the box closes at the
