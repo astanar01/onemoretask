@@ -1,0 +1,56 @@
+{
+ "a": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ },
+ "a-text": {
+  "exit": 0,
+  "init": false,
+  "ndjson": false,
+  "result": false
+ },
+ "b": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ },
+ "c": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ },
+ "d": {
+  "exit": 1,
+  "init": false,
+  "ndjson": true,
+  "result": true
+ },
+ "e": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ },
+ "f": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ },
+ "g": {
+  "exit": 1,
+  "init": false,
+  "ndjson": true,
+  "result": true
+ },
+ "h": {
+  "exit": 0,
+  "init": true,
+  "ndjson": true,
+  "result": true
+ }
+}
