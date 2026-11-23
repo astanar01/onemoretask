@@ -471,6 +471,17 @@ def test_s38_handback_any_two_clis():
     try:
         poll()
         assert card("h3")["handback"] == "Antigravity", card("h3")["handback"]
+        # Claude worker, Antigravity review, then a Codex review: the findings go to Claude, not the first reviewer
+        _review_card("h4", "opus", "claude", "cl-4", "ag-r4", "antigravity")
+        ag_session("ag-r4", "h4", "idle")
+        reports.append(p.board, "h4", "review", "Code review started", "you", session="cdx-r4")
+        reports.append(p.board, "h4", "done", "FINDING 1: still off by one", "claude")
+        rows.append({"id": "cl-4", "sessionId": "uuid-cl-4", "state": "idle", "name": "task"})
+        codex.sessions = lambda board: [{"id": "cdx-r4", "sessionId": "cdx-r4", "cli": "codex", "state": "idle",
+                                         "log": "", "err": "", "detail": "", "board": board}]
+        assert server.review_worker(reports.read(p.board, "h4"), {"agent": {"id": "cdx-r4"}}) == "cl-4"
+        poll()
+        assert card("h4")["handback"] == "Claude", card("h4")["handback"]
     finally:
         codex.sessions = orig
     server.list_sessions = lambda cwd: []

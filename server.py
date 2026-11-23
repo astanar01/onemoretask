@@ -2072,11 +2072,15 @@ def review_column(columns):
 
 def review_worker(log, t):
     """The session whose work the card's last code review looked at (the card's session before that review), or None
-    when the card had no review."""
+    when the card had no review. Earlier reviewers are skipped: a second review's findings go to the worker, not to
+    the first reviewer."""
     i = next((i for i in range(len(log) - 1, -1, -1) if log[i].get("status") == "review"), None)
     if i is None:
         return None
-    return next((e["session"] for e in reversed(log[:i]) if e.get("session")), t["agent"]["id"])
+    reviewers = {e.get("session") for e in log if e.get("status") == "review"}
+    fallback = t["agent"]["id"] if t["agent"]["id"] not in reviewers else None
+    return next((e["session"] for e in reversed(log[:i]) if e.get("session") and e["session"] not in reviewers),
+                fallback)
 
 
 @one_per_card
