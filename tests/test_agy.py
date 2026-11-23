@@ -68,7 +68,10 @@ if first == "AUTH":
     sys.exit(1)
 if first == "SLOW":
     time.sleep(5)
-mode = "always-proceed" if "--dangerously-skip-permissions" in args or first == "NOSANDBOX" else "proceed-in-sandbox"
+if first == "SLOWNOSANDBOX":
+    time.sleep(3)
+mode = ("always-proceed" if "--dangerously-skip-permissions" in args or first in ("NOSANDBOX", "SLOWNOSANDBOX")
+        else "proceed-in-sandbox")
 out({"event": "init", "conversation_id": cid, "init": {"model": args[args.index("--model") + 1] if "--model" in args else "",
      "cwd": os.getcwd(), "tools": ["run_command"], "permission_mode": mode}})
 def step(i, kind, state, **kw):
@@ -79,7 +82,7 @@ def result(status, response="", **kw):
          "num_turns": 1, "usage": {"input_tokens": 1000, "output_tokens": 10, "thinking_tokens": 0,
          "cache_read_tokens": 500, "total_tokens": 1010}, **kw}})
 step(0, "user_input", "DONE")
-if first == "NOSANDBOX":
+if first in ("NOSANDBOX", "SLOWNOSANDBOX"):
     time.sleep(5)
 if first == "WAIT":
     time.sleep(4)
@@ -572,6 +575,32 @@ def test_s46_sandbox_off_stops_turn():
     sid = m.start(BOARD, "tn", "n", "NOSANDBOX go", "agy:gemini-4-neon-high", PROJ)
     s = wait_state(m, sid, ("blocked",), limit=4)
     assert s["detail"] == "Antigravity's sandbox is not on, so the board stopped it", s
+
+
+def test_s46_slow_reply_still_checked():
+    """A reply whose init comes after START_WAIT still gets the sandbox check (Codex review finding 2)."""
+    m, sid = _start("first turn", task="ts")
+    wait_state(m, sid, ("idle",))
+    m.START_WAIT, old = 1, m.START_WAIT
+    try:
+        assert m.resume(BOARD, sid, "SLOWNOSANDBOX go") == sid
+    finally:
+        m.START_WAIT = old
+    s = wait_state(m, sid, ("blocked",), limit=8)
+    assert s["detail"] == m.SANDBOX_OFF, s
+
+
+def test_s29_steps_keep_log_order():
+    """Eleven steps read for the first time share one time: they keep the order agy wrote them (finding 3)."""
+    m = agy()
+    log = os.path.join(TMP, "s29order.jsonl")
+    with open(log, "w") as f:
+        f.write(json.dumps({"event": "init", "conversation_id": "c"}) + "\n")
+        for i in range(1, 12):
+            f.write(json.dumps({"event": "step_update", "step_update": {"step_index": i, "state": "DONE", "step_type": "tool",
+                                "tool_name": "run_command", "tool_info": {"parameters": {"CommandLine": f"echo {i}"}}}}) + "\n")
+    order = [int(r["what"].split()[1]) for r in m.mcp_uses(log)]
+    assert order == list(range(1, 12)), order
 
 
 def test_s47_answer_only_lock():

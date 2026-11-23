@@ -374,9 +374,9 @@ def _check_mode(board, meta, proc, init):
     """Stop a turn whose init says the safe mode is off (the sandbox missing, or a skip flag from elsewhere)."""
     mode = (init.get("init") or {}).get("permission_mode")
     if mode != SAFE_MODE:
-        procs._kill(proc, 2)
-        meta["stopped"] = SANDBOX_OFF
+        meta["stopped"] = SANDBOX_OFF  # saved first: a poll that sees the process gone must already read why
         _write_meta(board, meta)
+        procs._kill(proc, 2)
 
 
 def start(board, task_id, name, prompt, model, cwd, effort="", writable=None):
@@ -433,9 +433,23 @@ def resume(board, sid, message):
         if proc.poll() not in (None, 0):
             _reap(board, meta)
             raise _fail(proc, err, err_offset)
+        if proc.poll() is None:  # a slow start: the reply stands, and the sandbox check runs once its init comes
+            threading.Thread(target=_late_check, args=(board, sid, proc, log, offset), daemon=True).start()
     else:
         _check_mode(board, meta, proc, init)
     return sid
+
+
+def _late_check(board, sid, proc, log, offset):
+    """Wait for the init of a turn that outran START_WAIT, for as long as it runs, then check its mode."""
+    while proc.poll() is None:
+        init = next((e for e in _events(log, offset) if e.get("event") == "init" and e.get("conversation_id")), None)
+        if init:
+            meta = _read_meta(board, sid)
+            if meta and not meta.get("removed"):
+                _check_mode(board, meta, proc, init)
+            return
+        time.sleep(0.2)
 
 
 def remove(board, sid, grace=5):
@@ -609,7 +623,7 @@ def mcp_uses(log_path):
             row["state"] = "failed"
         elif state == "DONE":
             row["state"] = "done"
-    found = sorted(rows.values(), key=lambda r: (r["at"], r["id"]))
+    found = sorted(rows.values(), key=lambda r: r["at"])  # stable: rows first seen together keep the log's order
     _mcp_use_memo[log_path] = ((st.st_mtime, st.st_size), found)
     return [dict(r) for r in found]
 
