@@ -183,6 +183,10 @@ def settings(cwd, read=(), write=(), git=True):
         if top and os.path.realpath(top) != os.path.realpath(cwd):
             allow.append(f"write_file({os.path.realpath(os.path.join(top, '.claude', 'worktrees'))})")
     allow.append(f"read_file({os.path.realpath(HERE)})")
+    # The global skills: ~/.gemini/config/skills links there, and a skill's helper script (the observer's) runs in the
+    # sandbox, which shows nothing it was not given (real run, S81).
+    claude = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    allow.append(f"read_file({os.path.realpath(os.path.join(claude, 'skills'))})")
     allow += ["mcp(*)", "read_url(*)"]
     allow += [f"read_file({os.path.realpath(x)})" for x in read]
     allow += [f"write_file({os.path.realpath(x)})" for x in write]

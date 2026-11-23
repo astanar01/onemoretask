@@ -32,8 +32,10 @@ the rules name 2.x ones (`ctx_batch_execute` for `ctx_batch`, `ctx_execute_file`
 
 **The skill observer** (`task-observer`, then `task-observer-extras`, as the rules say): open its `SKILL.md`; run its
 scripts with `bash` through `run_command` (for a new observation:
-`bash scripts/new-observation.sh <slug> <workspace root>`, from the skill's folder; it prints the new file's path);
-write the observation into that file with `write_to_file`; skip the parts that rely on Claude Code hooks.
+`bash ~/.claude/skills/task-observer/scripts/new-observation.sh <slug> <workspace root>`, a full path, since you
+work from the project; it picks the number, makes the file and prints its path). Never make an observation file or
+pick its number yourself: run that script, then write the observation into the file it printed with
+`write_to_file`. Skip the parts that rely on Claude Code hooks.
 
 **In a project**, also read and follow its `CLAUDE.md` and `CLAUDE.local.md` when they exist, as if they were part of
 this file.

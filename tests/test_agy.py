@@ -326,8 +326,9 @@ def test_s13_argv_settings_cwd():
     st = settings_of(a)
     assert st["enableTerminalSandbox"] is True and st["toolPermission"] == "proceed-in-sandbox", st
     gitdir = os.path.realpath(os.path.join(PROJ, ".git"))
-    assert st["permissions"]["allow"] == [f"write_file({gitdir})", f"read_file({os.path.realpath(APP)})", "mcp(*)",
-                                          "read_url(*)"], st
+    skills = os.path.realpath(os.path.join(os.environ["HOME"], ".claude", "skills"))  # the global skills (S81 real run)
+    assert st["permissions"]["allow"] == [f"write_file({gitdir})", f"read_file({os.path.realpath(APP)})",
+                                          f"read_file({skills})", "mcp(*)", "read_url(*)"], st
     wait_state(m, sid, ("idle",))
 
 
