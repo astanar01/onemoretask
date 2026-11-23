@@ -64,7 +64,8 @@ def test_s53_i18n_entries():
     for s in ("Send to Antigravity", "Start a background Antigravity session on this task",
               "Antigravity: log in once in a terminal", "Antigravity: no models yet",
               "Codex's or Antigravity's workers"):
-        check(s in i18n, "S53 i18n.js has an entry holding: " + s)
+        templ = s.replace("Antigravity", "{who}", 1)  # one entry with the CLI name filled in covers every CLI
+        check(s in i18n or ('"%s"' % templ) in i18n, "S53 i18n.js has an entry holding: " + s)
 
 
 if __name__ == "__main__":

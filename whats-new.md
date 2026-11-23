@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-23
+
+- You can now send a card to Antigravity, Google's helper, the same way as Codex. It stays inside your project, and when it needs your yes it stops and the card asks you to reply.
+
 ## 2026-11-20
 
 - A new MCP button at the top lists every MCP Claude can use in your project and shows if each one works. A small number on the button counts the ones that do not.

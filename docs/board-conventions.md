@@ -26,6 +26,11 @@ card moved to done (`WATCH.close_when_idle`, called from `PUT /api/tasks`).
   launcher replaces `server.list_sessions` with `lambda cwd: []` before `server.main()`
   (`--port`, `--project`). An API-driven test must `PUT` `task.agent` itself: the page
   normally does it after `/api/agent`.
+- Antigravity tests use a fake `agy` (`ONEMORETASK_AGY=<script>`, or a fake module first on `sys.path`) and a
+  temp HOME, never the real one: a temp HOME without `~/.gemini` logins keeps `agy.models()` from starting it.
+  For a real Antigravity run on a throwaway board, copy `~/.gemini` into `<tmp>/home` and link
+  `<tmp>/home/Library/Keychains` to `~/Library/Keychains` (the login token is in the keychain); delete the copy
+  after.
 - When the real board is already running, serve `server.Handler` under a
   `ThreadingHTTPServer` from a small script instead of `server.py main()`: `main()`
   also starts the session watcher, and a second watcher would act on live sessions.

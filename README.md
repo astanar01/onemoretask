@@ -1,6 +1,6 @@
 # onemoretask
 
-A local kanban board that hands cards to Claude Code (or OpenAI's Codex). Write a task, click
+A local kanban board that hands cards to Claude Code (or OpenAI's Codex, or Google's Antigravity). Write a task, click
 **Send to Claude**, and the agent works on it in the background, posting its progress, questions,
 choices and results back onto the card.
 
@@ -21,7 +21,8 @@ choices and results back onto the card.
 Write a task and click **Send to Claude**. A background session starts in the project folder.
 
 By default each task gets its own git worktree, so tasks running side by side never touch each other's
-files. Pick any Claude model, or an OpenAI model to run the task in Codex.
+files. Pick any Claude model, an OpenAI model to run the task in Codex, or an Antigravity model to run it in
+Google's Antigravity CLI.
 
 ### Follow and answer on the card
 
@@ -75,7 +76,8 @@ Board or list layout, light or dark, English or French, and browser notification
 
 ## Install
 
-You need Python 3.9+, `git` and [Claude Code](https://claude.com/claude-code). Codex CLI is optional.
+You need Python 3.9+, `git` and [Claude Code](https://claude.com/claude-code). Codex CLI and the Antigravity CLI
+(`agy`) are optional.
 
 macOS / Linux:
 
@@ -109,7 +111,7 @@ To update, click the green **Update** button in the top bar when it shows.
 Everything stays on your computer, as plain files in each project's `.task_board/` folder, kept out of
 git. There is no account, no cloud service and no tracking. The server only listens on `127.0.0.1`.
 
-Task text leaves your computer only through your own `claude` (or `codex`) command, when you send a task
+Task text leaves your computer only through your own `claude` (or `codex`, or `agy`) command, when you send a task
 or reply.
 [Exactly what is sent, and when](docs/guide.md#privacy-everything-stays-on-your-computer).
 
