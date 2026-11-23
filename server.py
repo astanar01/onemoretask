@@ -3876,7 +3876,9 @@ def reply(p, task_id, text, images=(), extra="", worktree=None):
         live = None if t.get("answerOnly") else live_worktree(t)
         if live and (info["phase"] == "working" or info.get("archived")):
             extra += "\n\n" + WORKTREE_OFF.format(path=p.path, branch=live["branch"])
-    if info["phase"] == "working":
+    # A Codex or Antigravity turn can still be ending after its done report: it takes no second turn until its
+    # process exits, so the message waits as a note (delivered then, by deliver_notes).
+    if info["phase"] == "working" or info.get("state") == "working" and board_run_by_id(p.board, info["id"]):
         reports.append(p.board, task_id, "note", text + extra, "you", images=list(images))
         return True
     if WATCH.note_if_closing(p, task_id, text + extra, images):

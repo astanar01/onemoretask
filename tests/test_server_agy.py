@@ -348,6 +348,26 @@ def test_s28_notes_wait_for_turn_end():
     assert len(agy.RESUMES) == n + 1 and "a note while it works" in agy.RESUMES[-1][1], agy.RESUMES[-1:]
 
 
+def test_s28_reply_after_done_while_turn_ends():
+    # Real run (S54): the session posted done, its process was still finishing the turn, and a reply then got
+    # "Antigravity is still working". It must wait as a note and go in once the process exits.
+    add_task("td", "Done but busy", agent={"id": "ag-d", "started": NOW, "model": "agy:gemini-4-neon-high",
+                                            "cli": "antigravity"})
+    s = ag_session("ag-d", "td", "working", busy=True)
+    reports.append(p.board, "td", "launch", "Sent", "you", session="ag-d")
+    reports.append(p.board, "td", "done", "Counted: 2 lines.", "claude")
+    W.launched["ag-d"] = time.time() - 100
+    poll()
+    n = len(agy.RESUMES)
+    queued = server.reply(p, "td", "and the first function?")
+    assert queued is True, queued
+    assert len(agy.RESUMES) == n
+    s.update(state="idle")
+    s.pop("status"), s.pop("pid")
+    poll()
+    assert len(agy.RESUMES) == n + 1 and "and the first function?" in agy.RESUMES[-1][1], agy.RESUMES[-1:]
+
+
 def test_s30_tokens():
     log = agy.SESSIONS["ag-w"]["log"]
     assert server.tokens([log]) == {"main": [11, 0, 22, 33], "subagents": [0] * 4, "count": 0}, server.tokens([log])

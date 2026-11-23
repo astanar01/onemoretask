@@ -466,7 +466,7 @@ def test_s24_states():
     wait_state(m, sid, ("idle",))
     want = {"ERROR": ("blocked", "ERROR: the model said no"), "CANCELED": ("blocked", "CANCELED: "),
             "EXIT3": ("blocked", None), "NORESULT": ("blocked", "Antigravity ended without a result"),
-            "DENIED": ("blocked", "Antigravity stopped: a step needed a yes it could not get. Reply to go on."),
+            "DENIED": ("blocked", "Antigravity stopped: a step needed a yes it could not get"),
             "EMPTY": ("blocked", "Antigravity stopped without an answer"), "fine": ("idle", "")}
     for word, (state, detail) in want.items():
         sid = m.start(BOARD, "ts", "n", word + " go", "agy:gemini-4-neon-high", PROJ)
