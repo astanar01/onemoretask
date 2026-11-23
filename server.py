@@ -1015,8 +1015,20 @@ def worker_script(model):
 
 def worker_run(worker, model, answer_only):
     """The Bash line that starts one Codex or Antigravity worker; the prompt follows it as a quoted heredoc."""
+    tail = " --prompt-file <file>" if cli_of_model(model) == "antigravity" else " <<'EOF'"
     return (f"{worker or 'python3 ' + worker_script(model)} --model {model} --name \"<short label>\""
-            f"{' --read-only' if answer_only else ''} <<'EOF'")
+            f"{' --read-only' if answer_only else ''}{tail}")
+
+
+def worker_how(model):
+    """How the lead hands a worker its prompt. Antigravity: a file, so the command stays one plain line that the
+    sandbox's excludedCommands entry matches (it ignores a command fed stdin, measured 2026-11-23)."""
+    if cli_of_model(model) == "antigravity":
+        return ("first write the part's prompt to a new file in the temp folder with your Write tool, then run "
+                "`{run}` (that file's path for <file>) with the Bash tool and `run_in_background: true`, alone (nothing "
+                "chained before or after it: a chained command stays in the sandbox, where Antigravity cannot start)")
+    return ("run `{run}` with the Bash tool and `run_in_background: true`, the part's prompt on the lines after it and a "
+            "last line `EOF` (the quotes keep the prompt from expanding)")
 
 
 def pinned_worker(t, model):
@@ -1063,9 +1075,8 @@ def delegate_lines(model, report, answer_only=False, codex=False, worker="", cli
                 "without waiting for approval.",
                 f"- Before {'starting' if answer_only else 'changing anything'}, analyse the brief carefully and work "
                 "out how to split it: the parts, what each needs to know, and which depend on others.",
-                f"- Delegate each part that can stand alone to a {wcli} worker: run `{worker_run(worker, cx, answer_only)}` "
-                "with the Bash tool and `run_in_background: true`, the part's prompt on the lines after it and a last "
-                "line `EOF` (the quotes keep the prompt from expanding). Launch independent parts in one message so they "
+                f"- Delegate each part that can stand alone to a {wcli} worker: "
+                + worker_how(cx).format(run=worker_run(worker, cx, answer_only)) + ". Launch independent parts in one message so they "
                 "run in parallel; run dependent parts after what they need. Wait for each background-task notification, "
                 "then read that task's output: the worker's final answer (a failed worker exits non-zero with its "
                 "error). Keep tiny or tightly coupled parts yourself.",
@@ -1125,9 +1136,8 @@ def delegate_reminder(t, worker=""):
     cx = codex_worker_model(t.get("subagentModel") or "", False, cli) or agy_worker_model(t.get("subagentModel") or "", False, cli)
     if cx:
         return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to {CLI_NAMES[cli_of_model(cx)]} workers on "
-                f"the \"{cx}\" model (the user picked it on the card), as the first brief says: per part, run "
-                f"`{worker_run(worker, cx, t.get('answerOnly'))}` with the Bash tool and `run_in_background: true`, the "
-                "prompt on the lines after it and a last line `EOF`; launch independent parts in one message, wait for "
+                f"the \"{cx}\" model (the user picked it on the card), as the first brief says: per part, "
+                + worker_how(cx).format(run=worker_run(worker, cx, t.get('answerOnly'))) + "; launch independent parts in one message, wait for "
                 "each background-task notification and read its output. Each prompt is self-contained and opens with "
                 f"{CODEX_SKILL_PATHS} for each skill you chose for that part, working-rules skills included (a worker "
                 "has no Skill tool). Split it and launch them before you edit anything yourself, not only for the check "
@@ -1754,10 +1764,10 @@ def inbox_settings(p, task_id, worker=""):
     if answer_only_task(p, task_id):
         s["sandbox"] = answer_only_sandbox(p, task_id)
     if agy_worker_model(task_field(p, task_id, "subagentModel") or "", False) and task_field(p, task_id, "delegate"):
-        # agy starts its own sandbox and binds a local port: from a sandboxed lead shell it needs both lifted.
+        # Inside Claude Code's sandbox agy cannot bind its local port or check Google's certificates (measured
+        # 2026-11-23): the worker runs outside it. The brief keeps the command one plain line, which this matches.
         sb = s.setdefault("sandbox", {})
         sb["excludedCommands"] = sb.get("excludedCommands", []) + [script_cmd(p, task_id, "agy_worker.py") + " *"]
-        sb.setdefault("network", {})["allowLocalBinding"] = True
     env = {}
     if worker:
         env.update({"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"})

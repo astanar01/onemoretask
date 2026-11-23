@@ -2,8 +2,9 @@
 """Run one Antigravity worker for a Claude card session whose subagent model is an Antigravity one.
 
   python3 agy_worker.py --board <board> <task_id> --model agy:<slug> --name "<short label>" [--read-only] [--cwd <dir>]
+                        [--prompt-file <file>]
 
-The prompt comes on stdin. Waits for agy, prints the worker's answer; on failure exits non-zero with what went wrong
+The prompt comes from --prompt-file, else on stdin. Waits for agy, prints the worker's answer; on failure exits non-zero with what went wrong
 (exit 0 from agy alone is not success: the last turn's result line decides). Logs to
 <board>/agent_reports/agy-workers/ (agy.worker_rows shows them on the card)."""
 import argparse
@@ -47,8 +48,14 @@ def main(argv=None):
     ap.add_argument("--name", default="Antigravity worker")
     ap.add_argument("--read-only", action="store_true")
     ap.add_argument("--cwd", default=None)
+    ap.add_argument("--prompt-file", help="the prompt; stdin when left out (a lead in a sandbox uses a file: the "
+                    "sandbox's excludedCommands entry does not match a command fed stdin)")
     a = ap.parse_args(argv)
-    prompt = sys.stdin.read()
+    if a.prompt_file:
+        with open(a.prompt_file, encoding="utf-8") as f:
+            prompt = f.read()
+    else:
+        prompt = sys.stdin.read()
     if not prompt.strip():
         sys.exit("agy_worker: no prompt on stdin")
     if not agy.is_model(a.model):

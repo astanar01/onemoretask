@@ -93,13 +93,18 @@ def calls():
 def test_s40_delegate_brief_and_pin():
     cmd = server.script_cmd(p, "t1", "agy_worker.py")
     text = "\n".join(server.delegate_lines("agy:gemini-3.8-flash-low", "R", False, worker=cmd))
-    assert f'{cmd} --model agy:gemini-3.8-flash-low --name "<short label>" <<\'EOF\'' in text, text
+    assert f'{cmd} --model agy:gemini-3.8-flash-low --name "<short label>" --prompt-file <file>' in text, text
     assert "run_in_background" in text and 'model: "' not in text and "Antigravity worker" in text, text
+    assert "<<" not in text and "Write tool" in text, "S40: one plain line, the prompt in a file (S42 measured)"
+    assert "nothing chained before or after it" in text, "S40: a chained command stays in the sandbox (S54(d) run)"
     ro = "\n".join(server.delegate_lines("agy:gemini-3.8-flash-low", "R", True, worker=cmd))
-    assert "--read-only <<'EOF'" in ro, ro
+    assert "--read-only --prompt-file <file>" in ro, ro
+    cx = "\n".join(server.delegate_lines("gpt-5.5", "R", False, worker=server.script_cmd(p, "t1", "codex_worker.py")))
+    assert "<<'EOF'" in cx, "Codex workers keep their heredoc"
     rem = server.delegate_reminder({"delegate": True, "subagentModel": "agy:gemini-3.8-flash-low",
                                     "agent": {"model": "opus"}}, cmd)
     assert "--model agy:gemini-3.8-flash-low" in rem and "Antigravity workers" in rem and "Agent call" not in rem, rem
+    assert "--prompt-file <file>" in rem and "<<" not in rem, rem
     assert server.pinned_worker({"delegate": True, "subagentModel": "agy:gemini-3.8-flash-low"}, "opus") == ""
     assert server.worker_model("agy:gemini-3.8-flash-low", False) == "", "an AG pick reached Claude's subagent model"
     state = {"tasks": [], "columns": []}
@@ -117,6 +122,17 @@ def test_s41a_argv_and_cwd():
         assert flag in a, (flag, a)
     assert a[a.index("--model") + 1] == "gemini-3.8-flash-low" and "--dangerously-skip-permissions" not in a, a
     assert os.path.realpath(c["cwd"]) == os.path.realpath(proj) and c["prompt"] == "make hello\nmore", c
+
+
+def test_s41a_prompt_file():
+    open(GOT, "w").close()
+    pf = os.path.join(TMP, "part.md")
+    open(pf, "w").write("from a file\nline two")
+    r = subprocess.run([sys.executable, HELPER, "--board", p.board, "t1", "--model", "agy:gemini-3.8-flash-low",
+                        "--name", "Hello", "--prompt-file", pf], capture_output=True, text=True, cwd=proj, env=ENV,
+                       timeout=60, stdin=subprocess.DEVNULL)
+    assert r.returncode == 0 and r.stdout.strip() == "DONE: from a file", (r.returncode, r.stdout, r.stderr)
+    assert calls()[-1]["prompt"] == "from a file\nline two", calls()[-1]
 
 
 def test_s41b_files():
@@ -185,8 +201,9 @@ def test_s42_lead_settings():
         json.dump(state, f)
     s = json.loads(server.inbox_settings(p, "ta", ""))
     sb = s.get("sandbox") or {}
-    assert any("agy_worker.py" in c for c in sb.get("excludedCommands") or []), s
-    assert (sb.get("network") or {}).get("allowLocalBinding") is True, s
+    want = server.script_cmd(p, "ta", "agy_worker.py") + " *"
+    assert want in (sb.get("excludedCommands") or []), s
+    assert "network" not in sb and "enabled" not in sb, ("only the excluded command is needed (S42 measured)", s)
     s2 = json.loads(server.inbox_settings(p, "tb", ""))
     assert "agy_worker.py" not in json.dumps(s2), s2
 
