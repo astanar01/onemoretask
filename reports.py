@@ -46,6 +46,15 @@ def board_dir(root):
     return os.path.join(root, ".task_board")
 
 
+def project_of_board(board):
+    """The project folder of a board: the inverse of board_dir (<project>/.task_board or <project>/tools/task_board)."""
+    board = os.path.abspath(board)
+    parent = os.path.dirname(board)
+    if os.path.basename(board) == "task_board" and os.path.basename(parent) == "tools":
+        return os.path.dirname(parent)
+    return parent
+
+
 def ensure_board(board):
     """Create the board folder; a new one gets a .gitignore that keeps all of it (itself too) out of git."""
     os.makedirs(board, exist_ok=True)

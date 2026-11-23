@@ -9,6 +9,9 @@ The full details. For a quick start, see the [README](../README.md).
 - [Claude Code](https://claude.com/claude-code) (the `claude` command), for Send to Claude
 - Optional: OpenAI's [Codex CLI](https://github.com/openai/codex) (the `codex` command), to send a task
   or a code review to an OpenAI model
+- Optional: Google's Antigravity CLI (the `agy` command, logged in once in a terminal), to send a task or a
+  code review to an Antigravity model. It works inside the project folder only: a step that needs your yes
+  ends its turn, and the card asks you to reply
 
 Turn on **Notifications** in the **View** menu to get a browser pop-up when Claude needs you or is done.
 The **Open folder…** dialog works on macOS and Windows;
@@ -115,8 +118,8 @@ Give it a title, notes, subtasks. You can paste or drop pictures and other files
 ### 3. Send to Claude
 
 Pick a model (or leave the default) and send. A background Claude session starts in the project folder
-with the task as its prompt. Pick an OpenAI model and the task runs in Codex instead; the card works the
-same.
+with the task as its prompt. Pick an OpenAI model and the task runs in Codex instead, or an Antigravity model
+(its own group in the list) and it runs in Antigravity; the card works the same.
 
 A task with no title or no tags gets them from Haiku, which reads your notes and reuses the tags you
 already have. If the task looks like it belongs to another of your projects, the board asks first: move
@@ -221,12 +224,12 @@ installed in `~/.claude/skills/`), and posts the findings on the card. It always
 budget, and runs a small test on each finding. The card shows **Code review** while it runs.
 
 Pick the reviewer next to the button (in Next action or Changes): the task's own model, another Claude
-model, or an OpenAI model, which runs the review in Codex.
+model, an OpenAI model, which runs the review in Codex, or an Antigravity model, which runs it in Antigravity.
 
 Reply to have the reviewer fix the findings, or use the buttons under them (in Conversation and in
 Summary): pick **Fix finding 1**, **Fix finding 2**, … (as many as you like; **Fix everything** picks them
-all), then **Send**. The reply names your picks, plus anything typed in the reply box. When the other agent reviewed (Codex on Claude's work, or
-the reverse), **Send findings to Claude** (or Codex) hands them back to the session that did the work,
+all), then **Send**. The reply names your picks, plus anything typed in the reply box. When another agent reviewed (Codex or Antigravity on Claude's
+work, or any other pair), **Send findings to Claude** (or Codex, or Antigravity) hands them back to the session that did the work,
 with your reply box text as the word on which to fix; the fix buttons then go that way too.
 
 ### 10. Finish

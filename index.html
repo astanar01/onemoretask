@@ -186,8 +186,8 @@ label.toggle:has(input:disabled) { opacity: .6; }
 .card .parent { font-size: calc(11px * var(--ts)); color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .title { word-wrap: break-word; }
 .card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: calc(12px * var(--ts)); color: var(--muted); }
-.tag, .cx-tag { background: var(--accent-soft); color: var(--text); border-radius: 4px; padding: 0 6px; font-size: calc(11px * var(--ts)); }
-.cx-tag { flex: none; font-weight: 600; }
+.tag, .cx-tag, .ag-tag { background: var(--accent-soft); color: var(--text); border-radius: 4px; padding: 0 6px; font-size: calc(11px * var(--ts)); }
+.cx-tag, .ag-tag { flex: none; font-weight: 600; }
 .progress { display: flex; align-items: center; gap: 6px; }
 .progress .bar { width: 50px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .progress .bar i { display: block; height: 100%; background: var(--accent); }
@@ -948,7 +948,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
       </div>
       <div class="fields">
         <div><label for="d-tags">Tags (comma separated)</label><input id="d-tags"><div id="d-tag-sugg"></div></div>
-        <div><label class="check" title="The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
+        <div><label class="check" title="The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's or Antigravity's workers)"><input type="checkbox" id="d-delegate"> Divide in subtasks / use subagents</label></div>
         <div><label for="d-submodel">Subagent model</label>
           <select id="d-submodel"><option value="">Same as session</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></div>
         <div><label class="check" title="Claude works in its own copy of the project (a git worktree on its own branch) and you merge it when you say so. Off: Claude edits your project folder directly"><input type="checkbox" id="d-worktree"> Use a worktree</label></div>
@@ -2652,15 +2652,17 @@ const pillText = (a, who) => {
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
 // One row per subagent on the card: status, name, and what a running one is doing now.
-// A Codex worker a Claude session started (cli "codex", type = its model id) gets a Codex tag.
-function cxSub(s) { return s.cli === "codex"; }
+// A Codex or Antigravity worker a Claude session started (cli "codex"/"antigravity", type = its model id), or an
+// Antigravity session's own subagent, gets a tag with its CLI's name. Codex keeps the cx-* classes, Antigravity ag-*.
+function cxSub(s) { return s.cli === "codex" || s.cli === "antigravity"; }
+const subTag = (s) => s.cli === "antigravity" ? `<span class="ag-tag">Antigravity</span>` : `<span class="cx-tag">Codex</span>`;
 function subagentRows(ag) {
   const subs = (ag && ag.subagents) || [];
   if (!subs.length) return "";
   return `<ul class="card-subs">${subs.map((s) => {
     const st = s.finished ? "finished" : !s.stopped && ag.phase === "working" ? "working" : "stopped";
     return `<li title="${esc(cxSub(s) ? modelName(s.type) : s.type)}${s.action ? " · " + esc(s.action) : ""}"><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span>
-      ${cxSub(s) ? `<span class="cx-tag">Codex</span>` : ""}<span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
+      ${cxSub(s) ? subTag(s) : ""}<span class="nm">${esc(s.name)}</span>${st === "working" && s.action ? `<span class="act">${esc(s.action)}</span>` : ""}</li>`;
   }).join("")}</ul>`;
 }
 function cacheChip(ag, long) {
@@ -2796,21 +2798,28 @@ const canWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && canFi
 // "Delete worktree" works in any column, as long as the folder still exists and Claude is not mid-work.
 const canDeleteWorktree = (t) => useServer && !!t.agent && !!t.agent.worktree && !!agents[t.id] && !!agents[t.id].worktree && agents[t.id].phase !== "working" && !(pending[t.id] || []).length;
 function reviewModel() { try { return localStorage.getItem("taskboard.reviewModel") || ""; } catch (e) { return ""; } }
-// An OpenAI model makes the server run Codex instead of Claude Code.
+// An OpenAI model makes the server run Codex instead of Claude Code; an "agy:<slug>" one runs Antigravity.
 const isCodexModel = (m) => /^(gpt-|o1|o3|o4|codex)/i.test(m || "");
-const who = (t) => (t.agent && t.agent.cli === "codex") || (agents[t.id] && agents[t.id].cli === "codex") ? "Codex" : "Claude";
-const reviewer = (t) => { const m = reviewModel(); return m ? (isCodexModel(m) ? "Codex" : "Claude") : who(t); };
+const isAgModel = (m) => /^agy:/.test(m || "");
+const cliOfModel = (m) => isAgModel(m) ? "antigravity" : isCodexModel(m) ? "codex" : "claude";
+const CLI_NAMES = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+const cliOf = (t) => (agents[t.id] && agents[t.id].cli) || (t.agent && t.agent.cli) || "claude";
+const who = (t) => CLI_NAMES[cliOf(t)] || "Claude";
+const reviewer = (t) => { const m = reviewModel(); return m ? CLI_NAMES[cliOfModel(m)] : who(t); };
 // OpenAI models for the model pickers; an older server has no /api/codex-models.
 const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
 let codexList = CODEX_MODELS;
-let clis = { claude: true, codex: false };   // which CLIs the server found (older server: assume Claude)
-// Answer only starts on a cheap model: Haiku when Claude Code is installed, else Codex's Luna.
+let agList = [];   // Antigravity models ({id: "agy:<slug>", name}); none until the server lists them
+let clis = { claude: true, codex: false, antigravity: false };   // which CLIs the server found (older server: assume Claude)
+// Answer only starts on a cheap model: Haiku when Claude Code is installed, else Codex's Luna, else an Antigravity
+// "flash" model, else the first Antigravity one.
 // A pick made on an answer-only card stays on that card only, so it does not change the saved default.
 // A card made by New task from this starts here too, with the old session's model.
 const answerPick = {};
 // Same for the effort level: New task from this keeps the old session's level on that card only.
 const effortPick = {};
-const answerModel = () => clis.claude ? "haiku" : (codexList.find((m) => /luna/i.test(m.id)) || {}).id || "";
+const answerModel = () => clis.claude ? "haiku" : (clis.codex && (codexList.find((m) => /luna/i.test(m.id)) || {}).id)
+  || (clis.antigravity && ((agList.find((m) => /flash/i.test(m.id)) || agList[0] || {}).id)) || "";
 function sendModel(t) {
   let saved = "";
   try { saved = localStorage.getItem("taskboard.model") || ""; } catch (e) {}
@@ -2826,6 +2835,7 @@ let claudeVersions = {};
 function modelName(m) {
   if (!m) return "";
   if (isCodexModel(m)) return (codexList.find((x) => x.id === m) || {}).name || m;
+  if (isAgModel(m)) return (agList.find((x) => x.id === m) || {}).name || m.slice(4);
   const k = m.toLowerCase(), base = k.replace(/\[1m\]$/, "");
   return prettyModel(claudeVersions[base] ? claudeVersions[base] + k.slice(base.length) : m);
 }
@@ -2837,50 +2847,75 @@ function labelClaudeModels() {
       if (o) o.textContent = sel === "#d-model" && id === "haiku" ? window.t("{model} (manual)", { model: modelName(id) }) : modelName(id);
     }
 }
-// The session's family: the card's agent once sent, else the session model picker.
-const runsCodex = (t) => t.agent ? who(t) === "Codex" || isCodexModel(t.agent.model) : isCodexModel($("#d-model").value);
-// The subagent pick counts when the session can run it: a Codex session only Codex models, a Claude session
-// Claude models and (with Codex installed) Codex workers too. The server ignores a pick that does not count.
-const subModel = (t) => !t.subagentModel ? "" : !isCodexModel(t.subagentModel) ? (runsCodex(t) ? "" : t.subagentModel)
-  : runsCodex(t) || clis.codex ? t.subagentModel : "";
+// The session's CLI: the card's agent once sent, else the session model picker.
+const sessionCli = (t) => t.agent ? (cliOf(t) !== "claude" ? cliOf(t) : cliOfModel(t.agent.model)) : cliOfModel($("#d-model").value);
+const runsCodex = (t) => sessionCli(t) === "codex";
+// The subagent pick counts when the session can run it: a Codex or Antigravity session only its own CLI's models,
+// a Claude session Claude models and (when installed) Codex and Antigravity workers too. The server ignores a pick
+// that does not count.
+const subModel = (t) => {
+  const m = t.subagentModel, mine = cliOfModel(m), s = sessionCli(t);
+  if (!m) return "";
+  if (s !== "claude") return mine === s ? m : "";
+  return mine === "claude" || clis[mine] ? m : "";
+};
 const subModelName = (t) => modelName(subModel(t));
 function renderSubmodel(t) {
   const opts = (list) => list.map((m) => `<option value="${esc(m.id)}">${esc(modelName(m.id))}</option>`).join("");
-  const html = runsCodex(t) ? opts(codexList) : !clis.codex ? opts(CLAUDE_SUBMODELS)
-    : `<optgroup label="Claude">${opts(CLAUDE_SUBMODELS)}</optgroup><optgroup label="Codex">${opts(codexList)}</optgroup>`;
+  const s = sessionCli(t);
+  const html = s === "codex" ? opts(codexList) : s === "antigravity" ? opts(agList)
+    : !clis.codex && !(clis.antigravity && agList.length) ? opts(CLAUDE_SUBMODELS)
+    : `<optgroup label="Claude">${opts(CLAUDE_SUBMODELS)}</optgroup>` + (clis.codex ? `<optgroup label="Codex">${opts(codexList)}</optgroup>` : "")
+      + (clis.antigravity && agList.length ? `<optgroup label="Antigravity">${opts(agList)}</optgroup>` : "");
   $("#d-submodel").innerHTML = `<option value="">${window.t("Same as session")}</option>` + html;
   $("#d-submodel").value = subModel(t);
 }
-let codexHtml = null;
+let codexHtml = null, agHtml = null;
 async function loadCodexModels(tries = 0) {
-  let list = CODEX_MODELS, codexRefreshing = false;
+  let list = CODEX_MODELS, codexRefreshing = false, ags = [], agRefreshing = false, agError = "";
   try {
     const r = await fetch("/api/codex-models", { cache: "no-store" });
     const res = r.ok && await r.json();
     if (res && res.models && res.models.length) list = res.models;
-    if (res && typeof res.claude === "boolean") clis = { claude: res.claude, codex: !!res.codex };
+    if (res && typeof res.claude === "boolean") clis = { claude: res.claude, codex: !!res.codex, antigravity: !!res.antigravity };
     if (res && res.claude_models) claudeVersions = res.claude_models;
     codexRefreshing = !!(res && res.codex_refreshing);
+    if (res && Array.isArray(res.antigravity_models)) ags = res.antigravity_models.filter((m) => isAgModel(m.id));
+    agRefreshing = !!(res && res.antigravity && res.antigravity_refreshing);
+    agError = (res && res.antigravity_error) || "";
   } catch (e) { /* built-in list */ }
   codexList = list;
+  agList = clis.antigravity ? ags : [];
   labelClaudeModels();
-  // The first probe takes a few seconds per name, and Codex may be fetching a newer model list:
-  // ask again until both are in.
+  // The first probe takes a few seconds per name, and Codex or Antigravity may be fetching a newer model list:
+  // ask again until they are in.
   const claudeMissing = clis.claude && CLAUDE_SUBMODELS.some((m) => !claudeVersions[m.id]);
-  if (tries < 6 && (codexRefreshing || claudeMissing)) setTimeout(() => loadCodexModels(tries + 1), codexRefreshing ? 5000 : 15000);
+  if (tries < 6 && (codexRefreshing || agRefreshing || claudeMissing)) setTimeout(() => loadCodexModels(tries + 1), codexRefreshing || agRefreshing ? 5000 : 15000);
   const html = list.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id)}</option>`).join("");
-  if (html === codexHtml) return;   // unchanged: leave the pickers alone, an open dropdown stays open
-  codexHtml = html;
+  // Antigravity: its models, or one disabled line saying why there are none; no group at all when it is not installed.
+  const agh = !clis.antigravity ? "" : agList.length ? agList.map((m) => `<option value="${esc(m.id)}">${esc(m.name || m.id.slice(4))}</option>`).join("")
+    : `<option value="" disabled>${esc(agError === "Antigravity is not logged in" ? window.t("Antigravity: log in once in a terminal") : window.t("Antigravity: no models yet"))}</option>`;
+  if (html === codexHtml && agh === agHtml) return;   // unchanged: leave the pickers alone, an open dropdown stays open
+  // Cards drawn before the Antigravity list came show bare slugs; polls only redraw cards that changed.
+  const agChanged = agh !== (agHtml || "");
+  codexHtml = html; agHtml = agh;
+  if (agChanged && state) render();
   document.querySelectorAll("optgroup.codex-models").forEach((g) => (g.innerHTML = html));
-  // The saved picks may be OpenAI models that had no option until now.
+  for (const sel of ["#d-model", "#d-review-model"]) {
+    let g = $(`${sel} optgroup.ag-models`);
+    if (!agh) { if (g) g.remove(); continue; }
+    if (!g) { g = document.createElement("optgroup"); g.label = "Antigravity"; g.className = "ag-models"; $(sel).appendChild(g); }
+    g.innerHTML = agh;
+  }
+  // The saved picks may be OpenAI or Antigravity models that had no option until now.
   $("#d-model").value = sendModel(openId && state && task(openId));
   $("#d-review-model").value = reviewModel();
   sendLabel();
 }
 function sendLabel() {
-  const cx = isCodexModel($("#d-model").value), send = $("#d-send");
-  send.textContent = cx ? window.t("Send to Codex") : window.t("Send to Claude");
-  send.title = useServer ? window.t("Start a background {who} session on this task", { who: cx ? "Codex" : "Claude" }) : window.t("Needs server.py");
+  const cli = cliOfModel($("#d-model").value), send = $("#d-send");
+  send.textContent = cli === "antigravity" ? window.t("Send to Antigravity") : cli === "codex" ? window.t("Send to Codex") : window.t("Send to Claude");
+  send.title = useServer ? window.t("Start a background {who} session on this task", { who: CLI_NAMES[cli] }) : window.t("Needs server.py");
   const t = openId && state && task(openId);
   if (t) renderSubmodel(t);
 }
@@ -3002,7 +3037,7 @@ function renderAgent(t) {
   }
   renderDecisionTree(log);
   $("#d-review-wrap").hidden = !canReview(t);
-  $("#d-copy-attach").hidden = !t.agent;
+  $("#d-copy-attach").hidden = !t.agent || cliOf(t) !== "claude";
   $("#d-wt-del").hidden = !canDeleteWorktree(t);
   $("#d-review-model").value = reviewModel();
   $("#d-review").title = window.t("Start a fresh {who} session that code-reviews this task's commits and posts the findings here", { who: reviewer(t) });
@@ -3262,7 +3297,7 @@ function nextAction(t, ag, g) {
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
     return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
-      text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
+      text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped && cliOf(t) === "claude" ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       // A question often follows "try it with Run app", so keep that button beside the reply one while the worktree exists.
       actions: replyOpen(t) ? [toReply(), ...(useServer && t.agent.worktree && ag.worktree && !t.answerOnly ? [runApp()] : [])] : [] };
   }
@@ -3289,7 +3324,7 @@ function nextAction(t, ag, g) {
   }
   const commits = ahead ? (g.aheadKind === "own" ? window.t("{commits} on {branch}", { commits: nCommits(ahead), branch: g.branch }) : window.t("{commits} ahead of {target}", { commits: nCommits(ahead), target: g.target })) : "";
   const what = files && commits ? window.t("{files} and {commits}", { files: nFiles(files), commits }) : files ? nFiles(files) : commits;
-  const by = claudeReviewed(ag) ? window.t(", {who} reviewed them", { who: ag.cli === "codex" ? "Codex" : "Claude" }) : "";
+  const by = claudeReviewed(ag) ? window.t(", {who} reviewed them", { who: CLI_NAMES[ag.cli] || "Claude" }) : "";
   const hb = handBack(), first = hb.length ? "sec" : "primary";
   if (wt) return { title: window.t("Ready to merge"), text: window.t("{what}{by}. Merging brings them into {target}.", { what, by, target: g.target }) + (files ? " " + window.t("Uncommitted files are committed by the merge step.") : "") + stray, actions: [...hb, merge(first), ...review(), ...extra, markDone("ghost")] };
   return { title: window.t("Ready to complete"), text: (g.aheadKind === "own" ? window.t("{what} are already on {branch}; nothing to merge", { what, branch: g.branch }) : `${what}${where}`) + `${by}.` + stray, actions: [...hb, markDone(first), ...review(), ...extra] };
@@ -3331,7 +3366,7 @@ function renderSubagents(ag) {
     return `<li data-id="${esc(s.id)}"${saOpen.has(s.id) ? ` class="open"` : ""} title="${esc(s.type)} · ${esc(s.id)}"><span class="nm">${esc(s.name)}</span>
       <span class="meta">${s.context ? `<span title="${t("Context now: {now} tokens (as in Claude Code's agent list). New tokens over the whole run: {total}", { now: s.context.toLocaleString(), total: (s.tokens || 0).toLocaleString() })}">${fmtTokens(s.context)}</span>`
         : s.tokens ? `<span title="${t("{n} tokens", { n: s.tokens.toLocaleString() })}">${fmtTokens(s.tokens)}</span>` : ""}<span>${dur(secs)}</span><span class="agent ${st}">${st === "working" ? t("running") : st === "finished" ? t("finished") : t("stopped")}</span></span>
-      ${cxSub(s) ? `<span class="cx-line"><span class="cx-tag">Codex</span><span class="cx-model">${esc(modelName(s.type))}</span></span>` : ""}
+      ${cxSub(s) ? `<span class="cx-line">${subTag(s)}<span class="${s.cli === "antigravity" ? "ag-model" : "cx-model"}">${esc(modelName(s.type))}</span></span>` : ""}
       ${s.action ? `<span class="act${st === "working" ? " now" : ""}">${st === "working" ? t("Now:") : t("Last:")} ${esc(s.action)}</span>` : ""}
       <span class="sks">${t("Skills:")} ${(s.skills || []).length ? s.skills.map((k) => `<i>${esc(k)}</i>`).join("") : t("none")}</span></li>`;
   }).join("");
@@ -3409,7 +3444,7 @@ function renderTech(t) {
   if (tg && tg.available && tg.target && tg.target !== (wt ? wt.base : g.branch)) rows.push([window.t("Merges into"), code(tg.target)]);
   if (g.tag) rows.push([window.t("Release"), code(g.tag)]);
   if (t.agent) {
-    rows.push([window.t("Session"), code("claude attach " + ((ag && ag.id) || t.agent.id))]);
+    rows.push([window.t("Session"), code((cliOf(t) === "claude" ? "claude attach " : "") + ((ag && ag.id) || t.agent.id))]);
     rows.push([window.t("Model"), esc(modelName(t.agent.model) || (defaultModel.pid === P && defaultModel.model ? window.t("{model} (default)", { model: prettyModel(defaultModel.model) }) : window.t("default")))]);
     if (t.agent.effort) rows.push([window.t("Effort"), esc(effortName(t.agent.effort))]);
     rows.push([window.t("Started"), esc(fmt(t.agent.started))]);
@@ -3632,6 +3667,7 @@ async function loadPrompt(t) {
 let defaultModel = { pid: null, model: null, at: 0 };
 const prettyModel = (m) => {
   if (isCodexModel(m)) return m;
+  if (isAgModel(m)) return modelName(m);
   const x = /^(?:claude-)?([a-z]+)((?:-\d+)*)(?:-\d{8})?(\[1m\])?$/i.exec(m);
   if (!x) return m;
   const v = x[2].replace(/-\d{8}$/, "").split("-").filter(Boolean).join(".");
@@ -3817,7 +3853,7 @@ $("#proj-modal").addEventListener("mousedown", (e) => { if (e.target.id === "pro
 async function sendToClaude(t) {
   $("#d-send").disabled = true;
   const model = $("#d-model").value, effort = $("#d-effort").value;   // read before the waits below: another card may be open by then
-  const nm = isCodexModel(model) ? "Codex" : "Claude";
+  const nm = CLI_NAMES[cliOfModel(model)];
   const pick = [model, effort].filter(Boolean).join(", ");
   const pm = addPending(t, "launch", window.t("Sending to {name}", { name: nm }) + (pick ? ` (${pick})` : ""), []);
   pm.model = model; pm.effort = effort;
@@ -3861,7 +3897,7 @@ async function sendToClaude(t) {
   try {
     const pid = P;
     const res = await post("/api/agent", { p: pid, taskId: t.id, model, effort });
-    const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(effort && { effort }),...(res.worktree && { worktree: res.worktree }), ...(res.cli === "codex" && { cli: "codex" }) };
+    const agent = res.agent || { id: res.id, started: now(), ...(model && { model }), ...(effort && { effort }),...(res.worktree && { worktree: res.worktree }), ...(res.cli && res.cli !== "claude" && { cli: res.cli }) };
     // The server already put the session on the card in tasks.json. When disk held our board before that write,
     // take its rev so our next save is not refused as coming from another window.
     if (pid === P && res.revBefore && rev === res.revBefore && !saving) rev = res.rev;
@@ -4298,7 +4334,7 @@ function reviewDue() {
 function openObs() {
   closeChangelog();
   $("#obs-model").innerHTML = $("#d-model").innerHTML;
-  $("#obs-model .codex-models").remove();   // the observation review runs in Claude only
+  $("#obs-model").querySelectorAll(".codex-models, .ag-models").forEach((g) => g.remove());   // the observation review runs in Claude only
   try { $("#obs-model").value = localStorage.getItem("taskboard.model") || ""; } catch (e) { $("#obs-model").value = ""; }
   $("#obs-modal").classList.add("open");
   renderObs();
@@ -4469,7 +4505,7 @@ async function applyObservations() {
   t.notes = obsNotes(list); t.tags = ["observations"]; t.worktree = false; touch(t);
   obsSel.clear(); closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
-  $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
+  $("#d-model").value = $("#obs-model").value;   // never an OpenAI or Antigravity model
   await sendToClaude(t);
   loadObservations(true);
 }
@@ -4490,7 +4526,7 @@ async function runFullReview() {
   t.notes = reviewNotes(); t.tags = ["observations"]; t.worktree = false; touch(t);
   closeObs(); render();
   openDetail(t.id);   // its model picker reads the same saved choice as #obs-model
-  $("#d-model").value = $("#obs-model").value;   // never an OpenAI model
+  $("#d-model").value = $("#obs-model").value;   // never an OpenAI or Antigravity model
   await sendToClaude(t);
   loadObservations(true);
 }

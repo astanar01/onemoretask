@@ -244,7 +244,7 @@ const post = () => Promise.reject(fail);
 let calls = [], openId = null, resolveCall, boardGen = 0, rev = 1, saving = false, P = "p", pending = [];
 const card = { id: "a", title: "", tags: [], notes: "Fix the scroll. It jumps.", agent: null, column: "todo" };
 const task = (id) => (id === "a" ? card : null), touch = () => {}, render = () => {}, tagSuggestions = () => [];
-const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCodexModel = () => false, setStatus = () => {};
+const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCodexModel = () => false, cliOfModel = () => "claude", CLI_NAMES = { claude: "Claude" }, setStatus = () => {};
 const addPending = (t, status, message) => { const m = { status, message, state: "sending" }; pending.push(m); return m; };
 const dropPending = () => {}, refreshAgent = () => {}, renderAgent = () => {}, pollAgents = async () => {}, settled = async () => {};
 const colRole = () => ({ id: "progress" }), moveTask = (id, col) => { card.column = col; }, now = () => 0;

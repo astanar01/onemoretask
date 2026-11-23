@@ -142,7 +142,7 @@ let calls = [], openId = null, boardGen = 0, rev = 1, saving = false, P = "p", p
 const projects = [{ id: "p", name: "fablecraft" }, { id: "q", name: "onemoretask" }];
 const card = { id: "a", title: "Fix send", tags: ["bug"], notes: "The board's send button", agent: null, column: "todo", parent: null };
 const task = (id) => (id === "a" ? card : null), touch = () => {}, render = () => {}, tagSuggestions = () => [];
-const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCodexModel = () => false, setStatus = () => {};
+const $ = () => ({ value: "", disabled: false }), window = { t: (s) => s }, isCodexModel = () => false, cliOfModel = () => "claude", CLI_NAMES = { claude: "Claude" }, setStatus = () => {};
 const addPending = (t, status, message) => { const m = { status, message, state: "sending" }; pending.push(m); return m; };
 const dropPending = () => {}, refreshAgent = () => {}, renderAgent = () => {}, pollAgents = async () => {}, settled = async () => {};
 const colRole = () => ({ id: "progress" }), moveTask = (id, col) => { card.column = col; }, now = () => 0;

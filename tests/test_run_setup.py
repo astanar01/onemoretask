@@ -29,6 +29,8 @@ class RunSetup(unittest.TestCase):
         self.fail = {}
         for mod in (rs.install_tools, rs.install_hooks):
             self.patch(mod, "main", lambda argv, mod=mod: self.fake(mod))
+        # install_clis must never touch the real ~/.codex or ~/.gemini here; not counted in self.runs.
+        self.patch(rs.install_clis, "main", lambda argv: rs.install_clis.FAILED.clear() or 0)
 
     def patch(self, obj, name, value):
         old = getattr(obj, name)

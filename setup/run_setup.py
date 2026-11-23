@@ -1,5 +1,5 @@
-"""Set up the Claude Code tools (install_tools.py), the hooks, rules and skills (install_hooks.py) and the
-task-observer skill (install_observer.py).
+"""Set up the Claude Code tools (install_tools.py), the hooks, rules and skills (install_hooks.py), the
+task-observer skill (install_observer.py), and the same for Codex and Antigravity (install_clis.py).
 
 Usage: python3 setup/run_setup.py [--if-needed]
 install.sh and install.ps1 run it. The board runs it with --if-needed each time its server starts, so an Update
@@ -18,6 +18,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import install_clis  # noqa: E402
 import install_hooks  # noqa: E402
 import install_observer  # noqa: E402
 import install_tools  # noqa: E402
@@ -101,7 +102,8 @@ def main(argv=None):
 def run(claude):
     want = fingerprint(claude)
     failed = []
-    for script in (install_tools, install_hooks, install_observer):
+    # install_clis last: it links the skills the others put in the Claude dir (task-observer too).
+    for script in (install_tools, install_hooks, install_observer, install_clis):
         try:
             script.main([])
             failed += script.FAILED

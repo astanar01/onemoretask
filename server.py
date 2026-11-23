@@ -168,10 +168,12 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import urlopen
 
+import agy
 import attach
 import codex
 import memory_cleanup
 import observations
+import procs
 import reports
 import review_schedule
 import shell_env
@@ -405,6 +407,57 @@ def replace_file(tmp, dst):
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}")
+AG_PREFIX = "agy:"  # an Antigravity model is stored as agy:<slug>; only <slug> reaches `agy --model`
+CLI_NAMES = {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity"}
+
+
+def valid_model(m):
+    """A model name the board accepts: what MODEL takes, or agy:<a name MODEL takes>."""
+    m = m or ""
+    if m.startswith(AG_PREFIX):
+        return bool(MODEL.fullmatch(m[len(AG_PREFIX):]))
+    return bool(MODEL.fullmatch(m))
+
+
+def cli_of_model(model):
+    """The CLI a model runs on: "antigravity", "codex" or "claude"."""
+    model = model or ""
+    if model.startswith(AG_PREFIX):
+        return "antigravity"
+    return "codex" if codex.is_model(model) else "claude"
+
+
+def cli_of(s):
+    """The CLI of a session record (None and False included): its "cli", else Claude."""
+    return (s or {}).get("cli") or "claude"
+
+
+def board_runs():
+    """{cli name: module} of the CLIs whose sessions the board runs as its own processes (module objects, so a test
+    that patches server.codex.remove still works)."""
+    return {"codex": codex, "antigravity": agy}
+
+
+def board_run(x):
+    """The module running a session record or CLI name; None for Claude (and for None / False)."""
+    if not x:
+        return None
+    return board_runs().get(x if isinstance(x, str) else cli_of(x))
+
+
+def board_run_by_id(board, sid):
+    """The board-run module holding session `sid` (callers that get only an id), else None."""
+    return next((m for m in board_runs().values() if sid and m.is_session(board, sid)), None)
+
+
+def cli_name_of(m):
+    """The CLI name of a board-run module (None: Claude)."""
+    return next((k for k, v in board_runs().items() if v is m), "claude")
+
+
+def log_module(path):
+    """The board-run module whose event log `path` is, else None (a Claude transcript)."""
+    return next((m for m in board_runs().values() if m.is_log(path)), None)
 SHA_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
 PERMISSION_MODE = "auto"
 IDLE_GRACE = 20  # seconds a busy session's turn must have been over before a card note resumes it
@@ -590,15 +643,16 @@ def build_prompt(p, state, t, wt=None, model=""):
     answer_only = bool(t.get("answerOnly"))
     plan_mode = bool(t.get("planMode"))
     if plan_mode:
-        lines += ["", *plan_lines(report, reports.plan_dir(p.board, t["id"]), codex.is_model(model))]
+        lines += ["", *plan_lines(report, reports.plan_dir(p.board, t["id"]), cli=cli_of_model(model))]
     elif answer_only:
         lines += ["", *answer_only_lines(report)]
     plan_id = build_source(t)
     if plan_id:
         lines += ["", *build_lines(report, reports.plan_dir(p.board, plan_id), plan_id)]
     if t.get("delegate"):
-        lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only, codex.is_model(model),
-                                      script_cmd(p, t["id"], "codex_worker.py"))]
+        lines += ["", *delegate_lines(t.get("subagentModel") or "", report, answer_only,
+                                      worker=script_cmd(p, t["id"], worker_script(t.get("subagentModel"))),
+                                      cli=cli_of_model(model))]
     wt = None if answer_only else wt
     if wt:
         lines += ["", *worktree_lines(wt, p.path)]
@@ -652,7 +706,8 @@ def sandbox_line(report):
 
 # Based on google/elephant-goldfish-model: an Elephant who knows everything writes the plan, a Goldfish who sees only
 # the document attacks it, and the person decides the trade-offs.
-def plan_lines(report, folder, on_codex=False):
+def plan_lines(report, folder, on_codex=False, cli=None):
+    on_codex = (cli or ("codex" if on_codex else "claude")) != "claude"
     fresh = ("spawn_agent with `fork_turns: \"none\"`" if on_codex else "the Agent tool")
     card = os.path.basename(folder)  # the plan folder is <board>/plans/<card id> (reports.plan_dir)
     return ["Plan mode (the user ticked \"Plan first\" on this card): turn the idea in the notes into a plan good "
@@ -934,39 +989,72 @@ CODEX_SKILL_PATHS = ("the SKILL.md files to read first (user skills: ~/.claude/s
                      ".claude/skills/<name>/SKILL.md)")
 
 
-def worker_model(model, on_codex):
-    """The card's subagent model when it runs on the session's CLI (OpenAI on Codex, Claude on Claude), else ''."""
-    return model if model and MODEL.fullmatch(model) and codex.is_model(model) == on_codex else ""
+def worker_model(model, on_codex, cli=None):
+    """The card's subagent model when it runs on the session's CLI (OpenAI on Codex, Claude on Claude), else ''.
+    `cli` (the session's CLI name) wins over `on_codex`."""
+    cli = cli or ("codex" if on_codex else "claude")
+    return model if model and valid_model(model) and cli_of_model(model) == cli else ""
 
 
-def codex_worker_model(model, on_codex):
+def codex_worker_model(model, on_codex, cli=None):
     """An OpenAI subagent model on a Claude session's card: its parts run as Codex workers (codex_worker.py), else ''."""
-    return model if model and not on_codex and MODEL.fullmatch(model) and codex.is_model(model) else ""
+    cli = cli or ("codex" if on_codex else "claude")
+    return model if model and cli == "claude" and valid_model(model) and cli_of_model(model) == "codex" else ""
+
+
+def agy_worker_model(model, on_codex, cli=None):
+    """An Antigravity subagent model on a Claude session's card: its parts run as agy_worker.py workers, else ''."""
+    cli = cli or ("codex" if on_codex else "claude")
+    return model if model and cli == "claude" and valid_model(model) and cli_of_model(model) == "antigravity" else ""
+
+
+def worker_script(model):
+    """The worker script for a Claude card's subagent model: agy_worker.py for an Antigravity one."""
+    return "agy_worker.py" if cli_of_model(model) == "antigravity" else "codex_worker.py"
 
 
 def worker_run(worker, model, answer_only):
-    """The Bash line that starts one Codex worker; the prompt follows it as a quoted heredoc."""
-    return (f"{worker or 'python3 codex_worker.py'} --model {model} --name \"<short label>\""
-            f"{' --read-only' if answer_only else ''} <<'EOF'")
+    """The Bash line that starts one Codex or Antigravity worker; the prompt follows it as a quoted heredoc."""
+    tail = " --prompt-file <file>" if cli_of_model(model) == "antigravity" else " <<'EOF'"
+    return (f"{worker or 'python3 ' + worker_script(model)} --model {model} --name \"<short label>\""
+            f"{' --read-only' if answer_only else ''}{tail}")
+
+
+def worker_how(model):
+    """How the lead hands a worker its prompt. Antigravity: a file, so the command stays one plain line that the
+    sandbox's excludedCommands entry matches (it ignores a command fed stdin, measured 2026-11-23)."""
+    if cli_of_model(model) == "antigravity":
+        return ("first write the part's prompt to a new file in the temp folder with your Write tool, then run "
+                "`{run}` (that file's path for <file>) with the Bash tool and `run_in_background: true`, alone (nothing "
+                "chained before or after it: a chained command stays in the sandbox, where Antigravity cannot start)")
+    return ("run `{run}` with the Bash tool and `run_in_background: true`, the part's prompt on the lines after it and a "
+            "last line `EOF` (the quotes keep the prompt from expanding)")
 
 
 def pinned_worker(t, model):
     """The model a delegating Claude card's session pins its subagents to (start_session's `worker`), else ''."""
-    return worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and not codex.is_model(model) else ""
+    return worker_model(t.get("subagentModel") or "", False) if t.get("delegate") and cli_of_model(model) == "claude" else ""
 
 
-def delegate_lines(model, report, answer_only=False, codex=False, worker=""):
+def delegate_lines(model, report, answer_only=False, codex=False, worker="", cli=None):
     """`codex`: the session runs on Codex, whose subagents are workers from its spawn_agent / wait tools. `worker`:
-    the codex_worker.py command (absolute paths, board and task filled in) for a Claude session with an OpenAI pick."""
-    cx = codex_worker_model(model, codex)
-    model = worker_model(model, codex)
+    the codex_worker.py command (absolute paths, board and task filled in) for a Claude session with an OpenAI pick.
+    `cli` (the session's CLI name) wins over `codex`. The parameter `codex` hides the module here: use `cli`."""
+    cli = cli or ("codex" if codex else "claude")
+    codex = cli == "codex"
+    cx = codex_worker_model(model, False, cli) or agy_worker_model(model, False, cli)
+    wcli = CLI_NAMES[cli_of_model(cx)] if cx else ""
+    model = worker_model(model, False, cli)
     sub = "worker" if codex or cx else "subagent"
     brief = (f"- Give each {sub} a self-contained prompt: the question, the files, the constraints (incl. "
              f"CLAUDE.md rules) and what to return. {sub.capitalize()}s only look into it and return findings: no file "
              "changes, no commits, no posts to the card. You write the answer." if answer_only else
              f"- Give each {sub} a self-contained prompt: the goal, the files, the constraints (incl. CLAUDE.md "
              f"rules), how to verify, and what to return. {sub.capitalize()}s do not commit or post to the card; you do.")
-    if codex:
+    if cli == "antigravity":
+        use = (f"- Run your subagents on {agy.slug(model)}." if model else
+               "- Subagents run on your own model.")
+    elif codex:
         # Measured (Codex 0.155): a full-history fork (fork_turns omitted) ignores `model`.
         use = (f'- Run every worker on the "{model}" model: pass `model: "{model}"` and `fork_turns: "none"` on each '
                "spawn_agent call (the user picked this model for workers on the card; a full-history fork keeps your "
@@ -987,16 +1075,15 @@ def delegate_lines(model, report, answer_only=False, codex=False, worker=""):
                 "without waiting for approval.",
                 f"- Before {'starting' if answer_only else 'changing anything'}, analyse the brief carefully and work "
                 "out how to split it: the parts, what each needs to know, and which depend on others.",
-                f"- Delegate each part that can stand alone to a Codex worker: run `{worker_run(worker, cx, answer_only)}` "
-                "with the Bash tool and `run_in_background: true`, the part's prompt on the lines after it and a last "
-                "line `EOF` (the quotes keep the prompt from expanding). Launch independent parts in one message so they "
+                f"- Delegate each part that can stand alone to a {wcli} worker: "
+                + worker_how(cx).format(run=worker_run(worker, cx, answer_only)) + ". Launch independent parts in one message so they "
                 "run in parallel; run dependent parts after what they need. Wait for each background-task notification, "
                 "then read that task's output: the worker's final answer (a failed worker exits non-zero with its "
                 "error). Keep tiny or tightly coupled parts yourself.",
                 brief,
                 skills_codex,
                 f'- Run every part on the "{cx}" model through that command, not the Agent tool: the user picked this '
-                "Codex model for subagents on the card. A worker sees none of this conversation, so its prompt must "
+                f"{wcli} model for subagents on the card. A worker sees none of this conversation, so its prompt must "
                 "hold everything it needs.",
                 f'- Post the plan (the parts, who does each) with `{report} progress "..."` before launching workers, '
                 "then check and integrate their results yourself before reporting done.",
@@ -1005,13 +1092,16 @@ def delegate_lines(model, report, answer_only=False, codex=False, worker=""):
                 "- This holds for the whole task, not just this first turn: when a reply from the card (an answer to "
                 "your question, a follow-up change) asks for more work, split and delegate that work the same way."]
     return ["Subagents (this task is marked \"divide in subtasks / use subagents\"):",
-            *([] if codex else ["- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work out the split yourself "
-                                "and carry on without waiting for approval."]),
+            *([] if codex or cli == "antigravity" else ["- Do NOT use plan mode (no EnterPlanMode / ExitPlanMode): work "
+                                                       "out the split yourself and carry on without waiting for approval."]),
             f"- Before {'starting' if answer_only else 'changing anything'}, analyse the brief carefully and work out "
             "how to split it: the parts, what each needs to know, and which depend on others.",
             "- Delegate each part that can stand alone to a worker (your spawn_agent tool). Spawn independent parts "
             "together so they run in parallel, then wait for them with your wait tool; spawn dependent parts after "
             "what they need. Keep tiny or tightly coupled parts yourself." if codex else
+            "- Delegate each part that can stand alone to one of your own subagents. Start independent parts together "
+            "so they run in parallel; run dependent parts after what they need. Keep tiny or tightly coupled parts "
+            "yourself." if cli == "antigravity" else
             "- Delegate each part that can stand alone to a subagent (the Agent tool). Launch independent parts in one "
             "message so they run in parallel; run dependent parts after what they need. Keep tiny or tightly coupled "
             "parts yourself.",
@@ -1019,13 +1109,13 @@ def delegate_lines(model, report, answer_only=False, codex=False, worker=""):
             # Measured: an Agent-tool subagent sees the same skills list as the lead and can call Skill by name, but
             # it picks none on its own. The `skills:` frontmatter field exists only for custom agent files
             # (.claude/agents/*.md): it preloads a skill's text, so writing one per part would leave files behind.
-            skills_codex if codex else
+            skills_codex if codex or cli == "antigravity" else
             f"- Skills: a subagent sees the same skills list as you but picks none by itself. For each part, choose "
             f"{picks} and open its prompt with them: `First invoke Skill('<name>') with the Skill tool` per skill, plus "
             "one line on why that skill matters for this part. Leave task-observer out: you log the observations.",
             use,
             f'- Post the plan (the parts, who does each) with `{report} progress "..."` before '
-            f"{'spawning workers' if codex else 'launching subagents'}, then check and integrate their results "
+            f"{'spawning workers' if codex else 'starting subagents' if cli == 'antigravity' else 'launching subagents'}, then check and integrate their results "
             "yourself before reporting done.",
             f"- When a {sub} writes a test, ask that it makes a fresh temp folder on every run (mkdtemp), so you can "
             "rerun it; rerun it once yourself before you trust its pass count.",
@@ -1040,18 +1130,24 @@ def delegate_reminder(t, worker=""):
         return ""
     look = "the looking-into this reply needs" if t.get("answerOnly") else "the work this reply asks for"
     agent = t.get("agent") or {}
-    on_codex = codex.is_model(agent.get("model")) or agent.get("cli") == "codex"
-    model = worker_model(t.get("subagentModel") or "", on_codex)
-    cx = codex_worker_model(t.get("subagentModel") or "", on_codex)
+    cli = agent.get("cli") or cli_of_model(agent.get("model"))
+    on_codex = cli == "codex"
+    model = worker_model(t.get("subagentModel") or "", False, cli)
+    cx = codex_worker_model(t.get("subagentModel") or "", False, cli) or agy_worker_model(t.get("subagentModel") or "", False, cli)
     if cx:
-        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to Codex workers on "
-                f"the \"{cx}\" model (the user picked it on the card), as the first brief says: per part, run "
-                f"`{worker_run(worker, cx, t.get('answerOnly'))}` with the Bash tool and `run_in_background: true`, the "
-                "prompt on the lines after it and a last line `EOF`; launch independent parts in one message, wait for "
+        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to {CLI_NAMES[cli_of_model(cx)]} workers on "
+                f"the \"{cx}\" model (the user picked it on the card), as the first brief says: per part, "
+                + worker_how(cx).format(run=worker_run(worker, cx, t.get('answerOnly'))) + "; launch independent parts in one message, wait for "
                 "each background-task notification and read its output. Each prompt is self-contained and opens with "
                 f"{CODEX_SKILL_PATHS} for each skill you chose for that part, working-rules skills included (a worker "
                 "has no Skill tool). Split it and launch them before you edit anything yourself, not only for the check "
                 "at the end. Keep only tiny or tightly coupled parts yourself.")
+    if cli == "antigravity":
+        on = f" ({agy.slug(model)}: the user picked it on the card)" if model else ""
+        return (f"\n\nThis task is still marked \"divide in subtasks / use subagents\": hand {look} to your own "
+                f"subagents{on}, as the first brief says: a self-contained prompt per part that opens with "
+                f"{CODEX_SKILL_PATHS} for each skill you chose for that part. Split it and start the independent parts "
+                "together before you edit anything yourself. Keep only tiny or tightly coupled parts yourself.")
     if on_codex:
         on = (f' on the "{model}" model (`model: "{model}"` and `fork_turns: "none"` on each spawn_agent call: the user '
               "picked it on the card)" if model else "")
@@ -1074,7 +1170,7 @@ def delegate_reminder(t, worker=""):
 def model_args(model):
     if not model:
         return []
-    if not MODEL.fullmatch(model):
+    if not valid_model(model) or cli_of_model(model) == "antigravity":  # Claude's argv only
         raise ValueError(f"bad model name: {model!r}")
     return ["--model", model]
 
@@ -1092,7 +1188,7 @@ def effort_args(effort):
 
 def session_effort(model, effort):
     """Codex has no "max" level: its top one is "xhigh"."""
-    return "xhigh" if effort == "max" and codex.is_model(model) else effort
+    return "xhigh" if effort == "max" and cli_of_model(model) == "codex" else effort
 
 
 DEFAULT_CACHE = os.path.expanduser("~/.config/task_board/default_model.json")
@@ -1208,7 +1304,9 @@ def codex_models():
     """GET /api/codex-models: the OpenAI models the pickers offer for Codex, which CLIs are installed,
     and the versions behind Claude's short model names."""
     return {"models": codex.models(), "claude": os.path.exists(CLAUDE_CMD[-1]), "claude_models": claude_versions(),
-            "codex": codex.installed(), "codex_refreshing": codex.refreshing()}
+            "codex": codex.installed(), "codex_refreshing": codex.refreshing(),
+            "antigravity": agy.installed(), "antigravity_models": agy.models() if agy.installed() else [],
+            "antigravity_refreshing": agy.refreshing(), "antigravity_error": agy.models_error() or ""}
 
 
 # With CLAUDE_CONFIG_DIR set, the CLI keeps .claude.json in that folder (its configPath), not in the home folder.
@@ -1321,10 +1419,11 @@ def _launch(p, task_id, model, effort=""):
             git_try(p.path, "branch", "-d", wt["branch"])
         raise
     where = f", worktree {wt['branch']}" if wt else ""
-    cli = "codex" if codex.is_model(model) else "claude"
+    where += skills_suffix(p, task_id, cli_of_model(model))
+    cli = cli_of_model(model)
     agent = {"id": aid, "started": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
              **({"model": model} if model else {}), **({"effort": effort} if effort else {}),
-             **({"worktree": wt} if wt else {}), **({"cli": cli} if cli == "codex" else {})}
+             **({"worktree": wt} if wt else {}), **({"cli": cli} if cli != "claude" else {})}
     level = f", effort {effort}" if effort else ""
     try:
         reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{level}{where})",
@@ -1333,8 +1432,8 @@ def _launch(p, task_id, model, effort=""):
     except Exception:
         # No card tracks the session: stop it rather than leave it running unseen.
         try:
-            if cli == "codex":
-                codex.remove(p.board, aid)
+            if board_run(cli):
+                board_run(cli).remove(p.board, aid)
             else:
                 run_claude(["stop", aid], cwd=p.path, timeout=30)
         except Exception as e:  # noqa: BLE001
@@ -1664,6 +1763,11 @@ def inbox_settings(p, task_id, worker=""):
     s = {"hooks": {"PreToolUse": guard, "PostToolUse": hook, "Stop": hook}, "worktree": {"bgIsolation": "none"}}
     if answer_only_task(p, task_id):
         s["sandbox"] = answer_only_sandbox(p, task_id)
+    if agy_worker_model(task_field(p, task_id, "subagentModel") or "", False) and task_field(p, task_id, "delegate"):
+        # Inside Claude Code's sandbox agy cannot bind its local port or check Google's certificates (measured
+        # 2026-11-23): the worker runs outside it. The brief keeps the command one plain line, which this matches.
+        sb = s.setdefault("sandbox", {})
+        sb["excludedCommands"] = sb.get("excludedCommands", []) + [script_cmd(p, task_id, "agy_worker.py") + " *"]
     env = {}
     if worker:
         env.update({"CLAUDE_CODE_SUBAGENT_MODEL": worker, "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"})
@@ -1672,6 +1776,15 @@ def inbox_settings(p, task_id, worker=""):
     if env:
         s["env"] = env
     return json.dumps(s)
+
+
+def task_field(p, task_id, key):
+    """One field of a card read from the board file (start_session's signature carries no card)."""
+    try:
+        state = load_tasks(p)
+    except (OSError, ValueError):
+        return None
+    return next((t.get(key) for t in state.get("tasks") or [] if t.get("id") == task_id), None)
 
 
 def answer_only_task(p, task_id):
@@ -1696,14 +1809,14 @@ def answer_only_sandbox(p, task_id):
             "filesystem": {"denyWrite": [os.path.realpath(p.path)]}, "network": {"allowedDomains": ["*"]}}
 
 
-def is_codex(s):
-    """A session record from codex.sessions; everything else is a Claude one."""
-    return bool(s) and s.get("cli") == "codex"
+def is_board_run(s):
+    """A session record from a board-run CLI (codex.sessions, ...); everything else is a Claude one."""
+    return board_run(s) is not None
 
 
 def who(model):
     """The agent a model runs on, as the card names it."""
-    return "Codex" if codex.is_model(model or "") else "Claude"
+    return CLI_NAMES[cli_of_model(model)]
 
 
 def answer_only_roots(p):
@@ -1712,12 +1825,23 @@ def answer_only_roots(p):
     return [os.path.realpath(p.board), *([os.path.realpath(obs)] if os.path.isdir(obs) else [])]
 
 
+def project_rules(p):
+    """The project's own rules files for a CLI that does not read them by itself (Codex, Antigravity): a sentence
+    naming each one that exists by absolute path, else ''. CLAUDE.local.md is untracked, so it is in p.path only."""
+    found = [shell_path(os.path.join(p.path, n)) for n in ("CLAUDE.md", "CLAUDE.local.md")
+             if os.path.isfile(os.path.join(p.path, n))]
+    if not found:
+        return ""
+    return (" Before starting, read and follow the project's rules in " + " and ".join(found) +
+            ", as if they were part of your own rules.")
+
+
 def codex_note(p, answer_only=False):
     """Appended to a Codex session's prompt: the brief is written for Claude Code."""
     if answer_only:
         return codex_note(p) + (
             f" This card is answer-only: you start in an empty scratch folder, and the project is in "
-            f"{shell_path(p.path)}. Read it there (use `cd` or full paths; its AGENTS.md and CLAUDE.md apply). The "
+            f"{shell_path(p.path)}. Read it there (use `cd` or full paths). The "
             "project is read-only for you, and nothing can lift that. The board folder (for the report command) and "
             "the temp folder are the only places you can write.")
     return ("Note: you run in OpenAI's Codex CLI, not Claude Code, so there is no Skill tool and no Agent tool. Where "
@@ -1728,15 +1852,102 @@ def codex_note(p, answer_only=False):
             "together, then wait for them); a worker cannot invoke a Skill tool, so put the SKILL.md paths it must read "
             "first in its prompt. Workers run on your own model unless the brief names one for them. "
             "\"The Read tool\" means opening the file. You must still post on the card with the report.py command exactly as the "
-            "brief says.")
+            "brief says." + project_rules(p))
+
+
+def agy_note(p, answer_only=False):
+    """Appended to an Antigravity session's prompt: the brief is written for Claude Code."""
+    note = ("Note: you run in Google's Antigravity CLI, not Claude Code, so there is no Skill tool and no Agent tool. "
+            "Where this brief names a skill to invoke, use it if it is in your own skills list; otherwise read its "
+            f"SKILL.md (user skills are in {shell_path(os.path.expanduser('~/.claude/skills'))}/<name>/SKILL.md, project "
+            f"skills in {shell_path(os.path.join(p.path, '.claude', 'skills'))}/<name>/SKILL.md) and follow it. Where this "
+            "brief says subagent or Agent tool, use your own subagents, one per part, independent parts together; a "
+            "subagent has no Skill tool either, so put the SKILL.md paths it must read first in its prompt. \"The Read "
+            "tool\" means opening the file. Work inside the project folder: a step that needs a yes nobody can give "
+            "ends your turn. You must still post on the card with the report.py command exactly as the brief says."
+            + project_rules(p))
+    if answer_only:
+        note += (" This card is answer-only: the project is read-only for you; the board folder and the skill "
+                 f"notebook folder are the only places you can write. You start in an empty scratch folder; the "
+                 f"project is in {shell_path(p.path)}: read it there with full paths.")
+    return note
+
+
+def cli_setup(p, cli, target):
+    """Before a Codex or Antigravity process starts: its rules file is rebuilt if the sources changed, and the
+    project's skills are linked where it looks (setup/install_clis.py). Never fails a start."""
+    try:
+        mod = _install_clis()
+        if mod is None:
+            return None
+        mod.ensure_rules(cli)
+        return mod.ensure_project_skills(p.path, target) if target else None
+    except Exception as e:  # noqa: BLE001
+        print("cli setup:", e)
+        return None
+
+
+def skills_target(p, task_id, cli, locked):
+    """Where a Codex or Antigravity session reads project skills from: its working folder (an answer-only card's
+    temp folder, else the project folder)."""
+    if not locked:
+        return p.path
+    try:
+        return codex.answer_dir(task_id) if cli == "codex" else agy.answer_dir(p.board, task_id)
+    except Exception:  # noqa: BLE001 - a module without answer_dir (a test fake)
+        return None
+
+
+def skills_suffix(p, task_id, cli):
+    """The launch line's ", project skills: <n> linked[, <k> kept as they were (<names>)]" for a Codex or Antigravity
+    card whose project has skills; links again (cheap, idempotent) to count them."""
+    try:
+        mod = _install_clis()
+        if mod is None or not board_run(cli):
+            return ""
+        linked, kept = mod.ensure_project_skills(p.path, skills_target(p, task_id, cli, answer_only_task(p, task_id)))
+    except Exception as e:  # noqa: BLE001
+        print("project skills:", e)
+        return ""
+    if not linked and not kept:
+        return ""
+    out = f", project skills: {len(linked)} linked"
+    if kept:
+        out += f", {len(kept)} kept as they were" + (f" ({', '.join(kept)})" if len(kept) <= 3 else "")
+    return out
+
+
+_INSTALL_CLIS = []
+
+
+def _install_clis():
+    """setup/install_clis.py, loaded once by path (as setup_tools loads the setup); None when it is missing."""
+    if not _INSTALL_CLIS:
+        path = os.path.join(HERE, "setup", "install_clis.py")
+        mod = None
+        if os.path.exists(path):
+            spec = importlib.util.spec_from_file_location("install_clis", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        _INSTALL_CLIS.append(mod)
+    return _INSTALL_CLIS[0]
 
 
 def start_session(p, task_id, name, prompt, model, effort="", worker=""):
-    if codex.is_model(model):
+    if cli_of_model(model) == "antigravity":
+        if not valid_model(model):
+            raise ValueError(f"bad model name: {model!r}")
+        effort_args(effort)  # refuses a bad effort level
+        locked = answer_only_task(p, task_id)
+        cli_setup(p, "antigravity", skills_target(p, task_id, "antigravity", locked))
+        return agy.start(p.board, task_id, name, prompt + "\n\n" + agy_note(p, locked), model, p.path,
+                         session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
+    if cli_of_model(model) == "codex":
         # Claude's folder trust check (UntrustedError) does not apply to Codex.
         model_args(model)  # refuses a bad model name
         effort_args(effort)  # and a bad effort level
         locked = answer_only_task(p, task_id)
+        cli_setup(p, "codex", skills_target(p, task_id, "codex", locked))
         return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p, locked), model, p.path,
                            session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
@@ -1787,7 +1998,7 @@ def review(p, task_id, model=None):
     then follows the reviewer, so a reply ("fix 1 and 3") goes to the session that holds the findings.
     `model` picks the reviewer's model (a Claude alias or an OpenAI one for Codex); empty = the task's own model.
     Always the commit-review skill's medium budget: every board review used it, so the board has no level pick."""
-    if model and not MODEL.fullmatch(model):
+    if model and not valid_model(model):
         raise ValueError(f"bad model name: {model!r}")
     state = load_tasks(p)
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
@@ -1821,7 +2032,7 @@ def review(p, task_id, model=None):
     skill = shell_path(os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md'))
     step1 = (f'1. Use the `commit-review` skill with args "medium {" ".join(sha for sha, _ in commits)}" if it is in '
              f"your skills list; otherwise read {skill} and follow it exactly with those args (where it says Skill "
-             "tool or Read tool, do the equivalent yourself)." if codex.is_model(use) else
+             "tool or Read tool, do the equivalent yourself)." if board_run(cli_of_model(use)) else
              f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "medium" plus the candidate '
              f"shas above). If that skill is not installed, Read {skill} and follow it.")
     prompt = "\n".join([
@@ -1890,13 +2101,13 @@ def handback(p, task_id, text=""):
     s = next((x for x in all_sessions(p) if x["id"] == worker), None)
     if not s:
         raise LookupError("the session that did the work no longer exists")
-    rev = "Codex" if info and info.get("cli") == "codex" else "Claude"
+    rev = CLI_NAMES.get(cli_of(info), "Claude")
     ask = text.strip() or reports.HANDBACK_ASK
     message = "\n\n".join([f"A {rev} code review looked at your commits on this task. Its report:", findings[-1],
                            "The user says: " + ask,
                            "Make the fixes, verify them, commit (never push unless the user tells you to), and report done."])
     aid = resume(p, {"id": worker, "sessionId": s.get("sessionId")}, message + board_tail(p, task_id))
-    reports.append(p.board, task_id, "reply", reports.HANDBACK.format("Codex" if is_codex(s) else "Claude") + ask,
+    reports.append(p.board, task_id, "reply", reports.HANDBACK.format(CLI_NAMES[cli_of(s)]) + ask,
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
     return aid
@@ -2237,15 +2448,15 @@ def phase_of(session, log, launched_at, delivered=""):
     if st == "blocked":
         # The CLI marks a turn "blocked" when its own end-of-turn summary sounds like it waits on you
         # ("awaiting reload test"), so a finished turn that ended on a progress note lands here too.
-        detail = session.get("detail") or ("" if is_codex(session) else job_detail(session.get("id")))
+        detail = session.get("detail") or ("" if is_board_run(session) else job_detail(session.get("id")))
         if last.get("from") == "claude" and last.get("status") == "progress":
             return "needs_you", "Stopped after a progress note without reporting done — reply to check on it" + (f" (CLI: {detail})" if detail else "")
-        if is_codex(session):  # no attach and no permission prompts in Codex
+        if is_board_run(session):  # no attach and no permission prompts in Codex
             return "needs_you", f"Stopped in the session: {detail} — reply to check on it" if detail else "Stopped in the session — reply to check on it"
         if detail:
             return "needs_you", f"Stopped in the session: {detail} — reply, or attach if it asks for a permission"
         return "needs_you", "Waiting on a permission prompt or a question in the session — attach to answer"
-    if is_codex(session):
+    if is_board_run(session):
         return "needs_you", "Stopped without reporting — reply to check on it"
     return "needs_you", "Stopped without reporting — attach or reply to check on it"
 
@@ -2268,7 +2479,7 @@ def mcp_request(session):
     That approval comes before the session's first turn: `claude agents` gives no waitingFor, only state "blocked";
     state.json `needs` reads "approve 2 new project MCP servers (a, b) — attach to respond" (CLI 2.1.325). `needs` is
     cut at 800 characters, so a long list loses its end: names keeps only the whole ones, count says how many in all."""
-    if not session or session.get("state") != "blocked" or is_codex(session):
+    if not session or session.get("state") != "blocked" or is_board_run(session):
         return [], 0
     m = re.match(r"approve (\d+) new project MCP servers? \(([^)]*)(\))?", job_detail(session.get("id"), "needs"))
     if not m:
@@ -2358,8 +2569,8 @@ def list_sessions(cwd):
 
 
 def all_sessions(p):
-    """Claude's sessions (a global list) plus the project's Codex ones, to look a session up by id."""
-    return list_sessions(p.path) + codex.sessions(p.board)
+    """Claude's sessions (a global list) plus the project's board-run ones, to look a session up by id."""
+    return list_sessions(p.path) + [s for m in board_runs().values() for s in m.sessions(p.board)]
 
 
 PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
@@ -2596,7 +2807,7 @@ def tool_what(name, args):
         return ""
     keys = _TOOL_WHAT_KEYS.get(name)
     if not keys:
-        return codex.mcp_what(args)
+        return procs.mcp_what(args)
     key = next((k for k in keys if isinstance(args.get(k), str) and args[k].strip()), None)
     if not key:
         return ""
@@ -2605,7 +2816,7 @@ def tool_what(name, args):
         text = "/".join(text.rstrip("/").split("/")[-2:])
     elif key in ("command", "prompt"):
         text = text.splitlines()[0]
-    return codex.mcp_what({"query": text})
+    return procs.mcp_what({"query": text})
 
 
 SAY_MAX = 300  # Claude's own words between steps: enough to read where it is, short enough for every poll
@@ -2656,7 +2867,7 @@ def _mcp_calls(path):
                             name = b["name"]
                             if name.startswith("mcp__"):
                                 server, _, tool = name[len("mcp__"):].partition("__")
-                                row = {"server": mcp_label(server), "tool": tool, "what": codex.mcp_what(b.get("input")),
+                                row = {"server": mcp_label(server), "tool": tool, "what": procs.mcp_what(b.get("input")),
                                        "kind": "mcp"}
                             else:
                                 row = {"server": "", "tool": name, "what": tool_what(name, b.get("input")), "kind": "tool"}
@@ -2686,8 +2897,9 @@ def mcp_uses(paths):
     and a use going from open to done would never reach the page."""
     rows = {}
     for path in paths:
-        if codex.is_log(path):
-            found = codex.mcp_uses(path)
+        m = log_module(path)
+        if m:
+            found = m.mcp_uses(path)
         else:
             folder = os.path.join(path[:-len(".jsonl")], "subagents")
             subs = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")] if os.path.isdir(folder) else []
@@ -3040,7 +3252,8 @@ def task_transcripts(p, task_id, session_ids):
     sessions keep theirs)."""
     paths = []
     for sid in session_ids:
-        c = codex.session(p.board, sid)
+        m = board_run_by_id(p.board, sid)
+        c = m and m.session(p.board, sid)
         paths.append(c["log"] if c else transcript_path(sid))
     _, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
     paths += [os.path.normpath(x) for x in re.findall(r"^- (.+\.jsonl)$", listing, re.M)]
@@ -3053,7 +3266,10 @@ def tokens(paths, workers=None):
     A reply copied into a second transcript (a forked resume carries the history over) counts once, by message id.
     `workers`: (board, task id) whose Codex workers (codex_worker.py, run for a Claude session) count as subagents."""
     out = _tokens(paths)
-    used, count = codex.worker_usage(*workers) if workers else ([0] * 4, 0)
+    used, count = [0] * 4, 0
+    for m in board_runs().values() if workers else ():
+        u, n = m.worker_usage(*workers) if hasattr(m, "worker_usage") else ([0] * 4, 0)
+        used, count = [a + b for a, b in zip(used, u)], count + n
     if count:  # a new dict: `out` may be the saved totals
         out = {**out, "subagents": [a + b for a, b in zip(out["subagents"], used)], "count": out["count"] + count}
     return out
@@ -3064,7 +3280,7 @@ def _tokens(paths):
     # Totals of transcripts that did not change since they were counted come from the saved file: after a restart,
     # re-reading every old transcript took 5 s. Codex logs are left out (their workers' rollouts are elsewhere).
     sig, key = None, "\n".join(paths)
-    if paths and not any(codex.is_log(x) for x in paths):
+    if paths and not any(log_module(x) for x in paths):
         sig = []
         for path in paths:
             folder = os.path.join(path[:-len(".jsonl")], "subagents")
@@ -3076,9 +3292,10 @@ def _tokens(paths):
         if saved and saved["sig"] == sig:
             return saved["out"]
     for path in paths:
-        if codex.is_log(path):  # a Codex event log; its workers' tokens are in their own rollouts
-            out["main"] = [a + b for a, b in zip(out["main"], codex.usage(path))]
-            used, count = codex.subagent_usage(path)
+        m = log_module(path)
+        if m:  # a board-run CLI's event log; its workers' tokens are read by its module
+            out["main"] = [a + b for a, b in zip(out["main"], m.usage(path))]
+            used, count = m.subagent_usage(path)
             out["subagents"] = [a + b for a, b in zip(out["subagents"], used)]
             out["count"] += count
             continue
@@ -3261,10 +3478,11 @@ class Watcher:
             done_cols |= {c["id"] for c in state.get("columns", []) if c.get("done")}
         sessions = {s["id"]: s for s in list_sessions(HERE)} if work else {}
         for p in {p.id: p for p, _ in work}.values():
-            try:
-                sessions.update((s["id"], s) for s in codex.sessions(p.board))
-            except OSError as e:
-                print("codex sessions:", e)
+            for name, m in board_runs().items():
+                try:
+                    sessions.update((s["id"], s) for s in m.sessions(p.board))
+                except OSError as e:
+                    print(name, "sessions:", e)
         fresh = {}
         with self.lock:
             old = dict(self.cache)
@@ -3279,7 +3497,7 @@ class Watcher:
                 delivered = reports.delivered(p.board, t["id"])
                 phase, reason = phase_of(s, log, self.launched.get(aid, 0), delivered)
                 said = spoken(log)
-                asked, parts = ("", []) if is_codex(s) else popup_questions(s)
+                asked, parts = ("", []) if is_board_run(s) else popup_questions(s)
                 if parts and not (said and said[-1].get("status") == "question" and said[-1].get("parts") == parts):
                     # It asked in an AskUserQuestion pop-up (a session started before the board turned that tool off):
                     # only an attach shows it. Put it on the card; a reply resumes the session with the answer.
@@ -3291,7 +3509,7 @@ class Watcher:
                     # It stopped after a card reply without calling report.py: its answer is only in the chat, which
                     # the user never sees. Copy that answer onto the card.
                     try:
-                        text = (codex.last_answer(s["log"], said[-1]["message"]) if is_codex(s) else
+                        text = (board_run(s).last_answer(s["log"], said[-1]["message"]) if board_run(s) else
                                 last_answer(s.get("sessionId"), said[-1]["message"]))
                     except OSError:
                         text = ""
@@ -3308,7 +3526,7 @@ class Watcher:
                 pending = (s and reports.pending_notes(log, delivered) and (p.id, t["id"]) not in self.delivering
                            and (p.id, t["id"]) not in self.closing)
                 # A Codex session has no attach: its notes wait until the process exits, then deliver_notes resumes it.
-                if (pending and busy and phase == "working" and attach.available() and not is_codex(s) and s.get("state") != "blocked"
+                if (pending and busy and phase == "working" and attach.available() and not is_board_run(s) and s.get("state") != "blocked"
                         and time.time() - self.typed_fail.get((p.id, t["id"]), 0) > TYPE_RETRY):
                     # Type it into the live session like a message at its terminal: read at its next step, or at once
                     # if it sits idle waiting on a background shell. The inbox hook stays as the backup.
@@ -3317,7 +3535,7 @@ class Watcher:
                     pending = False
                 # Busy but its turn is over: it waits on a background shell (maybe hung), so only a resume reaches it.
                 try:
-                    waiting = (pending and busy and phase == "working" and not attach.available() and not is_codex(s) and time.time() - (
+                    waiting = (pending and busy and phase == "working" and not attach.available() and not is_board_run(s) and time.time() - (
                         turn_ended_at(s.get("sessionId")) or time.time()) > IDLE_GRACE)
                 except OSError:
                     waiting = False
@@ -3330,7 +3548,7 @@ class Watcher:
                 # The CLI ends the turn when auto mode's safety check keeps failing, then waits for a message: resume it.
                 try:
                     stalled = (phase == "needs_you" and not busy and not closed and not reason.startswith("Claude asks permission")
-                               and not (said and said[-1].get("status") == "question") and not is_codex(s)
+                               and not (said and said[-1].get("status") == "question") and not is_board_run(s)
                                and auto_mode_stall(s.get("sessionId")))
                 except OSError:
                     stalled = None
@@ -3347,7 +3565,7 @@ class Watcher:
                 # Prompt cache and skills are read from Claude transcripts: none for a Codex session. Its workers come
                 # from its event log and their rollouts.
                 try:
-                    cache = None if is_codex(s) else cache_info(s and s.get("sessionId"))
+                    cache = None if is_board_run(s) else cache_info(s and s.get("sessionId"))
                 except OSError:
                     cache = None
                 try:
@@ -3355,26 +3573,28 @@ class Watcher:
                 except OSError:
                     fit = None
                 try:
-                    ctx =codex.context(s["log"]) if is_codex(s) else context(s and s.get("sessionId"))
+                    ctx = board_run(s).context(s["log"]) if board_run(s) else context(s and s.get("sessionId"))
                 except OSError:
                     ctx = None
                 try:
-                    mcp = None if is_codex(s) else mcp_state(s and s.get("sessionId"))
+                    mcp = None if is_board_run(s) else mcp_state(s and s.get("sessionId"))
                 except OSError:
                     mcp = None
                 try:
-                    subs =codex.subagents(s["log"]) if is_codex(s) else subagents(s and s.get("sessionId"))
+                    subs = board_run(s).subagents(s["log"]) if board_run(s) else subagents(s and s.get("sessionId"))
                 except OSError:
                     subs = []
-                if not is_codex(s):  # a Claude session's Codex workers (codex_worker.py), started since its launch
-                    try:
-                        since = _ts(t["agent"]["started"]) if t["agent"].get("started") else 0
-                        subs = sorted(subs + codex.worker_rows(p.board, t["id"], since), key=lambda r: r["started"])
-                    except (OSError, ValueError):
-                        pass
+                if not board_run(s):  # a Claude session's board-run workers (codex_worker.py, ...), since its launch
+                    for m in board_runs().values():
+                        try:
+                            since = _ts(t["agent"]["started"]) if t["agent"].get("started") else 0
+                            rows = m.worker_rows(p.board, t["id"], since) if hasattr(m, "worker_rows") else []
+                            subs = sorted(subs + rows, key=lambda r: r["started"])
+                        except (OSError, ValueError):
+                            pass
                 ids = dict.fromkeys([t["agent"]["id"]] + [e["session"] for e in log if e.get("session")])
                 try:
-                    used = skills(sessions[i].get("sessionId") for i in ids if i in sessions and not is_codex(sessions[i]))
+                    used = skills(sessions[i].get("sessionId") for i in ids if i in sessions and not is_board_run(sessions[i]))
                 except OSError:
                     used = []
                 try:
@@ -3430,15 +3650,14 @@ class Watcher:
                 # A review by the other CLI (Codex on Claude's work, or the reverse) can hand its findings back.
                 worker = review_worker(log, t)
                 ws = worker != aid and sessions.get(worker)
-                handback_to = ("Codex" if is_codex(ws) else "Claude") if ws and s and is_codex(ws) != is_codex(s) else ""
+                handback_to = CLI_NAMES[cli_of(ws)] if ws and s and cli_of(ws) != cli_of(s) else ""
                 fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                           "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                           "commits": bool(done and done[1]), "phase": phase, "reason": reason,
                                           "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
                                           "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                           "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
-                                          "cli": "codex" if is_codex(s) or not s and t["agent"].get("cli") == "codex"
-                                          else "claude"}
+                                          "cli": cli_of(s) if s else t["agent"].get("cli") or "claude"}
                 with self.lock:
                     if self.expected.get(key) != expected.get(key) and key in self.cache:
                         fresh[key] = {**fresh[key], **self.cache[key]}  # a resume started during this pass: newer
@@ -3483,7 +3702,9 @@ class Watcher:
                 with self.lock:
                     self.alerts[key] = {"p": p, "id": t["id"], "phase": now_, "at": time.time(),
                                         "column": t.get("column"), "updated": t.get("updated"),
-                                        "title": "Claude asks permission" if asks else "Claude needs you" if now_ == "needs_you" else "Claude finished",
+                                        "title": "Claude asks permission" if asks else
+                                        f"{CLI_NAMES.get(fresh[key].get('cli'), 'Claude')} needs you" if now_ == "needs_you"
+                                        else f"{CLI_NAMES.get(fresh[key].get('cli'), 'Claude')} finished",
                                         "sub": f"{p.name}: {t['title']}", "reason": fresh[key]["reason"]}
         self.flush_alerts()
 
@@ -3665,7 +3886,9 @@ def reply(p, task_id, text, images=(), extra="", worktree=None):
         live = None if t.get("answerOnly") else live_worktree(t)
         if live and (info["phase"] == "working" or info.get("archived")):
             extra += "\n\n" + WORKTREE_OFF.format(path=p.path, branch=live["branch"])
-    if info["phase"] == "working":
+    # A Codex or Antigravity turn can still be ending after its done report: it takes no second turn until its
+    # process exits, so the message waits as a note (delivered then, by deliver_notes).
+    if info["phase"] == "working" or info.get("state") == "working" and board_run_by_id(p.board, info["id"]):
         reports.append(p.board, task_id, "note", text + extra, "you", images=list(images))
         return True
     if WATCH.note_if_closing(p, task_id, text + extra, images):
@@ -3701,7 +3924,7 @@ def board_tail(p, task_id):
         extra += "\n\n" + "\n".join(renewed_lines(wt, p.path))
     elif t and t.get("worktree") is False and not t.get("answerOnly") and live_worktree(t):
         extra += "\n\n" + WORKTREE_OFF.format(path=p.path, branch=live_worktree(t)["branch"])
-    extra += delegate_reminder(t, script_cmd(p, task_id, "codex_worker.py"))
+    extra += delegate_reminder(t, script_cmd(p, task_id, worker_script((t or {}).get("subagentModel"))))
     if t and t.get("planMode"):
         extra += "\n\n" + plan_reminder(p, t)
     elif t and t.get("answerOnly"):
@@ -3747,8 +3970,10 @@ def unstall(p, task_id, info):
 
 def resume(p, info, message):
     """Wake an idle session with `message` as its next turn; returns the session's short id."""
-    if codex.is_session(p.board, info["id"]):
-        return codex.resume(p.board, info["id"], message)
+    m = board_run_by_id(p.board, info["id"])
+    if m:
+        cli_setup(p, cli_name_of(m), (m.session(p.board, info["id"]) or {}).get("cwd"))
+        return m.resume(p.board, info["id"], message)
     # A live idle session must be stopped first, and fully (its pid gone): --resume on a
     # running one starts a copy instead of waking it.
     run_claude(["stop", info["id"]], cwd=p.path, timeout=30)
@@ -3918,7 +4143,7 @@ def _kill(proc):
                 subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
         else:
             # The whole group, SIGKILL for what ignores SIGTERM: a server the shell started would run on, forgotten.
-            codex.stop_group(proc)
+            procs.stop_group(proc)
         proc.wait(timeout=10)
     except (OSError, subprocess.SubprocessError) as e:
         print("stop run:", e)
@@ -4075,8 +4300,8 @@ def answer_permission(p, task_id, choice, shown):
         raise ValueError("unknown choice")
     info = WATCH.snapshot(p.id).get(task_id)
     session = info and next((s for s in all_sessions(p) if s["id"] == info["id"]), None)
-    if is_codex(session):
-        raise LookupError("Codex sessions have no permission prompts")
+    if board_run(session):
+        raise LookupError(f"{CLI_NAMES[cli_of(session)]} sessions have no permission prompts")
     ask = permission_ask(session)
     if not ask or ask != shown:
         raise LookupError("the session is no longer asking that; the card will update")
@@ -4140,7 +4365,7 @@ def deliver_notes(p, task_id, info, waiting=False):
         print("deliver notes:", e)
         return
     n = len(notes)
-    agent = "Codex" if codex.is_session(p.board, aid) else "Claude"
+    agent = CLI_NAMES[cli_name_of(board_run_by_id(p.board, aid))]
     reports.append(p.board, task_id, "resume", f"Handed {agent} {n} message{'s' if n > 1 else ''} it had not read yet",
                    "you", session=aid)
     WATCH.expect(p, task_id, aid)
@@ -4212,7 +4437,7 @@ def write_recap(p, t, log, prior, sessions):
         parts += ["# Earlier recap (the work before these sessions)", prior]
     parts += ["# Card messages", card]
     for i, s in enumerate(sessions, 1):
-        digest = codex.digest(s["log"]) if is_codex(s) else session_digest(s.get("sessionId"))
+        digest = board_run(s).digest(s["log"]) if board_run(s) else session_digest(s.get("sessionId"))
         parts += [f"# Session {i} ({s.get('name') or s['id']})", digest or "(no transcript)"]
     ask = RECAP_ASK + (SIMPLE_RECAP if simple_words(load_tasks(p)) else "")
     return ask_claude(RECAP_MODEL, ask, "\n\n".join(parts), 600)
@@ -4521,11 +4746,11 @@ def archive(p, task_id):
     replace_file(tmp, path)
     kept = []
     for s in sessions:
-        if is_codex(s):
+        if board_run(s):
             try:
-                codex.remove(p.board, s["id"])
+                board_run(s).remove(p.board, s["id"])
             except (OSError, RuntimeError) as e:
-                print("codex remove:", e)
+                print(cli_of(s), "remove:", e)
                 kept.append(s["id"])
             continue
         r = run_claude(["rm", s["id"]], cwd=p.path, timeout=60)
@@ -4551,7 +4776,7 @@ def recap_sessions(p, task_id):
         return None
     prior, _, listing = reports.read_recap(p.board, task_id).partition(TRANSCRIPTS)
     recap = write_recap(p, t, [e for e in log if e.get("status") != "recap"], prior.strip(), sessions)
-    paths = [x for x in (s["log"] if is_codex(s) else transcript_path(s.get("sessionId")) for s in sessions) if x]
+    paths = [x for x in (s["log"] if board_run(s) else transcript_path(s.get("sessionId")) for s in sessions) if x]
     old = re.findall(r"^- (.+\.jsonl)$", listing, re.M)
     return t, sessions, recap, list(dict.fromkeys(old + paths))
 
@@ -5150,6 +5375,15 @@ def setup_tools():
     installed before the tools existed. Not from a task's worktree (.git is a file there): its hooks are unreviewed."""
     if os.path.isfile(os.path.join(APP, ".git")):
         return
+    # Codex's and Antigravity's rules files follow Claude's rules at every board start, even when nothing else in the
+    # setup changed (the rules sources are the user's own files, not this copy's).
+    for cli in ("codex", "antigravity"):
+        try:
+            mod = _install_clis()
+            if mod is not None:
+                mod.ensure_rules(cli)
+        except Exception as e:  # noqa: BLE001
+            print(f"Note: could not refresh the {CLI_NAMES[cli]} rules ({e}).")
     try:
         spec = importlib.util.spec_from_file_location("run_setup", os.path.join(APP, "setup", "run_setup.py"))
         mod = importlib.util.module_from_spec(spec)
