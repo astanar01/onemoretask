@@ -20,13 +20,15 @@ import threading
 import time
 from datetime import datetime
 
-POSIX = os.name == "posix"
+from procs import (DIGEST_BLOCK, DIGEST_HEAD, DIGEST_TAIL, MCP_WHAT_MAX, POSIX, SAY_MAX, _MCP_WHAT_KEYS,  # noqa: F401
+                   _MCP_WHAT_SKIP, _SHELL_WRAP, _events, _kill, _pid_alive, _pid_start, _signal, _spawn, _tail,
+                   group_alive, mcp_what, stop_group, write_json)
+
 CODEX_CMD = [shutil.which("codex") or os.path.expanduser("~/.local/bin/codex")]
 MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4", "codex")
 FALLBACK_MODELS = [{"id": "gpt-6-astra", "name": "GPT-6-Astra"}, {"id": "gpt-5.6-sol", "name": "GPT-5.6-Sol"},
                    {"id": "gpt-5.5", "name": "GPT-5.5"}]
 START_WAIT = 30  # seconds to wait for the first event of a turn
-DIGEST_HEAD, DIGEST_TAIL, DIGEST_BLOCK = 30_000, 150_000, 4_000  # same as server.py
 PROCS = {}  # thread id -> Popen of its running (or not yet reaped) turn
 _usage_memo = {}  # log path -> ((mtime, size), [input, cache write, cache read, output])
 _spawn_memo = {}  # log path -> ((mtime, size), (worker ids, ids a wait saw completed))
@@ -120,44 +122,7 @@ def _read_meta(board, thread_id):
 
 
 def _write_meta(board, meta):
-    path = _meta_path(board, meta["id"])
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=meta["id"] + ".", suffix=".tmp")
-    try:  # a temp per write: the watcher and a request thread may write the same meta at once
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=1)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def _pid_start(pid):
-    """The process's start time as ps prints it, '' when there is no such process."""
-    if not pid or not POSIX:
-        return ""
-    try:
-        return subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True,
-                              timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
-def _pid_alive(pid, started=None):
-    """`started` (_pid_start at spawn) tells a reused pid apart; a meta without it trusts the pid."""
-    if not pid or not POSIX:  # os.kill(pid, 0) terminates the process on Windows
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    except OSError:
-        return False
-    return not started or _pid_start(pid) == started
+    write_json(_meta_path(board, meta["id"]), meta)
 
 
 def _alive(meta):
@@ -182,29 +147,6 @@ def _reap(board, meta):
         meta["exit"] = 0
         _write_meta(board, meta)
     return False
-
-
-def _tail(path, n=300):
-    try:
-        with open(path, "rb") as f:
-            f.seek(max(0, os.path.getsize(path) - n))
-            return f.read().decode("utf-8", "replace").strip()
-    except OSError:
-        return ""
-
-
-def _events(path):
-    try:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                try:
-                    e = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(e, dict):
-                    yield e
-    except OSError:
-        return
 
 
 def _last_turn(path):
@@ -261,27 +203,6 @@ def is_session(board, thread_id):
 
 
 # ---------------------------------------------------------------- running turns
-def _spawn(argv, cwd, text, log, err):
-    """Start one turn: stdout and stderr appended to the session's files, `text` fed on stdin from a thread
-    (a 50 KB prompt would fill the pipe buffer before codex reads it)."""
-    with open(log, "ab") as out, open(err, "ab") as errf:
-        proc = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE, stdout=out, stderr=errf,
-                                start_new_session=POSIX)  # the board's Ctrl-C must not stop a running turn
-
-    def feed():
-        try:
-            proc.stdin.write(text.encode("utf-8"))
-        except (BrokenPipeError, OSError):
-            pass
-        finally:
-            try:
-                proc.stdin.close()
-            except OSError:
-                pass
-    threading.Thread(target=feed, daemon=True).start()
-    return proc
-
-
 def _wait_event(proc, log, offset, want_thread):
     """Poll the log from `offset` for the turn's first event: the thread id when `want_thread`, else True.
     None when the process exits first or the wait runs out."""
@@ -323,65 +244,6 @@ def _tail_from(path, offset):
             return f.read()[-300:].decode("utf-8", "replace").strip()
     except OSError:
         return ""
-
-
-def _signal(proc, kill=False):
-    """SIGTERM (SIGKILL with `kill`) to a turn. On POSIX to its whole process group: _spawn starts it in its own
-    session, so the group also holds the commands codex started, which must not outlive it."""
-    if POSIX:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL if kill else signal.SIGTERM)
-            return
-        except OSError:
-            pass
-    (proc.kill if kill else proc.terminate)()
-
-
-def group_alive(pgid):
-    """True while any process of group `pgid` is left (a zombie counts: reap the leader first)."""
-    try:
-        os.killpg(pgid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-
-
-def stop_group(proc, grace=5):
-    """POSIX: SIGTERM to the process group `proc` leads (started with start_new_session), then SIGKILL to whatever is
-    left of it after `grace` seconds. Waits for the whole group, not only `proc`: a leader that quits at once can leave
-    a command it started that ignores SIGTERM. False when `proc` leads no group (nothing was sent)."""
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except OSError:
-        return False
-    end = time.time() + grace
-    while time.time() < end:
-        if proc.poll() is not None and not group_alive(proc.pid):
-            return True
-        time.sleep(0.05)
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    proc.wait()
-    for _ in range(40):  # SIGKILL cannot be ignored; the rest of the group is gone within moments
-        if not group_alive(proc.pid):
-            break
-        time.sleep(0.05)
-    return True
-
-
-def _kill(proc):
-    if POSIX and stop_group(proc):
-        return
-    proc.terminate()
-    try:
-        proc.wait(5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
 
 
 def lock_args(roots):
@@ -822,32 +684,9 @@ def context(log_path):
     return {"tokens": info["context"], "peak": info["peak"], "model": info["model"], "max": info["window"]}
 
 
-_MCP_WHAT_KEYS = ("query", "queries", "pattern", "name_pattern", "qualified_name", "function_name", "semantic_query",
-                  "context", "concept", "intent", "path", "file_path", "repo_path", "url", "code", "id")
-_MCP_WHAT_SKIP = ("project", "mode", "language")
-MCP_WHAT_MAX = 120
-
-
-def mcp_what(args):
-    """What an MCP call looked for, in one short line, from its arguments; "" when nothing fits. Lives here because
-    server.py imports this module and not the reverse."""
-    if not isinstance(args, dict):
-        return ""
-    value = next((args[k] for k in _MCP_WHAT_KEYS if args.get(k)), None)
-    if value is None:
-        value = next((v for k, v in args.items() if k not in _MCP_WHAT_SKIP and v and isinstance(v, str)), "")
-    text = ", ".join(str(x) for x in value) if isinstance(value, (list, tuple)) else str(value)
-    text = " ".join(text.split())
-    return text[:MCP_WHAT_MAX - 1] + "…" if len(text) > MCP_WHAT_MAX else text
-
-
 _mcp_seen = {}  # (log path, turn, item id) -> the time a call is shown at (its events carry none)
 _mcp_logs_read = set()  # logs read since the board started: on the first read their calls get the log's write time
 _mcp_use_memo = {}  # log path -> ((mtime, size), rows)
-
-
-_SHELL_WRAP = re.compile(r"^\S*/(?:zsh|bash|sh) -l?c (['\"])(.*)\1$", re.S)
-SAY_MAX = 300  # as server.SAY_MAX
 
 
 def _step(item):
