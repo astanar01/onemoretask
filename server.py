@@ -1409,6 +1409,7 @@ def _launch(p, task_id, model, effort=""):
             git_try(p.path, "branch", "-d", wt["branch"])
         raise
     where = f", worktree {wt['branch']}" if wt else ""
+    where += skills_suffix(p, task_id, cli_of_model(model))
     cli = cli_of_model(model)
     agent = {"id": aid, "started": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
              **({"model": model} if model else {}), **({"effort": effort} if effort else {}),
@@ -1876,6 +1877,36 @@ def cli_setup(p, cli, target):
         return None
 
 
+def skills_target(p, task_id, cli, locked):
+    """Where a Codex or Antigravity session reads project skills from: its working folder (an answer-only card's
+    temp folder, else the project folder)."""
+    if not locked:
+        return p.path
+    try:
+        return codex.answer_dir(task_id) if cli == "codex" else agy.answer_dir(p.board, task_id)
+    except Exception:  # noqa: BLE001 - a module without answer_dir (a test fake)
+        return None
+
+
+def skills_suffix(p, task_id, cli):
+    """The launch line's ", project skills: <n> linked[, <k> kept as they were (<names>)]" for a Codex or Antigravity
+    card whose project has skills; links again (cheap, idempotent) to count them."""
+    try:
+        mod = _install_clis()
+        if mod is None or not board_run(cli):
+            return ""
+        linked, kept = mod.ensure_project_skills(p.path, skills_target(p, task_id, cli, answer_only_task(p, task_id)))
+    except Exception as e:  # noqa: BLE001
+        print("project skills:", e)
+        return ""
+    if not linked and not kept:
+        return ""
+    out = f", project skills: {len(linked)} linked"
+    if kept:
+        out += f", {len(kept)} kept as they were" + (f" ({', '.join(kept)})" if len(kept) <= 3 else "")
+    return out
+
+
 _INSTALL_CLIS = []
 
 
@@ -1898,7 +1929,7 @@ def start_session(p, task_id, name, prompt, model, effort="", worker=""):
             raise ValueError(f"bad model name: {model!r}")
         effort_args(effort)  # refuses a bad effort level
         locked = answer_only_task(p, task_id)
-        cli_setup(p, "antigravity", p.path)
+        cli_setup(p, "antigravity", skills_target(p, task_id, "antigravity", locked))
         return agy.start(p.board, task_id, name, prompt + "\n\n" + agy_note(p, locked), model, p.path,
                          session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
     if cli_of_model(model) == "codex":
@@ -1906,7 +1937,7 @@ def start_session(p, task_id, name, prompt, model, effort="", worker=""):
         model_args(model)  # refuses a bad model name
         effort_args(effort)  # and a bad effort level
         locked = answer_only_task(p, task_id)
-        cli_setup(p, "codex", getattr(codex, "answer_dir", lambda t: None)(task_id) if locked else p.path)
+        cli_setup(p, "codex", skills_target(p, task_id, "codex", locked))
         return codex.start(p.board, task_id, name, prompt + "\n\n" + codex_note(p, locked), model, p.path,
                            session_effort(model, effort), writable=answer_only_roots(p) if locked else None)
     # AskUserQuestion's pop-up shows only inside the session, never on the card: questions go through report.py.
