@@ -47,7 +47,8 @@ def main(argv=None):
     ap.add_argument("--model", required=True)
     ap.add_argument("--name", default="Antigravity worker")
     ap.add_argument("--read-only", action="store_true")
-    ap.add_argument("--cwd", default=None)
+    ap.add_argument("--cwd", default=None, help="default: the current folder when it is inside the project (a card "
+                    "worktree), else the project folder")
     ap.add_argument("--prompt-file", help="the prompt; stdin when left out (a lead in a sandbox uses a file: the "
                     "sandbox's excludedCommands entry does not match a command fed stdin)")
     a = ap.parse_args(argv)
@@ -62,7 +63,10 @@ def main(argv=None):
         sys.exit(f"agy_worker: not an Antigravity model: {a.model!r} (expected agy:<name>)")
     board = os.path.abspath(a.board)
     project = reports.project_of_board(board)
-    cwd = os.path.abspath(a.cwd or project or os.getcwd())
+    here = os.path.realpath(os.getcwd())
+    # The lead's own folder, as codex_worker does: on a worktree card that is the worktree, not the main checkout.
+    inside = here == os.path.realpath(project) or here.startswith(os.path.realpath(project) + os.sep)
+    cwd = os.path.abspath(a.cwd or (here if inside else project))
     setup_step("ensure_rules", "antigravity")
     setup_step("ensure_project_skills", project)
     if os.path.realpath(cwd) != os.path.realpath(project):

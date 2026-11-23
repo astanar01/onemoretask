@@ -124,6 +124,22 @@ def test_s41a_argv_and_cwd():
     assert os.path.realpath(c["cwd"]) == os.path.realpath(proj) and c["prompt"] == "make hello\nmore", c
 
 
+def test_s41a_cwd_is_the_leads_worktree():
+    """A lead on a worktree card runs the helper from its worktree with no --cwd: Antigravity must work there, not in
+    the main checkout (review finding 1). A lead shell outside the project falls back to the project folder."""
+    wt = os.path.join(proj, ".claude", "worktrees", "card")
+    os.makedirs(wt, exist_ok=True)
+    outside = tempfile.mkdtemp()
+    for where, want in ((wt, wt), (outside, proj)):
+        open(GOT, "w").close()
+        r = subprocess.run([sys.executable, HELPER, "--board", p.board, "t1", "--model", "agy:gemini-3.8-flash-low",
+                            "--name", "Hello"], input="hi", capture_output=True, text=True, cwd=where, env=ENV,
+                           timeout=60)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+        got = calls()[-1]["cwd"]
+        assert os.path.realpath(got) == os.path.realpath(want), (where, got)
+
+
 def test_s41a_prompt_file():
     open(GOT, "w").close()
     pf = os.path.join(TMP, "part.md")
