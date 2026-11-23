@@ -263,6 +263,8 @@ def test_s19_prompt_ends_with_agy_note():
 
 def test_s21_reply_goes_to_agy_by_id():
     ag_session("ag-1", "t1", "idle")
+    W.launched["ag-1"] = time.time() - 100  # past the 45 s a fresh launch reads as working
+    poll()
     n = len(claude_calls)
     server.reply(p, "t1", "please also do Y")
     sid, msg = agy.RESUMES[-1]
@@ -309,7 +311,9 @@ def test_s26_phase_wording():
     called = []
     for name in ("popup_questions", "cache_info", "mcp_state", "auto_mode_stall"):
         orig = getattr(server, name)
-        setattr(server, name, (lambda o, n: lambda *a, **k: (called.append(n), o(*a, **k))[1])(orig, name))
+        setattr(server, name, (lambda o, n: lambda *a, **k: (
+            called.append(n) if a and (a[0] == "ag-w" or isinstance(a[0], dict) and a[0].get("id") == "ag-w") else None,
+            o(*a, **k))[1])(orig, name))
     poll()
     c = card("tw")
     assert c["phase"] == "working" and c["cli"] == "antigravity", c
@@ -330,6 +334,8 @@ def test_s27_answer_copied():
 
 def test_s28_notes_wait_for_turn_end():
     s = ag_session("ag-w", "tw", "working", busy=True)
+    reports.append(p.board, "tw", "reply", "go on", "you", session="ag-w")  # a reply started this turn
+    poll()
     n = len(agy.RESUMES)
     queued = server.reply(p, "tw", "a note while it works")
     assert queued is True, queued
@@ -363,7 +369,7 @@ def test_s34_alert_titles():
     add_task("tz", "Alert me", agent={"id": "ag-z", "started": NOW, "model": "agy:gemini-4-neon-high", "cli": "antigravity"})
     ag_session("ag-z", "tz", "working", busy=True)
     reports.append(p.board, "tz", "launch", "Sent", "you", session="ag-z")
-    W.launched["ag-z"] = time.time()
+    W.launched["ag-z"] = time.time() - 100
     poll()
     s = agy.SESSIONS["ag-z"]
     s.update(state="idle")
@@ -379,7 +385,7 @@ def test_s34_alert_titles():
     assert "Antigravity finished" in [a for a, _ in alerts], alerts
     add_task("tx", "Codex alert", agent={"id": "cdx-z", "started": NOW, "model": "gpt-5.5", "cli": "codex"})
     reports.append(p.board, "tx", "launch", "Sent", "you", session="cdx-z")
-    W.launched["cdx-z"] = time.time()
+    W.launched["cdx-z"] = time.time() - 100
     orig = codex.sessions
     codex.sessions = lambda board: [{"id": "cdx-z", "sessionId": "cdx-z", "cli": "codex", "state": "working",
                                      "status": "busy", "pid": 1, "log": "", "err": "", "detail": ""}]
