@@ -2476,6 +2476,7 @@ def job_detail(job_id, field="detail"):
 
 
 MCP_ASK = "Claude asks permission: use new MCP servers: "
+AGY_ASK = "Antigravity asks permission: "  # agy.ASK: a turn that ended on a step it needed a yes for
 
 
 def mcp_request(session):
@@ -2501,6 +2502,8 @@ def mcp_names(session):
 def permission_ask(session):
     """What a session sitting on a permission prompt asks to do ('' if it is not on one). `claude agents` gives
     waitingFor "permission prompt"; the job's state.json has the request ("approve Bash: rm -f …")."""
+    if session and session.get("cli") == "antigravity":  # its turn ended on a step it needed a yes for (agy.ask)
+        return session.get("ask") or ""
     names, count = mcp_request(session)
     if count:
         more = count - len(names)
@@ -3658,7 +3661,7 @@ class Watcher:
                 fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                           "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                           "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                          "permission": phase == "needs_you" and reason.startswith("Claude asks permission") and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
+                                          "permission": phase == "needs_you" and reason.startswith(("Claude asks permission", AGY_ASK)) and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
                                           "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                           "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                           "cli": cli_of(s) if s else t["agent"].get("cli") or "claude"}
@@ -3706,7 +3709,7 @@ class Watcher:
                 with self.lock:
                     self.alerts[key] = {"p": p, "id": t["id"], "phase": now_, "at": time.time(),
                                         "column": t.get("column"), "updated": t.get("updated"),
-                                        "title": "Claude asks permission" if asks else
+                                        "title": f"{CLI_NAMES.get(fresh[key].get('cli'), 'Claude')} asks permission" if asks else
                                         f"{CLI_NAMES.get(fresh[key].get('cli'), 'Claude')} needs you" if now_ == "needs_you"
                                         else f"{CLI_NAMES.get(fresh[key].get('cli'), 'Claude')} finished",
                                         "sub": f"{p.name}: {t['title']}", "reason": fresh[key]["reason"]}
@@ -4304,6 +4307,12 @@ def answer_permission(p, task_id, choice, shown):
         raise ValueError("unknown choice")
     info = WATCH.snapshot(p.id).get(task_id)
     session = info and next((s for s in all_sessions(p) if s["id"] == info["id"]), None)
+    if session and session.get("cli") == "antigravity":
+        # Its turn is over: the answer starts the next one, with that step allowed (or refused).
+        tool, target, message = agy.answer(p.board, info["id"], choice, shown)
+        said = {"allow": "Allowed once", "always": "Allowed for this session", "deny": "Said no"}[choice]
+        reply(p, task_id, f"{said}: {agy.words(tool, target)}", extra="\n\n" + message)
+        return {"next": "", "again": False, "once": False, "resumed": True}
     if board_run(session):
         raise LookupError(f"{CLI_NAMES[cli_of(session)]} sessions have no permission prompts")
     ask = permission_ask(session)

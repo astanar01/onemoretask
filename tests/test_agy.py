@@ -101,7 +101,13 @@ if first == "EMPTY":
     step(1, "tool", "DONE", tool_name="run_command", tool_info={"name": "run_command", "parameters": {"CommandLine": "ls"}})
     result("SUCCESS", "")
     sys.exit(0)
-if first == "DENIED":
+if first == "DENIED":  # the step error is agy 1.5.14's (a real mage review turn, 2026-11-23)
+    t = prompt.split()[1] if len(prompt.split()) > 1 else "/private/tmp/x.gd"
+    info = {"name": "write_file", "parameters": {"Path": t}}
+    step(1, "tool", "ACTIVE", tool_name="write_file", tool_info=info)
+    step(1, "tool", "ERROR", tool_name="write_file", tool_info={**info, "error": {"type": "TOOL_ERROR", "message":
+         'permission check failed for write_file "%%s": user denied permission for write_file(%%s)\nDo not attempt to '
+         'circumvent this denial by rephrasing the command. Proceed without performing this action.' %% (t, t)}})
     sys.stderr.write('jetski: no output produced — a tool required the "write_file" permission that headless mode cannot prompt for, so it was auto-denied.\n')
     result("SUCCESS", "")
     sys.exit(0)
@@ -620,6 +626,51 @@ def test_s47_answer_only_lock():
     c2 = calls()[-1]
     assert os.path.realpath(c2["cwd"]) == os.path.realpath(c["cwd"]) and settings_of(c2["argv"]) == settings_of(c["argv"])
     wait_state(m, sid, ("idle",))
+
+
+def test_denied_step_choices():
+    """A turn that ended on a step it needed a yes for: the session asks it, and allow / always / deny go into the
+    next turn (allow for that turn only, always for every later one, deny adds no rule)."""
+    open(GOT, "w").close()
+    m, sid = _start("DENIED /private/tmp/q.gd", task="tden")
+    s = wait_state(m, sid, ("idle", "blocked"))
+    want = "Antigravity asks permission: write_file: /private/tmp/q.gd"
+    assert s["state"] == "blocked" and s["detail"] == m.DENIED and s["ask"] == want, s
+    rule = "write_file(/private/tmp/q.gd)"
+    try:
+        m.answer(BOARD, sid, "allow", want + "x")
+        raise AssertionError("a stale ask was answered")
+    except LookupError:
+        pass
+    tool, target, msg = m.answer(BOARD, sid, "allow", want)
+    assert (tool, target) == ("write_file", "/private/tmp/q.gd") and "allowed" in msg and target in msg, msg
+    m.resume(BOARD, sid, msg)
+    assert rule in settings_of(calls()[-1]["argv"])["permissions"]["allow"], "allow: rule missing in the next turn"
+    s = wait_state(m, sid, ("idle", "blocked"))
+    assert s["state"] == "idle" and "ask" not in s, s
+    m.resume(BOARD, sid, "go on")
+    assert rule not in settings_of(calls()[-1]["argv"])["permissions"]["allow"], "allow: rule kept past one turn"
+    wait_state(m, sid, ("idle",))
+    m.resume(BOARD, sid, "DENIED /private/tmp/q.gd")
+    wait_state(m, sid, ("blocked",))
+    try:
+        m.answer(BOARD, sid, "maybe", want)
+        raise AssertionError("an unknown choice was taken")
+    except ValueError:
+        pass
+    m.answer(BOARD, sid, "always", want)
+    for text in ("go on", "and on"):
+        m.resume(BOARD, sid, text)
+        assert rule in settings_of(calls()[-1]["argv"])["permissions"]["allow"], "always: rule dropped"
+        wait_state(m, sid, ("idle",))
+    m2, sid2 = _start("DENIED /private/tmp/r.gd", task="tden2")
+    wait_state(m2, sid2, ("blocked",))
+    tool, target, msg = m2.answer(BOARD, sid2, "deny", "Antigravity asks permission: write_file: /private/tmp/r.gd")
+    assert "said no" in msg, msg
+    m2.resume(BOARD, sid2, msg)
+    assert not any("r.gd" in r for r in settings_of(calls()[-1]["argv"])["permissions"]["allow"]), "deny added a rule"
+    wait_state(m2, sid2, ("idle",))
+    assert m.words("write_file", "/a") == "write the file /a" and m.words("odd_tool", "/a") == "odd_tool /a"
 
 
 def test_sessions_no_folder_made():

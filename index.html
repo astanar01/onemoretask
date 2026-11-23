@@ -3287,6 +3287,12 @@ function nextAction(t, ag, g) {
             answer(window.t("Always use new ones"), "always", "sec", window.t("Use these and every MCP server this project adds later, without asking")),
             answer(window.t("Don't use"), "deny", "ghost", window.t("Start without these MCP servers; it will not ask again for them"))], busy: !!answering[t.id] };
       }
+      const step = agyStep(ag.permission);
+      if (step) return { title: window.t("{who} asks permission", { who: nm }),
+        text: window.t("It stopped at a step it needs a yes for: {what}.", { what: step }) + note,
+        actions: answering[t.id] ? [] : [answer(window.t("Allow"), "allow", "primary", window.t("Let it do this once: it tries again now")),
+          answer(window.t("Allow always"), "always", "sec", window.t("Let it do this for the rest of this session: it tries again now")),
+          answer(window.t("Deny"), "deny", "ghost", window.t("Do not let it do this: it carries on without it"))], busy: !!answering[t.id] };
       return { title: window.t("{who} asks permission", { who: nm }), text: ag.permission.replace(/^Claude asks permission: /, () => window.t("It wants to run:") + " ") + "." + note,
         actions: answering[t.id] ? [] : [answer(window.t("Allow"), "allow", "primary", window.t("Let it run this once")),
           answer(window.t("Allow always"), "always", "sec", window.t("Let it run this, and stop asking about this kind of request in this session")),
@@ -3968,6 +3974,16 @@ async function sendFindingsBack(t, pick, keep) {
 // The server's ask for the project MCP servers a session waits on (server.MCP_ASK): their names, else "".
 const MCP_ASK = "Claude asks permission: use new MCP servers: ";
 const mcpServers = (ask) => (ask || "").startsWith(MCP_ASK) ? ask.slice(MCP_ASK.length) : "";
+// An Antigravity turn that ended on a step it needed a yes for (server agy.ask: "<ASK><tool>: <target>"), in words; else "".
+const AGY_ASK = "Antigravity asks permission: ";
+function agyStep(ask) {
+  if (!(ask || "").startsWith(AGY_ASK)) return "";
+  const rest = ask.slice(AGY_ASK.length), cut = rest.indexOf(": ");
+  const tool = cut < 0 ? rest : rest.slice(0, cut), target = cut < 0 ? "" : rest.slice(cut + 2);
+  const x = { x: target };
+  return tool === "write_file" ? window.t("write the file {x}", x) : tool === "read_file" ? window.t("read {x}", x)
+    : tool === "read_url" ? window.t("open the web page {x}", x) : tool === "mcp" ? window.t("use the tool {x}", x) : `${tool} ${target}`.trim();
+}
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {
   answering[t.id] = true;
@@ -3975,7 +3991,9 @@ async function answerPermission(t, choice, ask) {
   refreshAgent(t);
   try {
     const res = await post("/api/agent/permission", { p: P, taskId: t.id, choice, ask });
-    const msg = res.mcp ? (choice === "deny" ? window.t("Started without the new MCP servers.") : window.t("Saved your choice. Claude starts now."))
+    const nm = who(t);
+    const msg = res.resumed ? (choice === "deny" ? window.t("Told {who} no. It carries on without it.", { who: nm }) : window.t("Allowed. {who} tries again now.", { who: nm }))
+      : res.mcp ? (choice === "deny" ? window.t("Started without the new MCP servers.") : window.t("Saved your choice. Claude starts now."))
       : (choice === "deny" ? window.t("Told Claude no.") : res.once ? window.t("Allowed once: Claude does not offer \"always\" for this one.") : window.t("Allowed.")) + (res.again
       ? " " + window.t("It asks the same thing again (a second identical request): answer that one too.")
       : res.next && res.next !== ask ? " " + window.t("It now asks about something else.") : "");
@@ -3983,7 +4001,8 @@ async function answerPermission(t, choice, ask) {
     permissionNote[t.id] = { ask, note: res.again ? msg : msg + " " + window.t("The card updates in a moment.") };
     setStatus(msg);
   } catch (e) {
-    const msg = window.t("Could not answer: {error}. Copy the attach command from the ⋯ menu to answer it in a terminal.", { error: window.t(e.message) });
+    const msg = agyStep(ask) ? window.t("Could not answer: {error}. Reply in Conversation instead.", { error: window.t(e.message) })
+      : window.t("Could not answer: {error}. Copy the attach command from the ⋯ menu to answer it in a terminal.", { error: window.t(e.message) });
     permissionNote[t.id] = { ask, note: msg };
     setStatus(msg, true);
   }

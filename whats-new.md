@@ -2,7 +2,7 @@
 
 ## 2026-11-23
 
-- You can now send a card to Antigravity, Google's helper, the same way as Codex. It stays inside your project, and when it needs your yes it stops and the card asks you to reply.
+- You can now send a card to Antigravity, Google's helper, the same way as Codex. It stays inside your project. When it needs your yes, the card says what it wants to do and gives you Allow, Allow always and Deny, like Claude.
 - Codex and Antigravity now follow your same rules and use the same helpers and skills as Claude, the skill notebook included.
 - When you check the work twice with two different helpers, the button to send what they found now goes to the helper who did the work, not to the first checker.
 

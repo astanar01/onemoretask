@@ -83,6 +83,15 @@ def context(log_path):
     return None
 def mcp_uses(log_path):
     return []
+ANSWERS = []
+def answer(board, sid, choice, shown):
+    s = SESSIONS.get(sid)
+    if not s or s.get("ask") != shown:
+        raise LookupError("the session is no longer asking that; the card will update")
+    ANSWERS.append((sid, choice))
+    return "write_file", "/private/tmp/q.gd", "NEXT TURN: " + choice
+def words(tool, target):
+    return "write the file " + target
 ''')
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, FAKE)
@@ -504,6 +513,41 @@ def test_s77_observer_line_reaches_codex_and_agy():
     for model in ("agy:gemini-4-neon-high", "gpt-5.5", "opus"):
         text = server.build_prompt(p, state, t, None, model)
         assert "Invoke the task-observer skill at the start" in text, model
+
+
+def test_denied_step_shows_choices():
+    """A turn that ended on a step it needed a yes for: the card gets it as a permission ask with its own alert, and
+    the card's answer starts the next turn (agy.answer) with a reply line naming the choice."""
+    W.primed = True
+    add_task("tp", "Needs a yes", agent={"id": "ag-p", "started": NOW, "model": "agy:gemini-4-neon-high", "cli": "antigravity"})
+    ag_session("ag-p", "tp", "working", busy=True)
+    reports.append(p.board, "tp", "launch", "Sent", "you", session="ag-p")
+    W.launched["ag-p"] = time.time() - 100
+    poll()
+    ask = "Antigravity asks permission: write_file: /private/tmp/q.gd"
+    s = agy.SESSIONS["ag-p"]
+    s.pop("status"), s.pop("pid")
+    s.update(state="blocked", detail="Antigravity stopped: a step needed a yes it could not get", ask=ask)
+    alerts.clear()
+    W.flush_alerts = lambda: [alerts.append((a["title"], a["reason"])) for a in W.alerts.values()]
+    poll()
+    c = card("tp")
+    assert c["phase"] == "needs_you" and c["permission"] == ask and c["reason"] == ask, c
+    assert ("Antigravity asks permission", ask) in alerts, alerts
+    try:
+        server.answer_permission(p, "tp", "allow", ask + " (old)")
+        raise AssertionError("a stale ask was answered")
+    except LookupError:
+        pass
+    n = len(agy.RESUMES)
+    r = server.answer_permission(p, "tp", "always", ask)
+    assert r["resumed"] and agy.ANSWERS[-1] == ("ag-p", "always"), (r, agy.ANSWERS)
+    assert len(agy.RESUMES) == n + 1 and agy.RESUMES[-1][0] == "ag-p", agy.RESUMES[-1:]
+    msg = agy.RESUMES[-1][1]
+    assert msg.startswith("Allowed for this session: write the file /private/tmp/q.gd") and "NEXT TURN: always" in msg, msg[:200]
+    said = [e for e in reports.read(p.board, "tp") if e.get("status") == "reply"]
+    assert said and said[-1]["message"] == "Allowed for this session: write the file /private/tmp/q.gd", said[-1:]
+    assert "NEXT TURN" not in said[-1]["message"]
 
 
 if __name__ == "__main__":

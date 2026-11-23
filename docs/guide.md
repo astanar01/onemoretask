@@ -193,6 +193,12 @@ When Claude stops to ask before running something, the card says "Claude asks pe
 command. Click **Allow**, **Allow always** or **Deny** on the card; the board answers the prompt in the
 session for you (macOS and Linux).
 
+Antigravity cannot ask in the middle of a turn: a step outside what the board allows it (writing a file outside
+the project, say) is refused and its turn ends. The card then says "Antigravity asks permission" with that step in
+plain words and the same three buttons. Each one starts its next turn: **Allow** lets that one step through for
+that turn only, **Allow always** for the rest of the session, and **Deny** tells it to carry on without it. Your
+choice shows on the card as a reply.
+
 When the project's `.mcp.json` lists MCP servers you never chose for, Claude stops before its first step and
 asks about them. The card then says "Claude found new tools in this project" with three buttons: **Use it**
 (or **Use them**), **Always use new ones** and **Don't use**. They answer Claude's own menu, so the choice is

@@ -307,6 +307,75 @@ def turn_state(meta):
     return "idle", ""
 
 
+ASK = "Antigravity asks permission: "
+WORDS = {"write_file": "write the file", "read_file": "read", "read_url": "open the web page", "mcp": "use the tool"}
+
+
+def words(tool, target):
+    """A denied step in plain words, as the card says it (index.html agyStep)."""
+    return f"{WORDS.get(tool, tool)} {target}".strip()
+_DENIAL = re.compile(r"user denied permission for (\w+)\((.+?)\)\s*$", re.M)
+
+
+def denied(meta):
+    """(tool, target) of the last step of the last turn that needed a yes it could not get, else None. The step's
+    error reads 'permission check failed for write_file "<path>": user denied permission for write_file(<path>)'."""
+    found = None
+    for s in _steps(_turn(meta.get("log", ""), meta.get("turn_offset") or 0)):
+        info = s.get("tool_info") if isinstance(s.get("tool_info"), dict) else {}
+        err = info.get("error") if isinstance(info.get("error"), dict) else {}
+        m = _DENIAL.search(str(err.get("message") or ""))
+        if m:
+            found = (m.group(1), m.group(2))
+    return found
+
+
+def ask(meta):
+    """The card's permission line for a turn that stopped on a denied step ('' if it did not)."""
+    d = denied(meta)
+    return f"{ASK}{d[0]}: {d[1]}" if d else ""
+
+
+def answer(board, sid, choice, shown):
+    """Allow / always / deny the step a stopped turn needed a yes for. The turn is over, so the answer goes into the
+    next one: `allow` adds that one rule to the next turn only, `always` keeps it for every later turn of this session,
+    `deny` adds nothing. Returns (tool, target, the message for the next turn); the caller starts that turn."""
+    if choice not in ("allow", "always", "deny"):
+        raise ValueError("unknown choice")
+    meta = _read_meta(board, sid)
+    if not meta or meta.get("removed"):
+        raise LookupError("the session is gone")
+    if _reap(board, meta) or turn_state(meta) != ("blocked", DENIED) or ask(meta) != shown:
+        raise LookupError("the session is no longer asking that; the card will update")
+    tool, target = denied(meta)
+    rule = f"{tool}({target})"
+    if choice == "deny":
+        return tool, target, (f"The user said no to {tool} on {target}. Do not try it again or get around it another way: carry on "
+                "with the task without it, or report on the card what you cannot do without it.")
+    if choice == "always":
+        st = json.loads(meta.get("settings") or "{}")
+        allow = st.setdefault("permissions", {}).setdefault("allow", [])
+        if rule not in allow:
+            allow.append(rule)
+        meta["settings"] = json.dumps(st, separators=(",", ":"))
+    else:
+        meta["once"] = [rule]
+    _write_meta(board, meta)
+    return tool, target, f"The user allowed {tool} on {target}. Do that step again now, then carry on with the task."
+
+
+def _turn_settings(meta):
+    """This turn's --settings: the session's, plus the rules allowed for this one turn only (answer 'allow')."""
+    sj = meta.get("settings") or json.dumps(settings(meta.get("cwd") or "."), separators=(",", ":"))
+    once = meta.get("once") or []
+    if not once:
+        return sj
+    st = json.loads(sj)
+    allow = st.setdefault("permissions", {}).setdefault("allow", [])
+    allow += [r for r in once if r not in allow]
+    return json.dumps(st, separators=(",", ":"))
+
+
 def _record(board, meta):
     alive = _reap(board, meta)
     state, detail = ("working", "") if alive else turn_state(meta)
@@ -316,6 +385,8 @@ def _record(board, meta):
     if alive:
         s["status"] = "busy"
         s["pid"] = meta.get("pid")
+    elif detail == DENIED:
+        s["ask"] = ask(meta)
     return s
 
 
@@ -422,11 +493,11 @@ def resume(board, sid, message):
     agy_log = f"{base}-{turn}.agy.log"
     if meta.get("cwd"):
         os.makedirs(meta["cwd"], exist_ok=True)  # an answer-only temp folder: a restart may have emptied it
-    proc = _spawn(argv(meta.get("model"), meta.get("settings") or json.dumps(settings(meta.get("cwd") or ".")),
-                       agy_log, meta.get("effort"), sid), meta.get("cwd") or None, stdin_line(message), log, err)
+    proc = _spawn(argv(meta.get("model"), _turn_settings(meta), agy_log, meta.get("effort"), sid),
+                  meta.get("cwd") or None, stdin_line(message), log, err)
     PROCS[sid] = proc
     meta.update(pid=proc.pid, pid_start=_pid_start(proc.pid), turns=turn, exit=None, turn_offset=offset,
-                err_offset=err_offset, agy_log=agy_log, started_turn=time.time(), stopped=None)
+                err_offset=err_offset, agy_log=agy_log, started_turn=time.time(), stopped=None, once=[])
     _write_meta(board, meta)
     init = _wait_init(proc, log, offset)
     if not init:

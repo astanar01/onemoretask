@@ -86,7 +86,9 @@ TASKS = [
     card("ans", 6, None, answerOnly=True),
     card("hbA", 7, {"model": "agy:gemini-3-pro", "cli": "antigravity"}, column="rev"),           # AG worked, Claude reviewed
     card("hbC", 8, {"model": "opus"}, column="rev"),                                            # Claude worked, AG reviewed
+    card("agp", 9, {"model": "agy:gemini-3-pro", "cli": "antigravity"}),                        # AG stopped on a denied step
 ]
+AGY_ASK = "Antigravity asks permission: write_file: /private/tmp/q.gd"
 AGENTS = {t["id"]: {"id": t["id"], "sessionId": t["id"], "state": "idle", "phase": "finished", "reason": "", "log": [],
                     "subagents": []} for t in TASKS if "agent" in t}
 AGENTS["cl"].update(phase="working", subagents=CL_SUBS, context={"tokens": 50000, "peak": 60000, "max": 200000, "model": "claude-opus-5-5"})
@@ -96,6 +98,7 @@ for k in ("ag", "agc", "agx"):
 AGENTS["ag"]["subagents"] = AG_SUBS
 AGENTS["hbA"].update(cli="claude", handback="Antigravity", log=REVIEW_LOG)
 AGENTS["hbC"].update(cli="antigravity", handback="Claude", log=REVIEW_LOG)
+AGENTS["agp"].update(cli="antigravity", context=None, phase="needs_you", state="blocked", reason=AGY_ASK, permission=AGY_ASK)
 BOARD = {"version": 1, "columns": [{"id": "prog", "name": "In Progress", "done": False, "role": "progress"},
                                    {"id": "rev", "name": "Review", "done": False, "role": "review"},
                                    {"id": "done", "name": "Done", "done": True}], "tasks": TASKS}
@@ -273,6 +276,11 @@ for (const c of ['cl', 'cx', 'ag']) { await atCard(c); R.s36[c] = await ev(ATTAC
 const G = `{ available: true, changed: ['a.py'], ahead: [], target: 'main', branch: 'main' }`;
 const NEXT = (c) => `(() => { const n = nextAction(task('${c}'), agents['${c}'], ${G}); return { title: n.title, text: n.text, labels: n.actions.map((a) => a.label) }; })()`;
 R.s38 = { hbA: await ev(NEXT('hbA')), hbC: await ev(NEXT('hbC')) };
+// An Antigravity turn that ended on a step it needed a yes for: the same three choices as a Claude permission ask.
+await atCard('agp');
+R.agp = await ev(NEXT('agp'));
+R.agpPanel = await ev(`[...document.querySelectorAll('#d-next-actions button')].map((b) => [b.textContent.trim(), b.title])`);
+R.shotAgp = await shot('agy-permission.png', '#d-next');
 
 // S39 / S44: the subagent picker and which pick counts.
 const SUB = `({ kids: ${LIST('#d-submodel')}, value: document.querySelector('#d-submodel').value, sub: subModel(task(openId)) })`;
@@ -418,6 +426,17 @@ def main():
     check("S38 Antigravity worker, Claude reviewer: Send findings to Antigravity", "Send findings to Antigravity" in res["s38"]["hbA"]["labels"], True)
     check("S38 Claude worker, Antigravity reviewer: Send findings to Claude", "Send findings to Claude" in res["s38"]["hbC"]["labels"], True)
 
+    # A denied Antigravity step
+    check("denied step: title", res["agp"]["title"], "Antigravity asks permission")
+    check("denied step: the step in plain words", res["agp"]["text"], "It stopped at a step it needs a yes for: write the file /private/tmp/q.gd.")
+    check("denied step: Allow / Allow always / Deny", res["agp"]["labels"], ["Allow", "Allow always", "Deny"])
+    check("denied step: the panel shows the buttons with their tips", res["agpPanel"],
+          [["Allow", "Let it do this once: it tries again now"], ["Allow always", "Let it do this for the rest of this session: it tries again now"],
+           ["Deny", "Do not let it do this: it carries on without it"]])
+    for k in ("It stopped at a step it needs a yes for: {what}.", "write the file {x}", "Allowed. {who} tries again now.",
+              "Told {who} no. It carries on without it."):
+        check(f"French line for {k!r}", bool(i18n_fr_keys().get(k)), True)
+
     # S39, S44
     claude = ["fable", "opus", "sonnet", "haiku"]
     codex = [m["id"] for m in CODEX_MODELS]
@@ -453,9 +472,9 @@ def main():
     check("S53 the old delegate tooltip line is gone",
           "The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)" in fr, False)
 
-    for k in ("shotSend", "shotSubs"):
+    for k in ("shotSend", "shotSubs", "shotAgp"):
         check(f"{k}: element on screen", isinstance(res.get(k), dict) and res[k].get("width", 0) > 0 and res[k].get("height", 0) > 0)
-    print("screenshots:", *(os.path.join(SHOTS, n) for n in ("agy-send.png", "agy-subagents.png")))
+    print("screenshots:", *(os.path.join(SHOTS, n) for n in ("agy-send.png", "agy-subagents.png", "agy-permission.png")))
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     return 1 if fails else 0
 
