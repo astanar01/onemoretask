@@ -205,7 +205,8 @@ for (let i = 0; i < 100 && ready !== true; i++) {
 await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: init.result.identifier });
 const R = {};
 R.ready = ready;
-const mode = async (m) => { await ev(`fetch('/__ag/${m}', { method: 'PUT' })`); return ev(`loadCodexModels()`); };
+// replMode hands back a promise the expression returns without waiting for it: each wait is an explicit await.
+const mode = async (m) => { await ev(`await fetch('/__ag/${m}', { method: 'PUT' }); 0`); return ev(`await loadCodexModels(); 0`); };
 // A select as a list: option values, and [label, values] for a group.
 const LIST = (sel) => `[...document.querySelector('${sel}').children].map((c) => c.tagName === 'OPTGROUP' ? [c.label, [...c.children].map((o) => o.value)] : c.value)`;
 const PICKERS = `({ model: ${LIST('#d-model')}, review: ${LIST('#d-review-model')}, sub: ${LIST('#d-submodel')} })`;
