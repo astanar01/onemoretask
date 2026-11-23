@@ -7,6 +7,7 @@ The prompt comes on stdin. Waits for agy, prints the worker's answer; on failure
 (exit 0 from agy alone is not success: the last turn's result line decides). Logs to
 <board>/agent_reports/agy-workers/ (agy.worker_rows shows them on the card)."""
 import argparse
+import contextlib
 import importlib.util
 import json
 import os
@@ -26,15 +27,16 @@ BIND = "bind: operation not permitted"
 
 def setup_step(name, *args):
     """Run a never-failing part of setup/install_clis.py (rules, project skills) before agy starts; skipped when the
-    file or the function is missing."""
+    file or the function is missing. Its notes go to stderr: stdout is the worker's answer."""
     path = os.path.join(HERE, "setup", "install_clis.py")
     try:
         spec = importlib.util.spec_from_file_location("install_clis", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        getattr(mod, name)(*args)
-    except Exception:  # noqa: BLE001 - a setup problem never stops the worker
-        pass
+        with contextlib.redirect_stdout(sys.stderr):
+            getattr(mod, name)(*args)
+    except Exception as e:  # noqa: BLE001 - a setup problem never stops the worker
+        print(f"agy_worker: setup skipped ({e})", file=sys.stderr)
 
 
 def main(argv=None):
@@ -52,7 +54,7 @@ def main(argv=None):
     if not agy.is_model(a.model):
         sys.exit(f"agy_worker: not an Antigravity model: {a.model!r} (expected agy:<name>)")
     board = os.path.abspath(a.board)
-    project = getattr(reports, "project_of_board", lambda b: os.path.dirname(b))(board)
+    project = reports.project_of_board(board)
     cwd = os.path.abspath(a.cwd or project or os.getcwd())
     setup_step("ensure_rules", "antigravity")
     setup_step("ensure_project_skills", project)

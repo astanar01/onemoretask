@@ -5363,6 +5363,15 @@ def setup_tools():
     installed before the tools existed. Not from a task's worktree (.git is a file there): its hooks are unreviewed."""
     if os.path.isfile(os.path.join(APP, ".git")):
         return
+    # Codex's and Antigravity's rules files follow Claude's rules at every board start, even when nothing else in the
+    # setup changed (the rules sources are the user's own files, not this copy's).
+    for cli in ("codex", "antigravity"):
+        try:
+            mod = _install_clis()
+            if mod is not None:
+                mod.ensure_rules(cli)
+        except Exception as e:  # noqa: BLE001
+            print(f"Note: could not refresh the {CLI_NAMES[cli]} rules ({e}).")
     try:
         spec = importlib.util.spec_from_file_location("run_setup", os.path.join(APP, "setup", "run_setup.py"))
         mod = importlib.util.module_from_spec(spec)

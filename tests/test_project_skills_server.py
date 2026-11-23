@@ -169,6 +169,19 @@ def test_s74_answer_only_codex_target():
     assert targets == {codex.answer_dir("l6")}, CALLS
 
 
+def test_s64_board_start_refreshes_rules():
+    app = os.path.join(TMP, "app")  # an installed copy: .git is a folder, not a worktree's file
+    os.makedirs(os.path.join(app, ".git"), exist_ok=True)
+    old = server.APP
+    server.APP = app
+    CALLS.clear()
+    try:
+        server.setup_tools()  # its run_setup is missing here: the rest is skipped with a note
+    finally:
+        server.APP = old
+    assert ("rules", "codex") in CALLS and ("rules", "antigravity") in CALLS, CALLS
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
