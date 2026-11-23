@@ -25,6 +25,27 @@ def write_meta(path, meta):
     os.replace(tmp, path)
 
 
+def prepare(board, cwd):
+    """Keep Codex's rules current and link the project's skills (S64, S73) before codex starts. Never fails; its notes
+    go to stderr, since stdout is the worker's answer."""
+    try:
+        import contextlib
+        import importlib.util
+        import reports
+        here = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("install_clis", os.path.join(here, "setup", "install_clis.py"))
+        clis = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(clis)
+        with contextlib.redirect_stdout(sys.stderr):
+            clis.ensure_rules("codex")
+            project = reports.project_of_board(board)
+            clis.ensure_project_skills(project)
+            if os.path.realpath(cwd) != os.path.realpath(project):
+                clis.ensure_project_skills(project, os.path.realpath(cwd))
+    except Exception as e:
+        print(f"codex_worker: setup skipped ({e})", file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--board", required=True)
@@ -38,6 +59,7 @@ def main(argv=None):
     if not prompt.strip():
         sys.exit("codex_worker: no prompt on stdin")
     cwd = os.path.abspath(a.cwd)
+    prepare(a.board, cwd)
     started = time.time()
     base = os.path.join(codex.worker_folder(a.board), f"{a.task}-{int(started * 1000)}")
     log, err, meta_path = base + ".jsonl", base + ".err", base + ".json"

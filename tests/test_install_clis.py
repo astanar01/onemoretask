@@ -722,6 +722,7 @@ class SectionJ(Base):
         self.check_git(repo, repo, wt)
         self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=wt), "")
         self.assertEqual(os.readlink(wt / ".agents" / "skills" / "alpha"), "../../.claude/skills/alpha")
+        self.eps(repo)  # the main checkout's own links, made once
         real_run = subprocess.run
         calls = []
 
