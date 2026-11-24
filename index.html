@@ -343,7 +343,20 @@ body.view-plan #search { visibility: hidden; }
 .sub-list li.done .t { text-decoration: line-through; color: var(--muted); }
 .sub-list li .c { font-size: calc(11px * var(--ts)); color: var(--muted); }
 .sub-list li .n { font-size: calc(11px * var(--ts)); color: var(--muted); }
-:root { --wait: #e67e22; --ok: #3c9d6b; }
+:root { --wait: #e67e22; --ok: #3c9d6b; --cli-claude: #d97757; --cli-codex: #10a37f; --cli-antigravity: #4285f4; }
+/* Which CLI: a dot in its color on the status pills, its name in that color on the conversation and the summary. */
+.cli-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); flex: none; }
+.cli-dot.cli-claude, .cli-chip.cli-claude::before { background: var(--cli-claude); }
+.cli-dot.cli-codex, .cli-chip.cli-codex::before { background: var(--cli-codex); }
+.cli-dot.cli-antigravity, .cli-chip.cli-antigravity::before { background: var(--cli-antigravity); }
+.cli-name { font-weight: 600; }
+.cli-name.cli-claude { color: var(--cli-claude); }
+.cli-name.cli-codex { color: var(--cli-codex); }
+.cli-name.cli-antigravity { color: var(--cli-antigravity); }
+.sum-who { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.cli-chip { display: inline-flex; align-items: center; gap: 6px; font-size: calc(12px * var(--ts)); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.cli-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.cli-chip .n { color: var(--muted); }
 .agent { font-size: calc(11px * var(--ts)); border-radius: 4px; padding: 0 6px; background: var(--accent-soft); color: var(--pill-start); }
 .agent.working { background: var(--pill-work); color: #fff; }
 .agent.working.reviewing { background: var(--pill-review); }
@@ -1631,7 +1644,7 @@ function cardEl(t, top, nestedCount) {
       ${t.notes ? `<span title="${window.t("Has notes")}">≡</span>` : ""}
       ${t.planMode ? `<span title="${window.t("Plan first: Claude writes a plan and changes nothing")}">◇</span>` : t.answerOnly ? `<span title="${window.t("Answer only: Claude reports back, no file changes")}">?</span>` : ""}
       ${(t.images || []).length ? `<span title="${t.images.length === 1 ? window.t("1 image") : window.t("{n} images", { n: t.images.length })}">▣ ${t.images.length}</span>` : ""}
-      ${t.agent ? `<span class="agent ${pillCls(ag)}" title="${window.t("{who} session {id}", { who: who(t), id: esc(t.agent.id) })}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(t))}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
+      ${t.agent ? `<span class="agent ${pillCls(ag)}" title="${window.t("{who} session {id}", { who: who(t), id: esc(t.agent.id) })}">${ag && ag.phase === "working" ? turning(11) : ""}${cliDot(cliOf(t))}${pillText(ag, who(t))}</span>${yoursChip(t, ag)}${cacheChip(ag, false)}${contextChip(ag)}` : ""}
       ${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}
     </div>` : ""}
     ${t.agent ? subagentRows(ag) : ""}
@@ -1729,7 +1742,7 @@ function listRowEl(x, depth) {
   // Branch: the worktree the launch made, stored on the card. Messages: the entries the panel's Conversation shows.
   const br = x.agent && x.agent.worktree && x.agent.worktree.branch, n = ((ag && ag.log) || []).length;
   const l2 = `${br ? `<span class="lbr" title="${esc(br)}">${icon("branch", 15)}<span>${esc(br)}</span></span>` : ""}
-    ${x.agent ? `<span class="agent ${pillCls(ag)}">${ag && ag.phase === "working" ? turning(11) : ""}${pillText(ag, who(x))}</span>${yoursChip(x, ag)}` : ""}
+    ${x.agent ? `<span class="agent ${pillCls(ag)}">${ag && ag.phase === "working" ? turning(11) : ""}${cliDot(cliOf(x))}${pillText(ag, who(x))}</span>${yoursChip(x, ag)}` : ""}
     ${(x.tags || []).length ? `<span class="tags">${x.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</span>` : ""}
     ${n ? `<span class="lmsg" title="${n === 1 ? t("1 message") : t("{n} messages", { n })}">${licon("chat", 15)}${n}</span>` : ""}`;
   el.innerHTML = `<div class="l1">${depth ? `<span class="lsub">↳</span>` : ""}${x.priority ? `<span class="prio p-${esc(x.priority)}" title="${{ high: t("High priority"), med: t("Medium priority"), low: t("Low priority") }[x.priority]}"></span>` : ""}<span class="title">${esc(x.title)}</span></div>
@@ -2647,7 +2660,7 @@ const pillCls = (a) => !a ? "" : a.phase !== "working" ? a.phase : a.recapping ?
 const pillText = (a, who) => {
   const c = pillCls(a);
   return c === "working recapping" ? t("{who}: writing recap", { who }) : c === "working merging" ? t("{who}: merging", { who })
-    : c === "working reviewing" ? t("Code review") : `${who}: ${esc(phaseLabel(a))}`;
+    : c === "working reviewing" ? t("{who}: code review", { who }) : `${who}: ${esc(phaseLabel(a))}`;
 };
 // Prompt cache of the session's last API call (server reads it from the transcript). Past `expires`, a reply
 // re-reads the whole context at full price instead of the cached rate. Hidden while working (kept warm) or gone.
@@ -2805,6 +2818,34 @@ const cliOfModel = (m) => isAgModel(m) ? "antigravity" : isCodexModel(m) ? "code
 const CLI_NAMES = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 const cliOf = (t) => (agents[t.id] && agents[t.id].cli) || (t.agent && t.agent.cli) || "claude";
 const who = (t) => CLI_NAMES[cliOf(t)] || "Claude";
+const cliKey = (c) => CLI_NAMES[c] ? c : "claude";
+const cliDot = (c) => `<span class="cli-dot cli-${cliKey(c)}"></span>`;
+// Who wrote a log entry: the server puts the CLI of the session that wrote it on each one ("cli"), so a Codex
+// review on Claude's work reads as Codex. An older server leaves it out: the card's CLI then.
+const entryCli = (e, t) => (e && e.cli && CLI_NAMES[e.cli]) ? e.cli : cliOf(t);
+const entryWho = (e, t) => `<b class="cli-name cli-${entryCli(e, t)}">${CLI_NAMES[entryCli(e, t)]}</b>`;
+// Each CLI that wrote on the card, in order of its first entry: what it did (the task, a code review) and how many
+// messages it wrote.
+function cliWork(t, log) {
+  const by = new Map();
+  let role = "";
+  for (const e of log) {
+    if (e.from === "you" && (e.status === "launch" || e.status === "review")) role = e.status;
+    if (e.from !== "claude") continue;
+    const c = entryCli(e, t);
+    if (!by.has(c)) by.set(c, { cli: c, roles: new Set(), n: 0 });
+    const w = by.get(c);
+    w.n++;
+    if (role) w.roles.add(role);
+  }
+  return [...by.values()];
+}
+function cliWorkHtml(t, log) {
+  const rows = cliWork(t, log);
+  if (!rows.length) return "";
+  const roleName = { launch: window.t("the task"), review: window.t("code review") };
+  return `<div class="sum-who" title="${window.t("Who worked on this task")}">${rows.map((w) => `<span class="cli-chip cli-${w.cli}"><b>${CLI_NAMES[w.cli]}</b>${w.roles.size ? `<span>${[...w.roles].map((r) => roleName[r]).join(", ")}</span>` : ""}<span class="n">${w.n === 1 ? window.t("1 message") : window.t("{n} messages", { n: w.n })}</span></span>`).join("")}</div>`;
+}
 const reviewer = (t) => { const m = reviewModel(); return m ? CLI_NAMES[cliOfModel(m)] : who(t); };
 // OpenAI models for the model pickers; an older server has no /api/codex-models.
 const CODEX_MODELS = [{ id: "gpt-6-astra", name: "GPT-6-Astra" }, { id: "gpt-5.6-sol", name: "GPT-5.6-Sol" }, { id: "gpt-5.5", name: "GPT-5.5" }];
@@ -2992,7 +3033,7 @@ function renderAgent(t) {
   const launch = !t.agent && launchOf(t);
   const mdl = (t.agent && t.agent.model) || (launch && launch.model) || (defaultModel.pid === P && defaultModel.model && prettyModel(defaultModel.model)) || "";
   const eff = (t.agent && t.agent.effort) || (launch && launch.effort) || "";
-  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${who(t)}${mdl ? ` · ${esc(modelName(mdl))}` : ""}${eff ? ` · ${esc(effortName(eff))}` : ""}</span>
+  $("#d-agent").innerHTML = t.agent || launch ? `<span class="pill"><span data-ico="spark"></span>${cliDot(cliOf(t))}${who(t)}${mdl ? ` · ${esc(modelName(mdl))}` : ""}${eff ? ` · ${esc(effortName(eff))}` : ""}</span>
       <span class="pill ${ag ? esc(ag.phase) : ""}"><span class="dot"></span>${esc(agentLabel(ag))}</span>` : "";
   document.querySelectorAll("#d-agent [data-ico]").forEach((e) => (e.innerHTML = icon(e.dataset.ico, +e.dataset.s || 16)));
 
@@ -3020,9 +3061,9 @@ function renderAgent(t) {
   const groups = mcpGroups(shown, (ag && ag.mcp_uses) || [], start > 0);
   const lastG = groups.map((g) => g.length > 0).lastIndexOf(true), runAt = mcpRunStart(shown);
   // A suggested card older than the shown messages and not added yet stays reachable at the top.
-  const keepCards = log.slice(0, start).map((e, k) => e.card && (!cardAdded(e) || cardsJustAdded.has(cardKey(e))) ? `<li class="k-progress k-oldcard"><span class="who">${who(t)} · ${esc(window.t("earlier"))} · ${fmt(e.at)}</span>${cardSuggest(e, k)}</li>` : "").join("");
+  const keepCards = log.slice(0, start).map((e, k) => e.card && (!cardAdded(e) || cardsJustAdded.has(cardKey(e))) ? `<li class="k-progress k-oldcard"><span class="who">${entryWho(e, t)} · ${esc(window.t("earlier"))} · ${fmt(e.at)}</span>${cardSuggest(e, k)}</li>` : "").join("");
   const parts = [keepCards];
-  shown.forEach((e, i) => parts.push(usesLine(groups[i], ag, i === lastG, runAt), `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : who(t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) + qChoices(shown, i) : msgChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`));
+  shown.forEach((e, i) => parts.push(usesLine(groups[i], ag, i === lastG, runAt), `<li${i < nLog ? ` data-i="${start + i}"` : ""} class="k-${e.from === "you" ? "you" : esc(e.status)}"><span class="who">${e.from === "you" ? window.t("You") : e.from === "board" ? window.t("Board") : entryWho(e, t)} · ${esc(e.status)} · ${fmt(e.at)}${e.from === "you" ? sendMark(e.state) : ""}${e.status === "note" && !e.state ? noteMark(e, ag) : ""}</span>${e.card && i < nLog ? cardSuggest(e, start + i) + qChoices(shown, i) : msgChoices(shown, i)}${i < nLog && start + i === rr ? fixChoices(e, shown.slice(i + 1)) : ""}${e.images && e.images.length ? `<div class="thumbs">${thumbItems(e.images, fileDir("agent_reports/images"))}</div>` : ""}</li>`));
   parts.push(usesLine(groups[shown.length], ag, shown.length === lastG, runAt));
   // A blocked session whose last word is not an open question is sitting on a prompt (a permission request, shown
   // from the CLI's record) or on something only `claude attach` can show.
@@ -3530,9 +3571,10 @@ function renderSummary(t) {
   const latest = [...log].reverse().find((e) => e.from !== "you" && e.status !== "note");
   const box = $("#d-sum-result");
   let html;
-  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? window.t("Recap") : rep.status === "answer" ? window.t("Answer") : window.t("Result")} · ${who(t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
+  if (rep) html = `<div class="sum-label">${rep.status === "recap" ? window.t("Recap") : rep.status === "answer" ? window.t("Answer") : window.t("Result")} · ${entryWho(rep, t)} · ${esc(fmt(rep.at))}</div><div class="sum-result"><div class="md">${fmtMsg(rep.message)}</div></div>`;
   else if (latest) html = `<div class="sum-label">${window.t("No final report yet")} · ${window.t("latest {status}", { status: esc(latest.status) })} · ${esc(fmt(latest.at))}</div><div class="sum-result"><div class="md">${fmtMsg(latest.message)}</div></div>`;
   else html = `<div class="sum-empty">${(ag && ag.phase === "working") || (!t.agent && launchOf(t)) ? window.t("Claude has not reported anything yet.") : window.t("No report from Claude on this task.")}</div>`;
+  html = cliWorkHtml(t, log) + html;
   if (box.innerHTML !== html) box.innerHTML = html;
   // What changed: commits named on the card / ahead of the target, and uncommitted files.
   const items = [];
@@ -3549,7 +3591,7 @@ function renderSummary(t) {
   const finding = lastReview >= 0 && [...log.slice(lastReview + 1)].reverse().find((e) => e.from !== "you" && e.status === "done");
   const fi = finding ? log.lastIndexOf(finding) : -1;
   const fix = fi >= 0 && fi === reviewReport(log) && replyOpen(t) ? fixChoices(finding, log.slice(fi + 1).concat(pending[t.id] || [])) : "";
-  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>${fix}`; }
+  if (finding) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-label">${window.t("Code review")} · ${entryWho(finding, t)} · ${esc(fmt(finding.at))}</div><div class="md">${fmtMsg(finding.message)}</div>${fix}`; }
   else if (lastReview >= 0) { vh.hidden = vb.hidden = false; vb.innerHTML = `<div class="sum-empty">${window.t("Code review started {at}; no findings posted yet.", { at: esc(fmt(log[lastReview].at)) })}</div>`; }
   else { vh.hidden = vb.hidden = !canReview(t); vb.innerHTML = `<div class="sum-empty">${window.t("No code review yet. Start one from the Changes tab.")}</div>`; }
   $("#d-sum-repo").innerHTML = repoStatusHtml(t, g);

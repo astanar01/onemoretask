@@ -5,6 +5,7 @@
 - You can now send a card to Antigravity, Google's helper, the same way as Codex. It stays inside your project. When it needs your yes, the card says what it wants to do and gives you Allow, Allow always and Deny, like Claude.
 - Codex and Antigravity now follow your same rules and use the same helpers and skills as Claude, the skill notebook included.
 - When you check the work twice with two different helpers, the button to send what they found now goes to the helper who did the work, not to the first checker.
+- Each helper now has its own color dot: orange for Claude, green for Codex, blue for Antigravity. Every message on a card says which helper wrote it, and the Summary shows who worked on the task and what each one did.
 
 ## 2026-11-20
 

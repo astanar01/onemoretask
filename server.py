@@ -432,6 +432,30 @@ def cli_of(s):
     return (s or {}).get("cli") or "claude"
 
 
+SENT_TO = re.compile(r"Sent to (Claude|Codex|Antigravity)\b")
+REVIEW_BY = re.compile(r"Code review started \((.+?), session ")
+
+
+def with_clis(log, sessions, t):
+    """The log with "cli" on each entry a session wrote, so the card can say which CLI wrote what (a Codex review
+    on Claude's work, say). report.py writes every entry as from "claude"; the session that wrote it is the one the
+    newest entry with a "session" before it started or resumed. That entry's CLI: its own "cli" (newer launches and
+    reviews store it), else the live session record, else the same session seen earlier, else its text."""
+    agent = t.get("agent") or {}
+    cur, seen, out = agent.get("cli") or cli_of_model(agent.get("model")), {}, []
+    names = {v: k for k, v in CLI_NAMES.items()}
+    for e in log:
+        sid = e.get("session")
+        if sid:
+            sent, rev = SENT_TO.match(e.get("message") or ""), REVIEW_BY.match(e.get("message") or "")
+            cur = (e.get("cli") or (cli_of(sessions[sid]) if sid in sessions else None) or seen.get(sid)
+                   or (names.get(sent.group(1)) if sent else None)
+                   or (cli_of_model(rev.group(1)) if rev and rev.group(1) != "task model" else None) or cur)
+            seen[sid] = cur
+        out.append(dict(e, cli=e.get("cli") or cur) if e.get("from") == "claude" else e)
+    return out
+
+
 def board_runs():
     """{cli name: module} of the CLIs whose sessions the board runs as its own processes (module objects, so a test
     that patches server.codex.remove still works)."""
@@ -1427,7 +1451,7 @@ def _launch(p, task_id, model, effort=""):
     level = f", effort {effort}" if effort else ""
     try:
         reports.append(p.board, task_id, "launch", f"Sent to {who(model)} (session {aid}, model {model or 'default'}{level}{where})",
-                       "you", session=aid)
+                       "you", session=aid, cli=cli)
         revs = set_agent(p, task_id, agent)
     except Exception:
         # No card tracks the session: stop it rather than leave it running unseen.
@@ -2056,7 +2080,7 @@ def review(p, task_id, model=None):
     aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use,
                         "" if model else t["agent"].get("effort") or "")
     reports.append(p.board, task_id, "review", f"Code review started ({model or 'task model'}, session {aid})",
-                   "you", session=aid)
+                   "you", session=aid, cli=cli_of_model(use))
     WATCH.expect(p, task_id, aid)
     return aid
 
@@ -3661,7 +3685,7 @@ class Watcher:
                 fresh[(p.id, t["id"])] = {"id": aid, "sessionId": s and s.get("sessionId"), "state": s and s.get("state"),
                                           "archived": not s and bool(said) and said[-1].get("status") == "recap",
                                           "commits": bool(done and done[1]), "phase": phase, "reason": reason,
-                                          "permission": phase == "needs_you" and reason.startswith(("Claude asks permission", AGY_ASK)) and reason or "", "log": log, "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
+                                          "permission": phase == "needs_you" and reason.startswith(("Claude asks permission", AGY_ASK)) and reason or "", "log": with_clis(log, sessions, t), "cache": cache, "fresh_start": fit, "context": ctx, "mcp": mcp, "mcp_uses": uses, "subagents": subs, "skills": used, "tokens": spent,
                                           "closed": t.get("column") in done_cols, "recapping": recapping, "delivered": delivered,
                                           "worktree": bool(live_worktree(t)), "unstalling": unstalling, "handback": handback_to,
                                           "cli": cli_of(s) if s else t["agent"].get("cli") or "claude"}

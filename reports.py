@@ -499,7 +499,7 @@ def plan_docs(board, task_id):
 
 
 def append(board, task_id, status, message, sender, session=None, images=None, decision=None, options=None,
-           parts=None, card=None):
+           parts=None, card=None, cli=None):
     path = _path(board, task_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     entry = {"at": datetime.now(timezone.utc).isoformat(), "status": status, "message": message, "from": sender}
@@ -515,6 +515,8 @@ def append(board, task_id, status, message, sender, session=None, images=None, d
         entry["parts"] = parts  # check_parts(); the card shows a row of choices per part and one send button
     if session:
         entry["session"] = session  # the board follows the newest one (a resume can land in a new session)
+    if cli:
+        entry["cli"] = cli  # the CLI of that session: the card names who wrote the entries after it
     # report.py and a board reply can land together; the lock keeps both entries.
     with _Locked(path):
         try:
