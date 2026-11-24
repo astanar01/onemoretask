@@ -125,6 +125,8 @@ import { writeFileSync } from 'node:fs';
 const [url, chrome, dport, profile, shot] = process.argv.slice(2);
 const proc = spawn(chrome, ['--headless=new', `--remote-debugging-port=${dport}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
+  // HOME is an empty temp folder: without these macOS shows a "Keychain Not Found" box on every run.
+  '--use-mock-keychain', '--password-store=basic',
   'about:blank'], { stdio: 'ignore' });
 const quit = (code) => { try { proc.kill(); } catch {} setTimeout(() => process.exit(code), 300); };
 setTimeout(() => { console.log(JSON.stringify({ error: 'HUNG driver' })); quit(2); }, 60000);
@@ -173,6 +175,16 @@ if (shot) {
 }
 await ev(`showTab('images')`); await sleep(300);
 res.gridPlayers = await ev(names('#d-allimgs audio'));
+// A clip that is playing keeps playing when the card redraws (a poll, an update while the agent works).
+res.redraw = await ev(`await (async () => { const out = {};
+  for (const sel of ['#d-log audio', '#d-allimgs audio', '#d-images audio']) {
+    const a = document.querySelector(sel); a.__mark = sel; a.currentTime = 0;
+    try { await a.play(); } catch (e) { out[sel] = String(e); continue; }
+    await new Promise((r) => setTimeout(r, 200));
+    renderDetail();
+    const b = document.querySelector(sel); out[sel] = b === a && !b.paused; b.pause();
+  }
+  return out; })()`);
 res.errors = errors;
 console.log(JSON.stringify(res));
 quit(0);
@@ -223,6 +235,8 @@ def main():
     check("a jump to 1.5 s sticks", m.get("seekTo"), 1.5)
     check("the player is wide enough to use", isinstance(res["width"], int) and res["width"] >= 280, True)
     check("the page asked for byte ranges", any(r for r in RANGES), True)
+    check("a playing clip keeps playing when the card redraws", res["redraw"],
+          {"#d-log audio": True, "#d-allimgs audio": True, "#d-images audio": True})
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     shutil.rmtree(TMP, ignore_errors=True)
     return 1 if fails else 0

@@ -138,6 +138,19 @@ try:
     check("a refused write explains the --file retry", r.returncode != 0 and "Traceback" not in r.stderr
           and "--file <that file>" in r.stderr and f"--board {board} t1 done" in r.stderr)
     check("nothing was posted", len(reports.read(board, "t1")) == n)
+    # The retry keeps the files and choices: only the message moves to --file.
+    clip = os.path.join(tmp, "line.wav")
+    with open(clip, "wb") as f:
+        f.write(b"RIFF....WAVE")
+    os.chmod(folder, 0o555)
+    try:
+        r = run("--lang", "English", "t1", "question", "Which one?", "--attach", clip,
+                "--option", "A. This", "--option", "B. That")
+    finally:
+        os.chmod(folder, 0o755)
+    check("a refused write keeps --attach and --option in the retry", r.returncode != 0
+          and f"--attach {clip}" in r.stderr and "--option 'A. This' --option 'B. That'" in r.stderr
+          and f"--board {board} t1 question" in r.stderr)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

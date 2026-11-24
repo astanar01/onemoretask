@@ -162,7 +162,15 @@ if mismatch:
 def refused(e):
     """The board folder is read-only for this shell: Claude Code's sandbox kept the command inside it (see
     --file above), so say how to post the same text instead of a traceback."""
-    retry = " ".join(shlex.quote(a) for a in ("python3", os.path.abspath(__file__), "--board", board, task_id, asked))
+    # Keep every other flag in its order (a --part's --option and --image follow it), so the retry still carries
+    # the pictures, sound files and choices; only the message moves to --file.
+    keep, rest = [], iter(sys.argv[1:])
+    for a in rest:
+        if a in ("--image", "--attach", "--option", "--part", "--lang", "--board", "--file"):
+            v = next(rest, "")
+            if a not in ("--board", "--file"):
+                keep += [a, os.path.abspath(v) if a in ("--image", "--attach") else v]
+    retry = " ".join(shlex.quote(a) for a in ("python3", os.path.abspath(__file__), "--board", board, task_id, asked, *keep))
     sys.exit(f"Not posted: the board refused the write ({e}). This shell runs in a sandbox where the project is "
              "read-only. The report command only runs outside it when it is the whole shell command (nothing "
              "chained before or after it: no `;`, `&&`, `||` or `|`, not even `echo $?`) and its text has no "

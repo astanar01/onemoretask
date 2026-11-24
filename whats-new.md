@@ -2,7 +2,7 @@
 
 ## 2026-11-24
 
-- Sound clips on a card now play right there. Press play to hear them, and drag along to any part. This works for sounds Claude makes and for ones you drop on a card.
+- Sound clips on a card now play right there. Press play to hear them, and drag along to any part. This works for sounds Claude makes and for ones you drop on a card. A clip keeps playing when the card updates.
 
 ## 2026-11-23
 

@@ -3541,7 +3541,7 @@ function renderOverview(t) {
   const own = [...new Set(t.images || [])], fromLog = [...new Set(((ag && ag.log) || []).flatMap((e) => [...(e.images || []), ...(Array.isArray(e.parts) ? e.parts.flatMap((p) => p.images || []) : [])]))];
   $("#d-imgcount").textContent = own.length + fromLog.length || "";
   const grid = thumbItems(own, fileDir("images")) + thumbItems(fromLog, fileDir("agent_reports/images"));
-  if ($("#d-allimgs").innerHTML !== grid) $("#d-allimgs").innerHTML = grid;
+  setThumbs($("#d-allimgs"), grid);
   const kids = children(t.id), done = kids.filter(isDone).length;
   $("#d-crit").hidden = !kids.length;
   $("#d-crit-n").textContent = window.t("{done} of {total}", { done, total: kids.length });
@@ -4719,16 +4719,21 @@ function thumbItems(names, dir, removable) {
 function bindRemove(box, list, after) {
   box.querySelectorAll(".x").forEach((b) => (b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); list.splice(+b.dataset.i, 1); after(); }));
 }
+// Redraw a box of tiles only when its files changed: a redraw stops a clip that is playing. Compared with the
+// last HTML we wrote, never with innerHTML (the browser writes <audio controls> back as controls="").
+function setThumbs(box, html) {
+  if (box._thumbs !== html) { box.innerHTML = html; box._thumbs = html; }
+}
 function renderImages(t) {
   const box = $("#d-images");
-  box.innerHTML = thumbItems(t.images, fileDir("images"), !t.agent);
+  setThumbs(box, thumbItems(t.images, fileDir("images"), !t.agent));
   bindRemove(box, t.images || [], () => { touch(t); renderImages(t); render(); });
   $("#d-img-hint").textContent = t.agent ? window.t("Sent to Claude — the task is locked. Add anything new as a reply.")
     : useServer ? window.t("Paste (⌘V) or drop a picture or a file to attach it — Claude gets it with the task.") : window.t("Attaching files needs server.py.");
 }
 function renderReplyImages() {
   const box = $("#d-reply-images");
-  box.innerHTML = thumbItems(replyImages, fileDir("agent_reports/images"), true);
+  setThumbs(box, thumbItems(replyImages, fileDir("agent_reports/images"), true));
   bindRemove(box, replyImages, renderReplyImages);
 }
 
