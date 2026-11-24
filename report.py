@@ -42,7 +42,8 @@ send button, and the answer arrives as one line per part: "<part> → <option>".
 
 Add `--image <file>` (repeatable) to attach screenshots; they show on the card. An `--image` placed after
 a `--part` belongs to that part and shows right under its question; one before the first `--part` shows
-under the whole message.
+under the whole message. `--attach <file>` (repeatable, placed the same way) attaches any other file: a
+sound file (.wav, .mp3, .ogg, .flac, .m4a, .aac, .opus) gets a player on the card.
 --board is the project's board folder; without it, the board of the git repo
 containing the current directory.
 
@@ -68,8 +69,9 @@ TYPED_TEXT = re.compile(r"\b(type|write|tell me|name it|enter|I will)\b", re.I)
 args, files, board, lang, options, parts, msg_file = [], [], None, None, [], [], None
 it = iter(sys.argv[1:])
 for a in it:
-    if a == "--image":
-        (parts[-1]["files"] if parts else files).append(next(it, None) or sys.exit("--image needs a file"))
+    if a in ("--image", "--attach"):
+        f = next(it, None) or sys.exit(f"{a} needs a file")
+        (parts[-1]["files"] if parts else files).append((f, a == "--attach"))
     elif a == "--option":
         o = next(it, None)
         (parts[-1]["options"] if parts else options).append(o if o is not None else sys.exit("--option needs a label"))
@@ -170,14 +172,15 @@ def refused(e):
 
 def store(paths):
     names = []
-    for p in paths:
+    for p, any_file in paths:
         try:
             with open(p, "rb") as f:
                 data = f.read()
         except OSError as e:
             sys.exit(f"{p}: {e}")
         try:
-            name = reports.store_image(data, reports.log_images(board))
+            folder = reports.log_images(board)
+            name = reports.store_file(data, folder, os.path.basename(p)) if any_file else reports.store_image(data, folder)
         except PermissionError as e:
             refused(e)
         except (OSError, ValueError) as e:

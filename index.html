@@ -573,6 +573,9 @@ body.view-plan #search { visibility: hidden; }
 .thumb .x { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: calc(11px * var(--ts)); line-height: 1; padding: 3px 5px; display: none; }
 .thumb:hover .x { display: block; }
 #d-log .thumb { width: 120px; height: 80px; }
+.thumb.audio, #d-log .thumb.audio, .img-grid .thumb.audio { width: 320px; max-width: 100%; height: auto; grid-column: span 2; }
+.thumb.audio .fname { -webkit-line-clamp: 1; }
+.thumb.audio audio { width: 100%; height: 36px; }
 #panel.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; }
 #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; justify-content: center; align-items: center; padding: 40px; }
 #lightbox.open { display: flex; }
@@ -4702,11 +4705,14 @@ let replyImages = [];            // uploaded, waiting for Send reply
 
 // Pictures are <hash>.<ext>; any other file is <hash>-<its own name> and shows as a named tile.
 const isImageName = (n) => !/^[0-9a-f]{16}-/.test(n);
+// Sound files get a player on the card (server.py AUDIO_TYPES serves these endings as audio).
+const isAudioName = (n) => /^[0-9a-f]{16}-.*\.(wav|mp3|ogg|oga|opus|flac|m4a|aac|weba)$/i.test(n);
 function thumbItems(names, dir, removable) {
   return (names || []).map((n, i) => {
     const x = removable ? `<button class="x" data-i="${i}" title="${t("Remove")}">✕</button>` : "";
     if (isImageName(n)) return `<a class="thumb" href="${dir + esc(n)}" target="_blank" title="${t("Open full size")}"><img src="${dir + esc(n)}" alt="">${x}</a>`;
     const label = n.slice(17), ext = (label.match(/\.([A-Za-z0-9]{1,5})$/) || [, ""])[1].toUpperCase();
+    if (isAudioName(n)) return `<div class="thumb file audio" title="${esc(label)}"><span class="fname"><span class="fext">${esc(ext)}</span> ${esc(label)}</span><audio controls preload="metadata" src="${dir + esc(n)}"></audio>${x}</div>`;
     return `<a class="thumb file" href="${dir + esc(n)}" target="_blank" title="${esc(label)}"><span class="fext">${esc(ext || "FILE")}</span><span class="fname">${esc(label)}</span>${x}</a>`;
   }).join("");
 }

@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-24
+
+- Sound clips on a card now play right there. Press play to hear them, and drag along to any part. This works for sounds Claude makes and for ones you drop on a card.
+
 ## 2026-11-23
 
 - You can now send a card to Antigravity, Google's helper, the same way as Codex. It stays inside your project. When it needs your yes, the card says what it wants to do and gives you Allow, Allow always and Deny, like Claude.

@@ -971,7 +971,9 @@ def card_lines(report, answer_only=False, simple=False):
               *(["- " + SIMPLE_RULE] if simple else []),
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "
               "before/after) MUST attach the image files with `--image <file>` (repeatable), e.g. "
-              f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card.',
+              f'`{report} progress "new HUD layout" --image /path/shot.png`. They show on the card. Any other file '
+              "goes with `--attach <file>` (repeatable); a sound file you made (.wav, .mp3, .ogg ...) gets a player on "
+              "the card, so attach the clips the user should hear.",
               # A quoted path opening a PowerShell line is a string, not a command, so report.py would never run.
               *(["- Run the report script with the Bash tool (Git Bash), never PowerShell: the command is bash syntax."]
                 if WINDOWS else [])]
@@ -5460,6 +5462,24 @@ def memory_cleanup_loop():
 
 # ---------------------------------------------------------------- http
 FILE_ROUTE = re.compile(r"/files/([0-9a-f]{10})/(images|agent_reports/images)/([^/]+)")
+# Sound files attached to a card play right on it (the page's isAudioName must list the same endings).
+AUDIO_TYPES = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".oga": "audio/ogg",
+               ".opus": "audio/ogg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".aac": "audio/aac",
+               ".weba": "audio/webm"}
+
+
+def byte_range(header, size):
+    """(first, last) for a single "bytes=a-b" / "bytes=a-" / "bytes=-n" Range header, None to send the whole
+    file (no header, or one we do not handle), "bad" when the range lies outside the file."""
+    m = re.fullmatch(r"\s*bytes=(\d*)-(\d*)\s*", header or "")
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    if not m.group(1):
+        n = int(m.group(2))
+        return (max(size - n, 0), size - 1) if n and size else "bad"
+    a = int(m.group(1))
+    b = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+    return (a, b) if a < size and a <= b else "bad"
 
 
 # Fixed types: mimetypes reads the Windows registry, which can map .js or .css to anything.
@@ -5600,10 +5620,21 @@ class Handler(SimpleHTTPRequestHandler):
                 ext = os.path.splitext(name)[1].lower()
                 inline = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
                           ".md": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8",
-                          ".csv": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8"}.get(ext)
-                self._send(200, data, inline or "application/octet-stream", headers={
-                    "Content-Disposition": f'{"inline" if inline else "attachment"}; filename="{name[17:]}"',
-                    "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"})
+                          ".csv": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8",
+                          **AUDIO_TYPES}.get(ext)
+                headers = {"Content-Disposition": f'{"inline" if inline else "attachment"}; filename="{name[17:]}"',
+                           "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox",
+                           "Accept-Ranges": "bytes"}
+                # The card's sound player asks for byte ranges; without them the browser cannot jump around in it.
+                part = byte_range(self.headers.get("Range"), len(data))
+                if part == "bad":
+                    self._send(416, b"", "text/plain", headers={"Content-Range": f"bytes */{len(data)}"})
+                elif part:
+                    a, b = part
+                    self._send(206, data[a:b + 1], inline or "application/octet-stream",
+                               headers={**headers, "Content-Range": f"bytes {a}-{b}/{len(data)}"})
+                else:
+                    self._send(200, data, inline or "application/octet-stream", headers=headers)
             self._errors(serve)
         elif path == "/api/alerts/stream":
             self._alert_stream()

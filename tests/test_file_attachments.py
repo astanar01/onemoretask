@@ -99,6 +99,51 @@ try:
     st, h, _ = call("GET", f"/files/{p.id}/images/{pname}")
     check("picture still served as a picture", st == 200 and h.get("Content-Type") == "image/png", h)
 
+    # sound files play on the card: served as audio, with byte ranges so the player can seek
+    WAV = b"RIFF" + (36).to_bytes(4, "little") + b"WAVEfmt " + b"\0" * 40
+    st, _, body = call("POST", "/api/image", {"p": p.id, "kind": "log", "data": base64.b64encode(WAV).decode(),
+                                              "name": "Guard Line 01.wav"})
+    wname = json.loads(body).get("name", "")
+    check("wav keeps its name", wname.endswith("-Guard_Line_01.wav"), body)
+    st, h, got = call("GET", f"/files/{p.id}/agent_reports/images/{wname}")
+    check("wav served inline as audio", st == 200 and got == WAV and h.get("Content-Type") == "audio/wav"
+          and h.get("Content-Disposition", "").startswith("inline") and h.get("Accept-Ranges") == "bytes", h)
+
+    def ranged(r):
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c.request("GET", f"/files/{p.id}/agent_reports/images/{wname}", headers={"Host": f"127.0.0.1:{port}", "Range": r})
+        resp = c.getresponse()
+        return resp.status, dict(resp.getheaders()), resp.read()
+    st, h, got = ranged("bytes=4-11")
+    check("range 4-11", st == 206 and got == WAV[4:12] and h.get("Content-Range") == f"bytes 4-11/{len(WAV)}", (st, h))
+    st, h, got = ranged("bytes=10-")
+    check("open range", st == 206 and got == WAV[10:], (st, h))
+    st, h, got = ranged("bytes=-4")
+    check("suffix range", st == 206 and got == WAV[-4:], (st, h))
+    st, h, _ = ranged(f"bytes={len(WAV)}-")
+    check("range past the end is 416", st == 416 and h.get("Content-Range") == f"bytes */{len(WAV)}", (st, h))
+    st, h, got = ranged("bytes=0-1,4-5")
+    check("multi-range gets the whole file", st == 200 and got == WAV, st)
+    check("byte_range edge cases", server.byte_range("bytes=0-999", 10) == (0, 9) and server.byte_range(None, 10) is None
+          and server.byte_range("bytes=5-2", 10) == "bad" and server.byte_range("bytes=-0", 10) == "bad")
+
+    # report.py --attach posts any file (a sound clip) on the card; --image still refuses one
+    import subprocess
+    clip = os.path.join(TMP, "npc line.wav")
+    with open(clip, "wb") as f:
+        f.write(WAV)
+    script = os.path.join(os.path.dirname(HERE), "report.py")
+    r = subprocess.run([sys.executable, script, "--board", p.board, "abc", "progress", "Listen to this",
+                        "--attach", clip, "--lang", "English"], capture_output=True, text=True)
+    with open(os.path.join(p.board, "agent_reports", "abc.json"), encoding="utf-8") as f:
+        logged = json.load(f)
+    last = (logged.get("log") if isinstance(logged, dict) else logged)[-1]
+    check("--attach stores the clip by its name", r.returncode == 0 and len(last.get("images", [])) == 1
+          and last["images"][0].endswith("-npc_line.wav"), (r.stderr, last))
+    r = subprocess.run([sys.executable, script, "--board", p.board, "abc", "progress", "Not a picture",
+                        "--image", clip, "--lang", "English"], capture_output=True, text=True)
+    check("--image still refuses a sound file", r.returncode != 0 and "not a PNG" in r.stderr, r.stderr)
+
     # the prompt names them as files
     state = {"columns": [{"id": "todo", "name": "To do"}], "tasks": [
         {"id": "abc", "title": "Read the report", "column": "todo", "order": 0, "images": [pname, name]}]}
