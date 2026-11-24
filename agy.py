@@ -349,32 +349,38 @@ def answer(board, sid, choice, shown):
         raise LookupError("the session is no longer asking that; the card will update")
     tool, target = denied(meta)
     rule = f"{tool}({target})"
-    # Each answer replaces an earlier one-turn allow whose turn never started (a failed start), so Deny undoes it.
-    meta["once"] = [rule] if choice == "allow" else []
+    # Held until the next turn really starts (resume saves it then): a later answer replaces it whole, so a Deny after
+    # an Allow or Allow always whose turn failed to start leaves no yes behind.
+    meta["pending"] = None if choice == "deny" else {"rule": rule, "keep": choice == "always"}
+    meta.pop("once", None)  # the older one-turn form (234a6ab)
+    _write_meta(board, meta)
     if choice == "deny":
-        _write_meta(board, meta)
         return tool, target, (f"The user said no to {tool} on {target}. Do not try it again or get around it another way: carry on "
                 "with the task without it, or report on the card what you cannot do without it.")
-    if choice == "always":
-        st = json.loads(meta.get("settings") or "{}")
-        allow = st.setdefault("permissions", {}).setdefault("allow", [])
-        if rule not in allow:
-            allow.append(rule)
-        meta["settings"] = json.dumps(st, separators=(",", ":"))
-    _write_meta(board, meta)
     return tool, target, f"The user allowed {tool} on {target}. Do that step again now, then carry on with the task."
 
 
-def _turn_settings(meta):
-    """This turn's --settings: the session's, plus the rules allowed for this one turn only (answer 'allow')."""
-    sj = meta.get("settings") or json.dumps(settings(meta.get("cwd") or "."), separators=(",", ":"))
-    once = meta.get("once") or []
-    if not once:
-        return sj
+def _add_rule(sj, rule):
     st = json.loads(sj)
     allow = st.setdefault("permissions", {}).setdefault("allow", [])
-    allow += [r for r in once if r not in allow]
+    if rule not in allow:
+        allow.append(rule)
     return json.dumps(st, separators=(",", ":"))
+
+
+def _turn_settings(meta):
+    """This turn's --settings: the session's, plus the rule of a card answer not saved yet (agy.answer)."""
+    sj = meta.get("settings") or json.dumps(settings(meta.get("cwd") or "."), separators=(",", ":"))
+    p = meta.get("pending")
+    return _add_rule(sj, p["rule"]) if p and p.get("rule") else sj
+
+
+def _settle(meta):
+    """The turn started: an Allow always answer joins the session's settings, any answer is used up."""
+    p = meta.pop("pending", None)
+    if p and p.get("keep") and p.get("rule"):
+        meta["settings"] = _add_rule(meta.get("settings") or json.dumps(settings(meta.get("cwd") or "."), separators=(",", ":")),
+                                     p["rule"])
 
 
 def _record(board, meta):
@@ -498,13 +504,17 @@ def resume(board, sid, message):
                   meta.get("cwd") or None, stdin_line(message), log, err)
     PROCS[sid] = proc
     meta.update(pid=proc.pid, pid_start=_pid_start(proc.pid), turns=turn, exit=None, turn_offset=offset,
-                err_offset=err_offset, agy_log=agy_log, started_turn=time.time(), stopped=None, once=[])
+                err_offset=err_offset, agy_log=agy_log, started_turn=time.time(), stopped=None)
+    meta.pop("once", None)
     _write_meta(board, meta)
     init = _wait_init(proc, log, offset)
     if not init:
         if proc.poll() not in (None, 0):
             _reap(board, meta)
-            raise _fail(proc, err, err_offset)
+            raise _fail(proc, err, err_offset)  # never started: a card answer stays pending, a new one replaces it
+    _settle(meta)
+    _write_meta(board, meta)
+    if not init:
         if proc.poll() is None:  # a slow start: the reply stands, and the sandbox check runs once its init comes
             threading.Thread(target=_late_check, args=(board, sid, proc, log, offset), daemon=True).start()
     else:

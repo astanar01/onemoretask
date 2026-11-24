@@ -680,6 +680,33 @@ def test_denied_step_choices():
     assert not any("s.gd" in r for r in settings_of(calls()[-1]["argv"])["permissions"]["allow"]), \
         "deny after an unused allow: the step is still allowed"
     wait_state(m3, sid3, ("idle",))
+    # Answers given before a turn starts replace each other whole (Codex review of 234a6ab).
+    ask4 = "Antigravity asks permission: write_file: /private/tmp/t.gd"
+    rule4 = "write_file(/private/tmp/t.gd)"
+    allowed = lambda: settings_of(calls()[-1]["argv"])["permissions"]["allow"]
+    for first, then, now, later in (("always", "deny", False, False), ("always", "allow", True, False),
+                                    ("allow", "always", True, True)):
+        m4, sid4 = _start("DENIED /private/tmp/t.gd", task="tden4" + first + then)
+        wait_state(m4, sid4, ("blocked",))
+        m4.answer(BOARD, sid4, first, ask4)
+        m4.answer(BOARD, sid4, then, ask4)
+        m4.resume(BOARD, sid4, "go on")
+        assert (rule4 in allowed()) == now, (first, then, "next turn", allowed())
+        wait_state(m4, sid4, ("idle",))
+        m4.resume(BOARD, sid4, "and on")
+        assert (rule4 in allowed()) == later, (first, then, "later turns", allowed())
+        wait_state(m4, sid4, ("idle",))
+    # A turn that fails to start saves nothing: Allow always stays pending, out of the session's settings.
+    m5, sid5 = _start("DENIED /private/tmp/u.gd", task="tden5")
+    wait_state(m5, sid5, ("blocked",))
+    m5.answer(BOARD, sid5, "always", "Antigravity asks permission: write_file: /private/tmp/u.gd")
+    try:
+        m5.resume(BOARD, sid5, "NOINIT")
+        raise AssertionError("a failed start did not raise")
+    except RuntimeError:
+        pass
+    meta5 = m5._read_meta(BOARD, sid5)
+    assert "u.gd" not in meta5["settings"] and meta5["pending"]["keep"], meta5
     assert m.words("write_file", "/a") == "write the file /a" and m.words("odd_tool", "/a") == "odd_tool /a"
 
 
