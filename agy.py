@@ -349,7 +349,10 @@ def answer(board, sid, choice, shown):
         raise LookupError("the session is no longer asking that; the card will update")
     tool, target = denied(meta)
     rule = f"{tool}({target})"
+    # Each answer replaces an earlier one-turn allow whose turn never started (a failed start), so Deny undoes it.
+    meta["once"] = [rule] if choice == "allow" else []
     if choice == "deny":
+        _write_meta(board, meta)
         return tool, target, (f"The user said no to {tool} on {target}. Do not try it again or get around it another way: carry on "
                 "with the task without it, or report on the card what you cannot do without it.")
     if choice == "always":
@@ -358,8 +361,6 @@ def answer(board, sid, choice, shown):
         if rule not in allow:
             allow.append(rule)
         meta["settings"] = json.dumps(st, separators=(",", ":"))
-    else:
-        meta["once"] = [rule]
     _write_meta(board, meta)
     return tool, target, f"The user allowed {tool} on {target}. Do that step again now, then carry on with the task."
 

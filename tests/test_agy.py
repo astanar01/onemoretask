@@ -670,6 +670,16 @@ def test_denied_step_choices():
     m2.resume(BOARD, sid2, msg)
     assert not any("r.gd" in r for r in settings_of(calls()[-1]["argv"])["permissions"]["allow"]), "deny added a rule"
     wait_state(m2, sid2, ("idle",))
+    # Allow whose turn never started (a failed start), then Deny: the next turn must not carry the allow.
+    m3, sid3 = _start("DENIED /private/tmp/s.gd", task="tden3")
+    wait_state(m3, sid3, ("blocked",))
+    ask3 = "Antigravity asks permission: write_file: /private/tmp/s.gd"
+    m3.answer(BOARD, sid3, "allow", ask3)
+    m3.answer(BOARD, sid3, "deny", ask3)
+    m3.resume(BOARD, sid3, "go on")
+    assert not any("s.gd" in r for r in settings_of(calls()[-1]["argv"])["permissions"]["allow"]), \
+        "deny after an unused allow: the step is still allowed"
+    wait_state(m3, sid3, ("idle",))
     assert m.words("write_file", "/a") == "write the file /a" and m.words("odd_tool", "/a") == "odd_tool /a"
 
 
