@@ -1346,7 +1346,9 @@ async function putBoard(keepalive) {
     if (typeof rev === "string" && !(keepalive && saving)) headers["If-Match"] = rev;
     sentUser = userEdit; userEdit = false;
     const r = await fetch(api("/api/tasks"), { method: "PUT", headers, body: JSON.stringify(state), keepalive });
-    if (r.status === 409) {
+    // Only a 409 that says "changed" is another window's save; other refusals (a folder it cannot write) are errors.
+    const body = r.ok ? null : (await r.json().catch(() => null)) || {};
+    if (r.status === 409 && body.changed) {
       if (!keepalive && pid === P && await reloadBoard(true)) {
         const lost = sentUser || userEdit;   // the reload threw away this save and anything typed since
         skip = queued; userEdit = false;
@@ -1355,7 +1357,7 @@ async function putBoard(keepalive) {
       } else userEdit ||= sentUser;
       return;
     }
-    if (!r.ok) throw new Error(t("server said {status}", { status: r.status }));
+    if (!r.ok) throw new Error(body.error || t("server said {status}", { status: r.status }));
     const next = r.headers.get("X-Board-Rev");
     if (next !== null && pid === P) rev = next;
     setStatus(t("Saved"));

@@ -1,7 +1,8 @@
 """Small page fixes from a code review, each checked in the real index.html + i18n.js in headless Chrome over raw CDP,
 with /api faked by a stub server on a free port (never the live board, never .task_board; HOME is a temp dir):
 1. Two open tabs: when both move a finished card at once, the tab whose save is refused reloads quietly (no red
-   "Please redo your last change"); a refused save that held a real edit still shows the red message.
+   "Please redo your last change"); a refused save that held a real edit still shows the red message. A save
+   refused for another reason (a read-only folder, no "changed" in the answer) shows that reason and reloads nothing.
 2. A poll redraw waits while a column name is being typed, so the cursor stays in the box; it redraws once you leave.
 3. Another window's save keeps a half-typed subtask in the open card; opening another card or Enter clears it.
 4. The repo dialog shows why the folder size check failed instead of an empty box.
@@ -33,7 +34,8 @@ TASKS = [{"id": "w1", "title": "Working card", "notes": "", "priority": "", "tag
          {"id": "n1", "title": "Draft card", "notes": "", "priority": "", "tags": [], "column": "todo", "parent": None, "order": 0,
           "created": T0, "updated": T0}]
 BOARD = {"version": 1, "columns": COLS, "tasks": TASKS}
-st = {"rev": 1, "phase": "working", "polls": 0, "puts": []}
+st = {"rev": 1, "phase": "working", "polls": 0, "puts": [], "refuse": 0}
+READ_ONLY = "This folder is read-only, so the board cannot save its cards here."   # server.READ_ONLY
 lock = threading.Lock()
 
 
@@ -60,6 +62,9 @@ class Stub(SimpleHTTPRequestHandler):
             return self.send_json({})
         if p == "/puts":
             return self.send_json(st["puts"])
+        if p.startswith("/refuse/"):
+            st["refuse"] = int(p.split("/")[2])
+            return self.send_json({})
         if p == "/api/projects":
             return self.send_json([{"id": "demo", "name": "demo", "path": TMP, "board": os.path.join(TMP, ".task_board")}])
         if p == "/api/tasks":
@@ -91,10 +96,12 @@ class Stub(SimpleHTTPRequestHandler):
     def do_PUT(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
         m = self.headers.get("If-Match")
+        if st.get("refuse"):   # a folder the board cannot write to: not a conflict, so no "changed"
+            return self.send_json({"error": READ_ONLY}, st["refuse"])
         with lock:   # like server.do_PUT: a save based on an older board is refused
             if m is not None and m != str(st["rev"]):
                 st["puts"].append(["409", m])
-                return self.send_json({"error": "The board changed in another window"}, 409)
+                return self.send_json({"error": "The board changed in another window", "changed": True}, 409)
             BOARD.clear()
             BOARD.update(body)
             st["rev"] += 1
@@ -170,6 +177,16 @@ await fetch(url + 'bump');
 await B.ev(`await (async () => { const x = task('n1'); x.title = 'Typed by the user'; touch(x); await flush(); })(); true`);
 await sleep(500);
 out.userEdit409 = await status(B);
+// A save refused for another reason (a read-only folder) is an error, not another window: no reload, its own words.
+out.readOnly = {};
+for (const code of [409, 500]) {
+  await fetch(url + 'refuse/' + code);
+  await B.ev(`window.genBefore = boardGen; const x = task('n1'); x.title = 'Typed ${code}'; touch(x); await flush(); true`);
+  await sleep(500);
+  out.readOnly[code] = { ...(await status(B)), reloaded: await B.ev(`boardGen !== window.genBefore`), title: await B.ev(`task('n1').title`) };
+}
+await fetch(url + 'refuse/0');
+await B.ev(`await reloadBoard(true)`);
 
 step = '2.';
 // 2. Column rename while polls redraw.
@@ -284,6 +301,9 @@ def main():
     check("two tabs: the refused tab reloads quietly", tt["B"], {"text": "Board updated from another window", "err": False})
     check("a refused save with a real edit still asks to redo it", res["userEdit409"],
           {"text": "The board changed in another window, so it was reloaded. Please redo your last change.", "err": True})
+    for code in ("409", "500"):
+        check(f"read-only folder ({code}): says so, keeps the edit, no reload", res["readOnly"][code],
+              {"text": "Save failed: " + READ_ONLY, "err": True, "reloaded": False, "title": "Typed " + code})
     check("rename: cursor and box survive two poll redraws", res["renaming"],
           {"focus": True, "value": "Backlog", "sameBox": True, "name": "To Do"})
     check("rename: leaving the box saves it and redraws", res["afterRename"], {"name": "Backlog", "redrawn": True})

@@ -2,6 +2,7 @@
 
 ## 2026-11-25
 
+- If a folder is locked so nothing can be added to it, the board now says so when you add it, instead of saying "the board changed in another window" each time you make a card.
 - When a helper's notes about a problem come back as fixed, that note's box now shows a big green FIXED.
 - When Claude stops after telling you to merge, the "Merge worktree" button now shows on the card, even if the card is still in In Progress.
 - The Roadmap button now shows how much of all your milestones is done, as a percent.

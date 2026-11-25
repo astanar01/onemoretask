@@ -108,6 +108,7 @@ SERVER_SENTENCES = [
     "Claude Code took too long to update. Try again later.",
     "Claude Code did not answer.",
     "This Claude Code cannot list its MCP servers. Update it.",
+    "This folder is read-only, so the board cannot save its cards here.",
 ]
 
 

@@ -550,6 +550,14 @@ def open_project(path):
     return p
 
 
+def add_project(path):
+    """A folder the user opens from the page: refused when the board could never save its cards there."""
+    full = os.path.expanduser(path.strip())
+    if os.path.isdir(full) and not board_writable(Project(full)):
+        raise ValueError(READ_ONLY)
+    return open_project(path)
+
+
 def forget_project(pid):
     with REG_LOCK:
         entries = _read_registry()
@@ -608,6 +616,20 @@ def board_rev(p, raw=None):
         except FileNotFoundError:
             return "0"
     return hashlib.sha1(raw).hexdigest()
+
+
+READ_ONLY = "This folder is read-only, so the board cannot save its cards here."
+
+
+def board_writable(p):
+    """Whether the board folder, or before it exists the nearest folder that would hold it, can be written to."""
+    d = p.board
+    while not os.path.isdir(d):
+        up = os.path.dirname(d)
+        if up == d:
+            return False
+        d = up
+    return os.access(d, os.W_OK)
 
 
 def load_tasks(p):
@@ -5743,10 +5765,10 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError("the body must be a JSON object")
             body = Body(body)
             if path == "/api/projects":
-                self._json(200, open_project(body["path"]).info())
+                self._json(200, add_project(body["path"]).info())
             elif path == "/api/projects/pick":
                 folder = pick_folder()
-                self._json(200, open_project(folder).info() if folder else {"cancelled": True})
+                self._json(200, add_project(folder).info() if folder else {"cancelled": True})
             elif path == "/api/projects/forget":
                 forget_project(body["p"])
                 self._json(200, {"ok": True})
@@ -5846,6 +5868,9 @@ class Handler(SimpleHTTPRequestHandler):
                 ok = False
             if not ok:
                 raise ValueError("need columns and tasks lists")
+            # Not a PermissionError: _errors turns that into a 409, which the page reads as "changed in another window".
+            if not board_writable(p):
+                raise RuntimeError(READ_ONLY)
             reports.ensure_board(p.board)
             match = self.headers.get("If-Match")
             with board_lock(p):

@@ -139,6 +139,7 @@ const I18N = {
     "Saving…": "Enregistrement…",
     "Saved": "Enregistré",
     "Save failed: {error}": "Échec de l’enregistrement : {error}",
+    "This folder is read-only, so the board cannot save its cards here.": "Ce dossier est en lecture seule, le tableau ne peut donc pas y enregistrer ses cartes.",
     "The board changed in another window, so it was reloaded. Please redo your last change.": "Le tableau a changé dans une autre fenêtre, il a donc été rechargé. Veuillez refaire votre dernière modification.",
     "Rename column": "Renommer la colonne",
     "Tasks here count as done": "Les tâches de cette colonne comptent comme terminées",
