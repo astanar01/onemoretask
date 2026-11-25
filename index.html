@@ -922,7 +922,7 @@ a.url { color: var(--accent); text-decoration: underline; overflow-wrap: anywher
   <button id="waiting" title="Open the next task where Claude is waiting on you"></button>
   <button class="btn" id="obs-btn" title="Open skill observations from the task-observer skill">Observations <span class="badge" id="obs-n"></span><span class="badge warn" id="obs-due"></span></button>
   <button class="btn hbtn" id="mcp-btn" data-pop="mcp-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="mcp-pop" title="The MCP servers Claude can use in this project, and if each one works" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg><span class="t">MCP</span><span class="badge warn" id="mcp-n"></span></button>
-  <button class="btn hbtn" id="plan-btn" aria-pressed="false" title="Your milestones and their tasks. Tick them off, or send them to the board"><span data-ico="flag" data-s="16"></span><span class="t">Roadmap</span></button>
+  <button class="btn hbtn" id="plan-btn" aria-pressed="false" title="Your milestones and their tasks. Tick them off, or send them to the board"><span data-ico="flag" data-s="16"></span><span class="t">Roadmap</span><span class="badge" id="plan-pct"></span></button>
   <button class="btn hbtn" id="view-btn" data-pop="view-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-menu" title="View options"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="t">View</span></button>
   <button class="btn hbtn ico" id="proj-btn" data-pop="proj-menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="proj-menu" title="Project settings" aria-label="Project settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <span id="status"></span>
@@ -1536,6 +1536,7 @@ function render() {
   if (drag) return;   // a rebuild would remove the element being dragged; dragend renders
   document.body.classList.toggle("view-list", view === "list");
   document.body.classList.toggle("view-plan", view === "plan");
+  planBadge();
   if (view === "list") { queueMicrotask(syncListAria); return renderList(); }
   if (view === "plan") return renderPlan();
   queueMicrotask(tickCache);   // fill the cache chips this render creates
@@ -1808,6 +1809,14 @@ function planCount(m) {
   const items = planRows(m).map((r) => r.d), pct = items.length ? Math.floor(100 * items.filter(planItemDone).length / items.length) : 0;
   return { total: m.tasks.length, done, onBoard: cards.length, pct };
 }
+// The Roadmap button's badge: how much of every milestone is done, each task and subtask one piece.
+function planBadge() {
+  const items = milestones().flatMap((m) => planRows(m).map((r) => r.d)), el = $("#plan-pct");
+  if (!el) return;
+  const pct = items.length ? Math.floor(100 * items.filter(planItemDone).length / items.length) : null;
+  el.textContent = pct === null ? "" : t("{n}%", { n: pct });
+  el.title = pct === null ? "" : t("All milestones: {n}% done", { n: pct });
+}
 const planDone = (m) => { const c = planCount(m); return c.total > 0 && c.done === c.total; };
 function planProgress(m) {
   const c = planCount(m);
@@ -1859,6 +1868,7 @@ function planMainHtml(m) {
 }
 // force: redraw even while a plan field has the cursor (after the user's own click or Enter).
 function renderPlan(force = false) {
+  planBadge();
   const board = $("#board");
   board.classList.remove("list"); board.classList.add("plan");
   const a = document.activeElement, typing = a && board.contains(a) && ((a.tagName === "INPUT" && a.type === "text") || a.tagName === "TEXTAREA");

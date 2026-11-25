@@ -711,6 +711,7 @@ const I18N = {
     "{n} on the board": "{n} sur le tableau",
     "{done} of {total} done": "{done} sur {total} faites",
     "{n}%": "{n} %",
+    "All milestones: {n}% done": "Toutes les étapes : {n} % fait",
     "Suggested": "Suggérée",
     "Its card was deleted. You can send it again.": "Sa carte a été supprimée. Vous pouvez l’envoyer à nouveau.",
     "Not on the board": "Pas sur le tableau",

@@ -146,6 +146,7 @@ const sel = `document.querySelector('#layout')`;
 const planBtn = `document.querySelector('#plan-btn')`;
 out.noPlanLayout = await ev(`[...${sel}.options].map((o) => o.value)`);
 out.empty = await ev(`${planBtn}.click(); document.querySelector('.pl-empty')?.textContent.trim()`);
+out.badgeEmpty = await ev(`document.querySelector('#plan-pct').textContent`);
 out.boardClass = await ev(`[document.querySelector('#board').classList.contains('plan'), document.querySelector('#board').classList.contains('list'), ${planBtn}.getAttribute('aria-pressed')]`);
 out.make = await ev(`document.querySelector('.pl-new').click();
 const focused = document.activeElement === document.querySelector('.pl-title');
@@ -178,12 +179,12 @@ const big = __big();
 // A card moved to Done counts; a deleted card can be sent again under the same milestone card.
 out.done = await ev(`const big = __big()[0]; const kids = children(big.id);
 kids[0].column = 'c4'; render();
-const p1 = __prog('.pl-head .progress'), side = __prog('.pl-item .progress');
+const p1 = __prog('.pl-head .progress'), side = __prog('.pl-item .progress'), p1Badge = document.querySelector('#plan-pct').textContent;
 state.tasks = state.tasks.filter((x) => x.id !== kids[1].id); render();
 const rows = __rows(), sendAll = document.querySelector('.pl-send-all').textContent;
 document.querySelector('.pl-send-all').click();
 ({ p1, side, gone: rows.map((r) => r.chip), goneTick: rows.map((r) => r.tickOff), sendAll, after: __rows().map((r) => r.chip),
-   kids: children(big.id).length, bigCount: __big().length })`);
+   kids: children(big.id).length, bigCount: __big().length, badge: [document.querySelector('#plan-pct').textContent, p1Badge] })`);
 // The milestone card itself deleted: Send makes a new one.
 out.bigGone = await ev(`const big = __big()[0];
 state.tasks = state.tasks.filter((x) => x.id !== big.id && x.parent !== big.id); render();
@@ -216,6 +217,11 @@ out.board = await ev(`${planBtn}.click();
 const card = document.querySelector('.card[data-id="' + __big()[0].id + '"]');
 ({ flag: !!card && card.textContent.includes('⚑'), progress: card?.querySelector('.progress')?.textContent.trim(), planGone: !document.querySelector('.plan'), pressed: ${planBtn}.getAttribute('aria-pressed') })`);
 // Closing the Plan tool goes back to the layout it was opened from: the list here.
+// The Roadmap button's percent follows the cards on the Board too, with the Roadmap closed.
+out.badgeBoard = await ev(`const b = document.querySelector('#plan-pct'), before = [b.textContent, b.title, getComputedStyle(b).display !== 'none'];
+const k = children(__big()[0].id)[0], col = k.column; k.column = 'c4'; render();
+const after = b.textContent; k.column = col; render();
+({ before, after, back: b.textContent })`);
 out.backToList = await ev(`${sel}.value = 'list'; ${sel}.dispatchEvent(new Event('change'));
 ${planBtn}.click(); const inPlan = !!document.querySelector('.plan');
 ${planBtn}.click();
@@ -521,6 +527,11 @@ def main():
     d = res["done"]
     check("a card in Done moves the count and the percent, here and in the left list", (d["p1"], d["side"]),
           (["1 of 5 done", "20%", "20%"], ["1 of 5 done", "20%", "20%"]))
+    check("the Roadmap button shows the overall percent, here 1 of 5 pieces done", d["badge"], ["20%", "20%"])
+    check("the Roadmap button has no percent while there are no milestones", res["badgeEmpty"], "")
+    bb = res["badgeBoard"]
+    check("the Roadmap button's percent shows with the Roadmap closed and follows a card into Done",
+          (bb["before"], bb["after"], bb["back"]), (["0%", "All milestones: 0% done", True], "20%", "0%"))
     check("a deleted card shows Not on the board", d["gone"].count("Not on the board"), 1)
     check("its tick box opens again", d["goneTick"].count(False), 1)
     check("Send all offers it again", d["sendAll"], "Send all (1)")
