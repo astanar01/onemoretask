@@ -87,6 +87,7 @@ TASKS = [
     card("hbA", 7, {"model": "agy:gemini-3-pro", "cli": "antigravity"}, column="rev"),           # AG worked, Claude reviewed
     card("hbC", 8, {"model": "opus"}, column="rev"),                                            # Claude worked, AG reviewed
     card("agp", 9, {"model": "agy:gemini-3-pro", "cli": "antigravity"}),                        # AG stopped on a denied step
+    card("agk", 10, {"model": "agy:gemini-3-pro", "cli": "antigravity"}),                       # ... on a denied command
 ]
 AGY_ASK = "Antigravity asks permission: write_file: /private/tmp/q.gd"
 AGENTS = {t["id"]: {"id": t["id"], "sessionId": t["id"], "state": "idle", "phase": "finished", "reason": "", "log": [],
@@ -99,6 +100,9 @@ AGENTS["ag"]["subagents"] = AG_SUBS
 AGENTS["hbA"].update(cli="claude", handback="Antigravity", log=REVIEW_LOG)
 AGENTS["hbC"].update(cli="antigravity", handback="Claude", log=REVIEW_LOG)
 AGENTS["agp"].update(cli="antigravity", context=None, phase="needs_you", state="blocked", reason=AGY_ASK, permission=AGY_ASK)
+AGY_CMD_ASK = "Antigravity asks permission: command: vendor/bin/phpunit tests/X.php"
+AGENTS["agk"].update(cli="antigravity", context=None, phase="needs_you", state="blocked", reason=AGY_CMD_ASK,
+                     permission=AGY_CMD_ASK)
 BOARD = {"version": 1, "columns": [{"id": "prog", "name": "In Progress", "done": False, "role": "progress"},
                                    {"id": "rev", "name": "Review", "done": False, "role": "review"},
                                    {"id": "done", "name": "Done", "done": True}], "tasks": TASKS}
@@ -281,6 +285,9 @@ await atCard('agp');
 R.agp = await ev(NEXT('agp'));
 R.agpPanel = await ev(`[...document.querySelectorAll('#d-next-actions button')].map((b) => [b.textContent.trim(), b.title])`);
 R.shotAgp = await shot('agy-permission.png', '#d-next');
+await atCard('agk');
+R.agk = await ev(NEXT('agk'));
+R.shotAgk = await shot('agy-permission-command.png', '#d-next');
 
 // S39 / S44: the subagent picker and which pick counts.
 const SUB = `({ kids: ${LIST('#d-submodel')}, value: document.querySelector('#d-submodel').value, sub: subModel(task(openId)) })`;
@@ -433,7 +440,11 @@ def main():
     check("denied step: the panel shows the buttons with their tips", res["agpPanel"],
           [["Allow", "Let it do this once: it tries again now"], ["Allow always", "Let it do this for the rest of this session: it tries again now"],
            ["Deny", "Do not let it do this: it carries on without it"]])
-    for k in ("It stopped at a step it needs a yes for: {what}.", "write the file {x}", "Allowed. {who} tries again now.",
+    check("denied command: the card asks it", res["agk"]["text"],
+          "It stopped at a step it needs a yes for: run this command outside its safe box: vendor/bin/phpunit tests/X.php.")
+    check("denied command: Allow / Allow always / Deny", res["agk"]["labels"], ["Allow", "Allow always", "Deny"])
+    for k in ("It stopped at a step it needs a yes for: {what}.", "write the file {x}", "run this command outside its safe box: {x}",
+              "Allowed. {who} tries again now.",
               "Told {who} no. It carries on without it."):
         check(f"French line for {k!r}", bool(i18n_fr_keys().get(k)), True)
 
@@ -472,9 +483,10 @@ def main():
     check("S53 the old delegate tooltip line is gone",
           "The agent first plans how to split the work, then hands the parts to subagents (Claude's Agent tool, or Codex's workers)" in fr, False)
 
-    for k in ("shotSend", "shotSubs", "shotAgp"):
+    for k in ("shotSend", "shotSubs", "shotAgp", "shotAgk"):
         check(f"{k}: element on screen", isinstance(res.get(k), dict) and res[k].get("width", 0) > 0 and res[k].get("height", 0) > 0)
-    print("screenshots:", *(os.path.join(SHOTS, n) for n in ("agy-send.png", "agy-subagents.png", "agy-permission.png")))
+    print("screenshots:", *(os.path.join(SHOTS, n) for n in ("agy-send.png", "agy-subagents.png", "agy-permission.png",
+                                                            "agy-permission-command.png")))
     print(f"\n{passes} passed, {fails} failed  (temp dir {TMP})")
     return 1 if fails else 0
 

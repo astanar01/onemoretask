@@ -4062,7 +4062,8 @@ function agyStep(ask) {
   const tool = cut < 0 ? rest : rest.slice(0, cut), target = cut < 0 ? "" : rest.slice(cut + 2);
   const x = { x: target };
   return tool === "write_file" ? window.t("write the file {x}", x) : tool === "read_file" ? window.t("read {x}", x)
-    : tool === "read_url" ? window.t("open the web page {x}", x) : tool === "mcp" ? window.t("use the tool {x}", x) : `${tool} ${target}`.trim();
+    : tool === "read_url" ? window.t("open the web page {x}", x) : tool === "mcp" ? window.t("use the tool {x}", x)
+    : tool === "command" ? window.t("run this command outside its safe box: {x}", x) : `${tool} ${target}`.trim();
 }
 // The server presses the menu key in the session only while it still asks what the card showed (`ask`).
 async function answerPermission(t, choice, ask) {

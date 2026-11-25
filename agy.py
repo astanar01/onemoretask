@@ -308,25 +308,36 @@ def turn_state(meta):
 
 
 ASK = "Antigravity asks permission: "
-WORDS = {"write_file": "write the file", "read_file": "read", "read_url": "open the web page", "mcp": "use the tool"}
+WORDS = {"write_file": "write the file", "read_file": "read", "read_url": "open the web page", "mcp": "use the tool",
+         "command": "run"}
 
 
 def words(tool, target):
     """A denied step in plain words, as the card says it (index.html agyStep)."""
     return f"{WORDS.get(tool, tool)} {target}".strip()
 _DENIAL = re.compile(r"user denied permission for (\w+)\((.+?)\)\s*$", re.M)
+_RUN_DENIAL = "user denied permission to run command"
 
 
 def denied(meta):
     """(tool, target) of the last step of the last turn that needed a yes it could not get, else None. The step's
-    error reads 'permission check failed for write_file "<path>": user denied permission for write_file(<path>)'."""
+    error reads 'permission check failed for write_file "<path>": user denied permission for write_file(<path>)', or
+    for a command run outside the sandbox 'permission check failed for unsandboxed "<cmd>": user denied permission to
+    run command:\\n<cmd>\\n…' (agy 1.5.14): that one is ("command", the step's CommandLine), and an allow rule
+    command(<that exact line>) lets it run (measured 2026-11-25)."""
     found = None
     for s in _steps(_turn(meta.get("log", ""), meta.get("turn_offset") or 0)):
         info = s.get("tool_info") if isinstance(s.get("tool_info"), dict) else {}
         err = info.get("error") if isinstance(info.get("error"), dict) else {}
-        m = _DENIAL.search(str(err.get("message") or ""))
+        msg = str(err.get("message") or "")
+        m = _DENIAL.search(msg)
         if m:
             found = (m.group(1), m.group(2))
+        elif _RUN_DENIAL in msg:
+            params = info.get("parameters") if isinstance(info.get("parameters"), dict) else {}
+            cmd = str(params.get("CommandLine") or "")
+            if cmd.strip():
+                found = ("command", cmd)
     return found
 
 
@@ -354,10 +365,14 @@ def answer(board, sid, choice, shown):
     meta["pending"] = None if choice == "deny" else {"rule": rule, "keep": choice == "always"}
     meta.pop("once", None)  # the older one-turn form (234a6ab)
     _write_meta(board, meta)
+    what = f"running this command outside the sandbox:\n{target}\n" if tool == "command" else f"{tool} on {target}."
     if choice == "deny":
-        return tool, target, (f"The user said no to {tool} on {target}. Do not try it again or get around it another way: carry on "
+        return tool, target, (f"The user said no to {what} Do not try it again or get around it another way: carry on "
                 "with the task without it, or report on the card what you cannot do without it.")
-    return tool, target, f"The user allowed {tool} on {target}. Do that step again now, then carry on with the task."
+    if tool == "command":  # the rule matches only the exact same command line
+        return tool, target, (f"The user allowed {what}Run it again now with exactly that command line, then carry on "
+                              "with the task.")
+    return tool, target, f"The user allowed {what} Do that step again now, then carry on with the task."
 
 
 def _add_rule(sj, rule):

@@ -515,6 +515,7 @@ const I18N = {
     "read {x}": "lire {x}",
     "open the web page {x}": "ouvrir la page web {x}",
     "use the tool {x}": "utiliser l'outil {x}",
+    "run this command outside its safe box: {x}": "lancer cette commande hors de sa zone protégée : {x}",
     "Told {who} no. It carries on without it.": "Refus transmis à {who}. Il continue sans.",
     "Allowed. {who} tries again now.": "Autorisé. {who} réessaie tout de suite.",
     "Could not answer: {error}. Reply in Conversation instead.": "Impossible de répondre : {error}. Répondez plutôt dans Conversation.",

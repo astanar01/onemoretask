@@ -111,6 +111,17 @@ if first == "DENIED":  # the step error is agy 1.5.14's (a real mage review turn
     sys.stderr.write('jetski: no output produced — a tool required the "write_file" permission that headless mode cannot prompt for, so it was auto-denied.\n')
     result("SUCCESS", "")
     sys.exit(0)
+if first == "DENIEDCMD":  # agy 1.5.14's error for a command asked to run outside the sandbox (FableDraft review, 2026-11-25)
+    c = prompt.split(None, 1)[1]
+    info = {"name": "run_command", "parameters": {"CommandLine": c}}
+    step(1, "tool", "ACTIVE", tool_name="run_command", tool_info=info)
+    step(1, "tool", "ERROR", tool_name="run_command", tool_info={**info, "error": {"type": "TOOL_ERROR", "message":
+         "permission check failed for unsandboxed " + json.dumps(c) + ": user denied permission to run command:\n" + c +
+         "\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. "
+         "python, sh, curl), or accessing the same target resource. Proceed without performing this action."}})
+    sys.stderr.write('jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied.\n')
+    result("SUCCESS", "")
+    sys.exit(0)
 if first == "NORESULT":
     print("this is not json")
     out({"event": "mystery"})
@@ -708,6 +719,27 @@ def test_denied_step_choices():
     meta5 = m5._read_meta(BOARD, sid5)
     assert "u.gd" not in meta5["settings"] and meta5["pending"]["keep"], meta5
     assert m.words("write_file", "/a") == "write the file /a" and m.words("odd_tool", "/a") == "odd_tool /a"
+
+
+def test_denied_command_choices():
+    """A turn that stopped on a command it asked to run outside the sandbox: the card asks it (before, it showed no
+    question at all), and Allow adds command(<that exact line>) to the next turn, the rule agy honours."""
+    open(GOT, "w").close()
+    cmd = 'bash run-in.sh /w 60 vendor/bin/phpunit "a(b).php"'
+    m, sid = _start("DENIEDCMD " + cmd, task="tdencmd")
+    s = wait_state(m, sid, ("idle", "blocked"))
+    want = "Antigravity asks permission: command: " + cmd
+    assert s["state"] == "blocked" and s["detail"] == m.DENIED and s.get("ask") == want, s
+    tool, target, msg = m.answer(BOARD, sid, "allow", want)
+    assert (tool, target) == ("command", cmd) and "allowed" in msg and cmd in msg, msg
+    m.resume(BOARD, sid, msg)
+    assert f"command({cmd})" in settings_of(calls()[-1]["argv"])["permissions"]["allow"], "allow: rule missing"
+    wait_state(m, sid, ("idle",))
+    m2, sid2 = _start("DENIEDCMD " + cmd, task="tdencmd2")
+    wait_state(m2, sid2, ("blocked",))
+    tool, target, msg = m2.answer(BOARD, sid2, "deny", want)
+    assert "said no" in msg and cmd in msg, msg
+    assert m.words("command", "ls") == "run ls"
 
 
 def test_sessions_no_folder_made():
