@@ -451,6 +451,10 @@ body.view-plan #search { visibility: hidden; }
 .md .ftag.major { background: var(--major-bg); color: var(--major); }
 .md .ftag.minor { background: var(--minor-bg); color: var(--minor); }
 .md .ftag.low { background: var(--low-bg); color: var(--low); }
+/* a finding its fixer says is done: green edge and a big green FIXED stamp at the top right */
+.md .finding.fixed { border-color: var(--ok); box-shadow: inset 4px 0 0 var(--ok); }
+.md .fstamp { margin-left: auto; color: var(--ok); background: var(--ok-bg); border: 2px solid var(--ok); border-radius: 8px; padding: 4px 18px; font-size: calc(28px * var(--ts)); font-weight: 800; letter-spacing: .12em; line-height: 1.2; text-transform: uppercase; transform: rotate(-3deg); white-space: nowrap; }
+.md .fline .fstamp { margin-left: 0; font-size: calc(13px * var(--ts)); padding: 1px 10px; border-width: 1.5px; transform: none; }
 .md .fnum { font-size: calc(12px * var(--ts)); font-weight: 600; color: var(--muted); letter-spacing: .01em; }
 .md .ftitle { font-size: calc(16.5px * var(--ts)); font-weight: 650; line-height: 1.35; margin: 0 0 14px; letter-spacing: -.01em; }
 .md .finding .li:has(> .flbl) { display: grid; grid-template-columns: 7.5em 1fr; column-gap: 14px; padding: 6px 0; margin: 0; }
@@ -4875,6 +4879,11 @@ function fmtTable(rows) {
   const tr = (cs, tag) => `<tr>${cs.map((c) => `<${tag}>${inl(c)}</${tag}>`).join("")}</tr>`;
   return `<table>${head ? `<thead>${tr(head, "th")}</thead>` : ""}<tbody>${body.map((cs) => tr(cs, "td")).join("")}</tbody></table>`;
 }
+// A finding's own row saying it was fixed: "Fixed: …", "Fixed in abc1234: …", "Status: fixed". Not "Not fixed", not "Fix:".
+const FIXED_ROW = /^(?:\*\*)?(?:Fixed\b[^:\n]{0,40}:|(?:Status|Result|Outcome):(?:\*\*)?\s*fixed\b)/i;
+// A one-line status from a second review: "Finding 1 (major): fixed" or "fixed in abc1234".
+const FIXED_LINE = /^fixed\b[.:]?/i;
+const FIXED_STAMP = () => `<span class="fstamp">${esc(window.t("Fixed"))}</span>`;
 // The same messages are formatted again on every poll of an open card: keep what each text gave.
 const fmtMsgMemo = new Map();
 function fmtMsg(text) {
@@ -4890,7 +4899,14 @@ function fmtMsgRaw(text) {
   // first line that is neither a bullet nor a ``` code block, or at the next finding.
   // inFix: the rows after a Fix bullet (its code block, sub-bullets) move to the end of the card with it.
   let inFix = false;
-  const closeFnd = () => { if (fnd) { out += `</div>`; fnd = false; inFix = false; } };
+  // A box whose own bullets say it was fixed ("Fixed: …", "Status: fixed") gets the green FIXED stamp. The bullets come
+  // after the box opened, so its opening tag is swapped once the box closes.
+  let fAt = -1, fOpen = "", fOpenFixed = "", fFixed = false;
+  const closeFnd = () => {
+    if (!fnd) return;
+    if (fFixed) out = out.slice(0, fAt) + fOpenFixed + out.slice(fAt + fOpen.length);
+    out += `</div>`; fnd = false; inFix = false; fFixed = false;
+  };
   const BUL = /^(\s*)([-*]|\d+\.) (.*)/;
   // An indented line right under a bullet is that bullet's wrapped text: join it on.
   const lines = [];
@@ -4927,14 +4943,18 @@ function fmtMsgRaw(text) {
       const tag = m[2] ? `<span class="ftag ${sev}">${m[2]}</span>` : "";
       if (BUL.test(lines.slice(i + 1).find((x) => x.trim()) || "")) {
         fnd = true;
-        out += `<div class="finding${sev ? " " + sev : ""}"><div class="fhead">${tag}<span class="fnum">${m[1]}</span></div>${m[3] ? `<div class="ftitle">${inl(m[3])}</div>` : ""}`;
-      } else out += `<div class="fline">${tag}<span class="fnum">${m[1]}</span>${m[3] ? `<span>${inl(m[3])}</span>` : ""}</div>`;
+        const head = (cls, stamp) => `<div class="finding${sev ? " " + sev : ""}${cls}"><div class="fhead">${tag}<span class="fnum">${m[1]}</span>${stamp}</div>`;
+        fAt = out.length; fOpen = head("", ""); fOpenFixed = head(" fixed", FIXED_STAMP());
+        out += fOpen + (m[3] ? `<div class="ftitle">${inl(m[3])}</div>` : "");
+      } else if (FIXED_LINE.test(m[3])) out += `<div class="fline fixed">${tag}<span class="fnum">${m[1]}</span>${FIXED_STAMP()}${m[3].replace(FIXED_LINE, "").trim() ? `<span>${inl(m[3].replace(FIXED_LINE, "").trim())}</span>` : ""}</div>`;
+      else out += `<div class="fline">${tag}<span class="fnum">${m[1]}</span>${m[3] ? `<span>${inl(m[3])}</span>` : ""}</div>`;
     }
     else if (h) out += `<div class="h h${h[1].length}">${inl(l)}</div>`;
     else if ((m = l.match(/^&gt;\s?(.*)/))) out += `<div class="quote">${fmtItem(m[1])}</div>`;
     else if (li) {
       const isFix = fnd && /^(?:\*\*)?Fix:/.test(li[3]);
       if (fnd && !li[1]) inFix = isFix;
+      if (fnd && !li[1] && FIXED_ROW.test(li[3])) fFixed = true;
       const cls = isFix ? " fix" : fnd && inFix ? " fix-x" : "";
       const ind = li[1] ? ` style="margin-left:${Math.min(li[1].length, 8) / 2}em"` : "";
       out += /^\d/.test(li[2]) ? `<div class="li num${cls}"${ind}><span class="n">${li[2]}</span>${fmtItem(li[3], 1)}</div>` : `<div class="li${cls}"${ind}>${fmtItem(li[3], 1)}</div>`;

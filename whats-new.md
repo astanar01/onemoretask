@@ -2,6 +2,7 @@
 
 ## 2026-11-25
 
+- When a helper's notes about a problem come back as fixed, that note's box now shows a big green FIXED.
 - When Claude stops after telling you to merge, the "Merge worktree" button now shows on the card, even if the card is still in In Progress.
 - The Roadmap button now shows how much of all your milestones is done, as a percent.
 - In the Roadmap, the ✕ on a line asks "Delete?" first, and a second click removes it. Each line has dots on its left: grab them to drag the line up or down.
