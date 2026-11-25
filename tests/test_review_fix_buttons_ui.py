@@ -86,7 +86,7 @@ def agent(cid, log, **kw):
             "mcp_uses": [], "mcp": None, **kw}
 
 
-IDS = ["c1", "c2", "c3", "c4", "c5"]
+IDS = ["c1", "c2", "c3", "c4", "c5", "c6"]
 AGENTS = {
     "c1": agent("c1", BASE + [entry("claude", "done", FINDINGS)]),
     "c2": agent("c2", BASE + [entry("claude", "done", FINDINGS)], handback="Claude"),
@@ -99,6 +99,9 @@ AGENTS = {
     # An Antigravity review that asked for a yes mid-review: the board logs your answer as a reply (server
     # answer_permission). It hands the review no new work, so the findings still go back to the worker.
     "c5": agent("c5", BASE + [entry("you", "reply", "Allowed once: write the file /tmp/x.gd"),
+                              entry("claude", "done", FINDINGS)], handback="Claude", phase="finished"),
+    # A typed answer to the reviewer before its report ("yes" to an Antigravity stop) is still part of the review.
+    "c6": agent("c6", BASE + [entry("claude", "progress", "Checking the changes for bugs."), entry("you", "reply", "yes"),
                               entry("claude", "done", FINDINGS)], handback="Claude", phase="finished"),
 }
 BOARD = {"version": 1, "columns": COLS, "tasks": [card(c) for c in IDS]}
@@ -243,6 +246,12 @@ await open('c5');
 res.c5next = await ev(`nextAction(task('c5'), agents['c5'], { available: true, changed: [], ahead: ['x'], aheadKind: 'target', target: 'main' }).actions.map((a) => a.label)`);
 await click('#d-log button[data-fix]', 0); await click('#d-log [data-fixsend]');
 for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
+// A typed answer before the review's report does not end it either.
+await open('c6');
+res.c6next = await ev(`nextAction(task('c6'), agents['c6'], { available: true, changed: [], ahead: ['x'], aheadKind: 'target', target: 'main' }).actions.map((a) => a.label)`);
+res.c6 = await ev(look);
+await click('#d-log button[data-fix]', 0); await click('#d-log [data-fixsend]');
+for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
 res.errors = errors;
 console.log(JSON.stringify(res));
 quit(0);
@@ -308,6 +317,10 @@ def main():
     check("permission answer mid-review: Send findings to Claude is offered", "Send findings to Claude" in res["c5next"], True)
     check("permission answer mid-review: Fix everything goes back to the worker", [x for x in POSTS if x[1] == "c5"],
           [["/api/agent/handback", "c5", "Fix everything"]])
+    check("typed answer mid-review: Send findings to Claude is offered", "Send findings to Claude" in res["c6next"], True)
+    check("typed answer mid-review: Fix buttons on the report", res["c6"]["conv"], four)
+    check("typed answer mid-review: Fix everything goes back to the worker", [x for x in POSTS if x[1] == "c6"],
+          [["/api/agent/handback", "c6", "Fix everything"]])
     check("answered review + fix report: only the old, disabled buttons with the picks; none on the fix report or in Summary",
           (res["c3"]["conv"], res["c3"]["sum"]),
           ([B("Fix everything", True), B("✓ Fix finding 1", True, True), B("Fix finding 2", True), B("✓ Fix finding 3", True, True)], []))

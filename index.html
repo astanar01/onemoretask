@@ -2677,9 +2677,20 @@ const launchOf = (t) => (pending[t.id] || []).find((m) => m.status === "launch")
 const PHASES = { working: t("working"), needs_you: t("needs you"), finished: t("finished"), gone: t("removed") };
 const phaseLabel = (a) => (a ? PHASES[a.phase] || a.phase : "…");
 // The session is on a code review (server: review()) until your next reply hands it other work, e.g. fixes.
+// A reply sent before the review's report (an answer to the reviewer's question or ask) is part of the review.
 // An Antigravity permission answer is logged as a reply (server answer_permission) but gives no new work: skip it.
 const AGY_ANSWER = /^(Allowed once|Allowed for this session|Said no): /;
-const reviewing = (a) => { const e = (a.log || []).findLast((x) => x.from === "you" && ["launch", "review", "reply"].includes(x.status) && !(x.status === "reply" && AGY_ANSWER.test(x.message || ""))); return !!(e && e.status === "review"); };
+const reviewing = (a) => {
+  const log = a.log || [];
+  const r = log.findLastIndex((x) => x.from === "you" && ["launch", "review"].includes(x.status));
+  if (r < 0 || log[r].status !== "review") return false;
+  let reported = false;
+  for (const x of log.slice(r + 1)) {
+    if (x.from !== "you") reported ||= x.status === "done";
+    else if (reported && x.status === "reply" && !AGY_ANSWER.test(x.message || "")) return false;
+  }
+  return true;
+};
 // Merging: your latest message is the Merge button's (server worktree_label); a later message ends it.
 // Pressed while Claude was busy, it waits as a note until a "resume" entry hands the notes before it over.
 const merging = (a) => {
