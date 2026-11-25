@@ -267,15 +267,18 @@ body.view-plan #search { visibility: hidden; }
 .pl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pl-head .grow { flex: 1; }
 .pl-tasks { display: flex; flex-direction: column; gap: 6px; }
-.pl-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 8px; align-items: center; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.pl-row { display: grid; grid-template-columns: auto auto 1fr auto auto; gap: 4px 8px; align-items: center; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
 .pl-row.sug { border-style: dashed; }
 .pl-row input[type="text"] { border: 1px solid transparent; background: transparent; border-radius: 4px; padding: 3px 5px; min-width: 0; width: 100%; }
 .pl-row input[type="text"]:hover, .pl-row input[type="text"]:focus { border-color: var(--line); }
 .pl-row .sent { cursor: pointer; padding: 4px 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-row .sent:hover { color: var(--accent); }
-.pl-row textarea { grid-column: 2 / -1; min-height: 50px; }
+.pl-row textarea { grid-column: 3 / -1; min-height: 50px; }
 .pl-row .icon { border: 0; background: transparent; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
 .pl-row .icon:hover, .pl-row .icon.on { background: var(--col); color: var(--text); }
+.pl-row .icon.pl-del.armed { background: var(--danger); color: #fff; font-size: calc(12px * var(--ts)); }
+.pl-grip { cursor: grab; color: var(--muted); user-select: none; padding: 2px 2px; margin-left: -4px; line-height: 1; font-size: calc(16px * var(--ts)); }
+.pl-row:hover .pl-grip { color: var(--text); }
 .pl-chip { font-size: calc(11px * var(--ts)); color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
 .pl-chip.is-done { color: var(--ok); border-color: var(--ok); }
 .pl-chip.gone { color: var(--wait); border-color: var(--wait); }
@@ -1774,6 +1777,7 @@ const planNotes = new Set();   // tasks whose notes box is open
 let planSubAt = null;          // task whose "add a subtask" box is open (one at a time)
 let planBusy = null;           // milestone waiting on Suggest tasks
 let planArmed = null;          // milestone whose Delete was clicked once
+let planRowArmed = null;       // task or subtask whose ✕ was clicked once
 let planDrag = null;           // { kind: "m" | "d", id } while a milestone or a task row is dragged
 let planHtml = "";             // what the plan was last drawn from: polls redraw only on a change
 const milestones = () => (state.milestones = Array.isArray(state.milestones) ? state.milestones : []);
@@ -1844,9 +1848,12 @@ function planRowHtml({ d, up }) {
     : `<input type="text" data-f="title" value="${esc(d.title || "")}" placeholder="${esc(up ? t("Subtask title") : t("Task title"))}">`;
   const sub = up ? "" : `<button type="button" class="icon pl-addsub${planSubAt === d.id ? " on" : ""}" title="${esc(t("Add a subtask"))}">+</button>`;
   const send = planCanSend({ d, up }) ? `<button type="button" class="icon pl-send-one" title="${esc(t("Put this task in To Do"))}">${t("Send")}</button>` : "";
-  const tools = send + sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button><button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`);
+  const armed = planRowArmed === d.id, n = up ? 0 : planSubs(d).length;
+  const del = armed ? `<button type="button" class="icon pl-del armed" title="${esc(t("Click again to delete"))}">${n ? t("Delete with its {n} subtasks?", { n }) : t("Delete?")}</button>`
+    : `<button type="button" class="icon pl-del" title="${esc(t("Remove"))}">✕</button>`;
+  const tools = send + sub + (c ? "" : `<button type="button" class="icon pl-nt${open ? " on" : ""}" title="${esc(t("Notes"))}">≡</button>${del}`);
   return `<div class="pl-row${up ? " pl-subrow" : ""}${d.suggested && !d.card ? " sug" : ""}${done ? " is-done" : ""}" data-d="${esc(d.id)}" data-up="${up ? esc(up.id) : ""}" draggable="true">
-    <input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${done ? " checked" : ""} title="${esc(c ? t("Follows its card on the board") : t("Tick when this is done"))}">
+    <span class="pl-grip" title="${esc(t("Drag to move"))}">⠿</span><input type="checkbox" class="pl-tick"${c ? " disabled" : ""}${done ? " checked" : ""} title="${esc(c ? t("Follows its card on the board") : t("Tick when this is done"))}">
     ${name}<span class="pl-meta">${up ? "" : planSubCount(d)}${planChip(d)}</span><span>${tools}</span>
     ${open ? `<textarea data-f="notes" placeholder="${esc(t("Notes for Claude"))}">${esc(d.notes || "")}</textarea>` : ""}</div>`;
 }
@@ -1951,11 +1958,19 @@ async function planSuggest(m) {
   planBusy = null; renderPlan();
 }
 const planIn = (e) => view === "plan" && e.target.closest && e.target.closest(".plan");
+// Puts an asking ✕ back in place without a redraw, so a click into a name box keeps its cursor.
+function planDisarmRow() {
+  planRowArmed = null;
+  const b = $(".pl-del.armed");
+  if (b) { b.classList.remove("armed"); b.textContent = "✕"; b.title = t("Remove"); }
+}
 $("#board").addEventListener("click", (e) => {
   if (!planIn(e)) return;
   const el = e.target, m = msById(planOpen), item = el.closest(".pl-item"), row = el.closest(".pl-row");
   const r = m && row && planFind(m, row.dataset.d), d = r && r.d;
   if (planArmed && !el.closest(".pl-delm")) { planArmed = null; renderPlan(true); }
+  const onDel = !!(el.closest(".pl-del") && d);
+  if (planRowArmed && !(onDel && d.id === planRowArmed)) planDisarmRow();
   if (el.closest(".pl-new")) return planNew();
   if (item) {
     planOpen = item.dataset.m; planArmed = null;
@@ -1978,7 +1993,10 @@ $("#board").addEventListener("click", (e) => {
     if (box) box.focus();
     return;
   }
-  if (el.closest(".pl-del") && d) {
+  if (onDel) {
+    // The first click only asks; the second, on the same row, deletes.
+    if (planRowArmed !== d.id) { planRowArmed = d.id; return renderPlan(true); }
+    planRowArmed = null;
     if (r.up) r.up.tasks = planSubs(r.up).filter((x) => x !== d);
     else m.tasks = m.tasks.filter((x) => x !== d);
     touch(m); return renderPlan(true);
@@ -2048,6 +2066,7 @@ $("#board").addEventListener("keydown", (e) => {
   if (!planIn(e)) return;
   const item = e.target.closest(".pl-item");
   if (item && e.target === item && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); item.click(); return; }
+  if (e.key === "Escape" && planRowArmed) planDisarmRow();
   const sub = e.target.classList.contains("pl-sub-add") && e.target.dataset.up;
   if (sub && e.key === "Escape") { planSubAt = null; renderPlan(true); return; }
   if (e.key !== "Enter" || e.isComposing) return;

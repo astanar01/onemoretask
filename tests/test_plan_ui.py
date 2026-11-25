@@ -302,7 +302,7 @@ out.subDel = await ev(`const a = document.querySelector('.pl-add'); a.value = 'P
 __rowEl('Parent C').querySelector('.pl-addsub').click();
 const b = document.querySelector('.pl-sub-add'); b.value = 'C1'; __enter(b);
 const had = __srows().map((r) => r[0]).includes('C1');
-__rowEl('Parent C').querySelector('.pl-del').click();
+__rowEl('Parent C').querySelector('.pl-del').click(); __rowEl('Parent C').querySelector('.pl-del').click();
 ({ had, rows: __srows().map((r) => r[0]) })`);
 // A subtask typed without Enter is not lost when a real mouse presses Send all next.
 await ev(`__rowEl('Parent B').querySelector('.pl-addsub').click(); true`);
@@ -417,6 +417,52 @@ const tickReady = await waitReady();
 await ev(HELPERS); await ev(TICK); await sleep(200);
 out.tickReload = await ev(`[...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Tick test').click();
 ({ ready: ${tickReady}, t1: __st('T1'), t2: __st('T2'), s1: __st('S1'), t3: __st('T3'), pr: __pr() })`);
+// A real mouse drag, pressed where a person would grab the row. Chrome hands the drag to CDP (setInterceptDrags), and
+// the drop goes back in with dispatchDragEvent, so the page sees the browser's own dragstart, not a synthetic one.
+const realDrag = async (from, to) => {
+  const a = await ev(`const b = ${from}.getBoundingClientRect(); ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })`);
+  const b = await ev(`const b = ${to}.getBoundingClientRect(); ({ x: b.x + b.width / 2, y: b.y + 4 })`);
+  let got = null;
+  const on = ({ data }) => { const m = JSON.parse(data); if (m.method === 'Input.dragIntercepted') got = m.params.data; };
+  ws.addEventListener('message', on);
+  await send('Input.setInterceptDrags', { enabled: true });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: a.x, y: a.y });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', buttons: 1, clickCount: 1 });
+  for (let i = 1; i <= 6; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: a.x, y: a.y + i * 5, button: 'left', buttons: 1 });
+  await sleep(150);
+  if (got) for (const type of ['dragEnter', 'dragOver', 'drop']) await send('Input.dispatchDragEvent', { type, x: b.x, y: b.y, data: got });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: b.x, y: b.y, button: 'left', clickCount: 1 });
+  await send('Input.setInterceptDrags', { enabled: false });
+  ws.removeEventListener('message', on);
+  await sleep(200);
+  return !!got;
+};
+await ev(`document.querySelector('.pl-new').click(); __type(document.querySelector('.pl-title'), 'Grab test');
+for (const v of ['G1', 'G2', 'G3']) { const a = document.querySelector('.pl-add'); a.value = v; __enter(a); }
+document.activeElement.blur(); await new Promise((r) => setTimeout(r, 50)); true`);
+const gripOf = (t) => `(__rowEl('${t}').querySelector('.pl-grip') || __rowEl('${t}').querySelector('input[type=text]'))`;
+out.gripSeen = await ev(`[...document.querySelectorAll('.pl-row')].map((r) => { const g = r.querySelector('.pl-grip'); return !!g && g.offsetWidth > 0 && getComputedStyle(g).cursor; })`);
+const gripDragged = await realDrag(gripOf('G3'), `__rowEl('G1')`);
+out.gripDrag = { dragged: gripDragged, rows: await ev(`__srows().map((r) => r[0])`), saved: await ev(`state.milestones.find((m) => m.title === 'Grab test').tasks.slice().sort(byOrder).map((d) => d.title)`) };
+await ev(`__rowEl('G1').querySelector('.pl-del').click(); true`);
+await shot('roadmap-grip-delete-asks');
+out.escDisarm = await ev(`document.querySelector('.pl-del.armed').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+[planRowArmed, document.querySelectorAll('.pl-del.armed').length]`);
+// Pressing in the name box still selects text, it does not move the row.
+const titleDragged = await realDrag(`__rowEl('G1').querySelector('input[type=text]')`, `__rowEl('G2')`);
+out.titleDrag = { dragged: titleDragged, rows: await ev(`__srows().map((r) => r[0])`) };
+// The ✕ asks first: one click arms it, a click elsewhere puts it back, two clicks remove the row.
+out.delAsk = await ev(`__sub('G2', 'G2a'); __sub('G2', 'G2b');
+const x = (t) => __rowEl(t).querySelector('.pl-del');
+x('G1').click(); const one = [x('G1').classList.contains('armed'), x('G1').textContent, __srows().length];
+document.querySelector('.pl-head').click(); const away = [x('G1').classList.contains('armed'), x('G1').textContent.trim(), __srows().length];
+x('G1').click(); x('G3').click(); const other = [x('G1').classList.contains('armed'), x('G3').classList.contains('armed'), __srows().length];
+x('G3').click(); const gone = __srows().map((r) => r[0]);
+x('G2').click(); const withSubs = x('G2').textContent;
+x('G2a').click(); const subArmed = [x('G2').classList.contains('armed'), x('G2a').textContent];
+x('G2a').click(); const subGone = __srows().map((r) => r[0]);
+const r = { one, away, other, gone, withSubs, subArmed, subGone };
+[...document.querySelectorAll('.pl-item')].find((x) => x.querySelector('.t').textContent === 'Tick test').click(); r`);
 // Nothing spills off a row, with a Send button on it.
 out.rowFit = await ev(`__tm().tasks.push({ id: 'longsend', title: 'A task with a rather long name so the row has to share its room with the Send button', notes: '', order: 99 });
 touch(__tm()); renderPlan(true); await settled(); __fit()`);
@@ -642,6 +688,19 @@ def main():
     s = res["tickReload"]
     check("ticks stay after a reload", (s["ready"], s["t1"], s["t2"], s["s1"], s["t3"], s["pr"]),
           (True, done_st, done_st, done_st, done_st, ["6 of 6 done", "100%", "100%"]))
+    check("every row shows a grip with a grab cursor", res["gripSeen"], ["grab", "grab", "grab"])
+    check("a real mouse drag on the grip moves the row to the top, and it is kept",
+          res["gripDrag"], {"dragged": True, "rows": ["G3", "G1", "G2"], "saved": ["G3", "G1", "G2"]})
+    check("pressing in the name box does not move the row", res["titleDrag"]["rows"], ["G3", "G1", "G2"])
+    check("Escape puts an asking ✕ back", res["escDisarm"], [None, 0])
+    s = res["delAsk"]
+    check("one click on ✕ only asks", s["one"], [True, "Delete?", 5])
+    check("a click elsewhere puts the ✕ back", s["away"], [False, "✕", 5])
+    check("arming another row's ✕ puts the first one back", s["other"], [False, True, 5])
+    check("a second click deletes the row", s["gone"], ["G1", "G2", "G2a", "G2b"])
+    check("a task with subtasks says they go too", s["withSubs"], "Delete with its 2 subtasks?")
+    check("a subtask's ✕ asks too", s["subArmed"], [False, "Delete?"])
+    check("a subtask goes on its second click", s["subGone"], ["G1", "G2", "G2b"])
     check("nothing spills off a row with a long name and a Send button", res["rowFit"], 0)
     f = res["fr"]
     check("in French the button says Feuille de route, a row's button Envoyer", (f["ready"], f["name"], f["send"]), (True, "Feuille de route", "Envoyer"))

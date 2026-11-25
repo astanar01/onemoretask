@@ -3,6 +3,7 @@
 ## 2026-11-25
 
 - The Roadmap button now shows how much of all your milestones is done, as a percent.
+- In the Roadmap, the ✕ on a line asks "Delete?" first, and a second click removes it. Each line has dots on its left: grab them to drag the line up or down.
 
 ## 2026-11-24
 
