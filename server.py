@@ -966,7 +966,8 @@ def card_lines(report, answer_only=False, simple=False):
               f'- `{report} done "<{done}>"` as your last action when the task is finished.',
               "- The user reads only the card, never your chat output. Every turn that answers a reply from the card "
               f"(an explanation, an answer to a question, a follow-up change) ends with a `{report}` call carrying "
-              "that full answer.",
+              "that full answer. When the task's work is finished, that call is `done`, not `progress`: a turn that "
+              "ends on progress shows the card as stopped and hides its finish and merge buttons.",
               "- " + reports.LANGUAGE_RULE,
               *(["- " + SIMPLE_RULE] if simple else []),
               "- Screenshots: any report about something you captured (an app or game frame, a UI shot, a render, a "

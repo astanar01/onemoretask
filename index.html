@@ -3377,10 +3377,14 @@ function nextAction(t, ag, g) {
     const said = ((ag && ag.log) || []).filter((e) => e.status !== "note" && e.from !== "board").pop();
     const q = said && said.from === "claude" && said.status === "question";
     const stopped = !q && /stopped|without reporting|permission/i.test(ag.reason || "");
+    // A run that stopped on a progress note (often a reply answered without a done report) leaves the card outside
+    // Review, where canWorktree never offers Merge; offer it here while the worktree holds unmerged work.
+    const wtWork = !q && useServer && t.agent.worktree && ag.worktree && !t.answerOnly && !(pending[t.id] || []).length
+      && g && g.available && ((g.changed || []).length || (g.ahead || []).length);
     return { title: q ? window.t("{who} has a question", { who: nm }) : stopped ? window.t("Run stopped") : window.t("{who} needs you", { who: nm }),
       text: q ? window.t("Answer it in Conversation to let {who} continue.", { who: nm }) : (ag.reason ? window.t(ag.reason) : window.t("{who} is waiting on you.", { who: nm })).replace(/([^.!?])$/, "$1.") + (stopped && cliOf(t) === "claude" ? " " + window.t("A reply resumes the session; the ⋯ menu copies the attach command.") : ""),
       // A question often follows "try it with Run app", so keep that button beside the reply one while the worktree exists.
-      actions: replyOpen(t) ? [toReply(), ...(useServer && t.agent.worktree && ag.worktree && !t.answerOnly ? [runApp()] : [])] : [] };
+      actions: replyOpen(t) ? [toReply(), ...(wtWork ? [merge("sec")] : []), ...(useServer && t.agent.worktree && ag.worktree && !t.answerOnly ? [runApp()] : [])] : [] };
   }
   if (t.planMode) return cpReady(t) ? { title: window.t("The plan is ready"), text: window.t("Read it in Conversation. Build this plan starts a new card that follows it and moves this one to done, or reply to change it."), actions: [cpBuild(t, act), toReply(), markDone("ghost")] }
     : { title: window.t("The plan is not finished"), text: window.t("{who} stopped before writing the final plan. Reply in Conversation to carry on.", { who: nm }), actions: [toReply(), markDone("ghost")] };
