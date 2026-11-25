@@ -4,6 +4,7 @@
 
 - The Roadmap button now shows how much of all your milestones is done, as a percent.
 - In the Roadmap, the ✕ on a line asks "Delete?" first, and a second click removes it. Each line has dots on its left: grab them to drag the line up or down.
+- When Antigravity checks Claude's work and asks you for a yes along the way, the card still offers to send what it found back to Claude.
 
 ## 2026-11-24
 

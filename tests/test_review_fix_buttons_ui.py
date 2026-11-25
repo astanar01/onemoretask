@@ -86,7 +86,7 @@ def agent(cid, log, **kw):
             "mcp_uses": [], "mcp": None, **kw}
 
 
-IDS = ["c1", "c2", "c3", "c4"]
+IDS = ["c1", "c2", "c3", "c4", "c5"]
 AGENTS = {
     "c1": agent("c1", BASE + [entry("claude", "done", FINDINGS)]),
     "c2": agent("c2", BASE + [entry("claude", "done", FINDINGS)], handback="Claude"),
@@ -96,6 +96,10 @@ AGENTS = {
                               entry("claude", "done", "All fixed."),
                               entry("you", "review", "Code review started (task model, session r2)"),
                               entry("claude", "done", SECOND)]),
+    # An Antigravity review that asked for a yes mid-review: the board logs your answer as a reply (server
+    # answer_permission). It hands the review no new work, so the findings still go back to the worker.
+    "c5": agent("c5", BASE + [entry("you", "reply", "Allowed once: write the file /tmp/x.gd"),
+                              entry("claude", "done", FINDINGS)], handback="Claude", phase="finished"),
 }
 BOARD = {"version": 1, "columns": COLS, "tasks": [card(c) for c in IDS]}
 POSTS = []
@@ -234,6 +238,11 @@ res.c2 = await ev(look);
 await click('#d-log button[data-fix]', 0); await click('#d-log [data-fixsend]');
 for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
 res.c2after = await ev(look);
+// An Antigravity permission answer during the review does not end it: Send findings is offered, picks hand back.
+await open('c5');
+res.c5next = await ev(`nextAction(task('c5'), agents['c5'], { available: true, changed: [], ahead: ['x'], aheadKind: 'target', target: 'main' }).actions.map((a) => a.label)`);
+await click('#d-log button[data-fix]', 0); await click('#d-log [data-fixsend]');
+for (let i = 0; i < 3; i++) { await sleep(200); await ev(`await pollAgents()`); }
 res.errors = errors;
 console.log(JSON.stringify(res));
 quit(0);
@@ -296,6 +305,9 @@ def main():
           [["/api/agent/handback", "c2", "Fix everything"]])
     check("other agent's review: all marked after the handback", res["c2after"]["conv"],
           [B("✓ " + x[0], True, True) for x in four])
+    check("permission answer mid-review: Send findings to Claude is offered", "Send findings to Claude" in res["c5next"], True)
+    check("permission answer mid-review: Fix everything goes back to the worker", [x for x in POSTS if x[1] == "c5"],
+          [["/api/agent/handback", "c5", "Fix everything"]])
     check("answered review + fix report: only the old, disabled buttons with the picks; none on the fix report or in Summary",
           (res["c3"]["conv"], res["c3"]["sum"]),
           ([B("Fix everything", True), B("✓ Fix finding 1", True, True), B("Fix finding 2", True), B("✓ Fix finding 3", True, True)], []))
