@@ -4885,6 +4885,8 @@ function fmtTable(rows) {
 const FIXED_ROW = /^(?:\*\*)?(?:Fixed\b[^:\n]{0,40}:|(?:Status|Result|Outcome):(?:\*\*)?\s*fixed\b)/i;
 // A one-line status from a second review: "Finding 1 (major): fixed" or "fixed in abc1234".
 const FIXED_LINE = /^fixed\b[.:]?/i;
+// A fixer's title saying it: "Finding 1 (major): title — fixed", "title (fixed)". Not "— not fixed".
+const FIXED_TAIL = /(?:\s+(?:[—–]|-{1,2})\s*|:\s*|\s*\(\s*)fixed\.?\s*\)?\s*$/i;
 const FIXED_STAMP = () => `<span class="fstamp">${esc(window.t("Fixed"))}</span>`;
 // The same messages are formatted again on every poll of an open card: keep what each text gave.
 const fmtMsgMemo = new Map();
@@ -4903,7 +4905,7 @@ function fmtMsgRaw(text) {
   let inFix = false;
   // A box whose own bullets say it was fixed ("Fixed: …", "Status: fixed") gets the green FIXED stamp. The bullets come
   // after the box opened, so its opening tag is swapped once the box closes.
-  let fAt = -1, fOpen = "", fOpenFixed = "", fFixed = false;
+  let fAt = -1, fOpen = "", fOpenFixed = "", fFixed = false, tailFixed = false;
   const closeFnd = () => {
     if (!fnd) return;
     if (fFixed) out = out.slice(0, fAt) + fOpenFixed + out.slice(fAt + fOpen.length);
@@ -4943,12 +4945,15 @@ function fmtMsgRaw(text) {
       closeFnd();
       const sev = m[2] ? SEV[m[2].toLowerCase()] : "";
       const tag = m[2] ? `<span class="ftag ${sev}">${m[2]}</span>` : "";
+      // A title ending "— fixed" gets the stamp in place of those words.
+      if (m[3] && FIXED_TAIL.test(m[3])) { m[3] = m[3].replace(FIXED_TAIL, ""); if (!m[3]) m[3] = "fixed"; else tailFixed = true; }
       if (BUL.test(lines.slice(i + 1).find((x) => x.trim()) || "")) {
-        fnd = true;
+        fnd = true; fFixed = tailFixed; tailFixed = false;
         const head = (cls, stamp) => `<div class="finding${sev ? " " + sev : ""}${cls}"><div class="fhead">${tag}<span class="fnum">${m[1]}</span>${stamp}</div>`;
         fAt = out.length; fOpen = head("", ""); fOpenFixed = head(" fixed", FIXED_STAMP());
         out += fOpen + (m[3] ? `<div class="ftitle">${inl(m[3])}</div>` : "");
-      } else if (FIXED_LINE.test(m[3])) out += `<div class="fline fixed">${tag}<span class="fnum">${m[1]}</span>${FIXED_STAMP()}${m[3].replace(FIXED_LINE, "").trim() ? `<span>${inl(m[3].replace(FIXED_LINE, "").trim())}</span>` : ""}</div>`;
+      } else if (tailFixed) { tailFixed = false; out += `<div class="fline fixed">${tag}<span class="fnum">${m[1]}</span>${FIXED_STAMP()}<span>${inl(m[3])}</span></div>`; }
+      else if (FIXED_LINE.test(m[3])) out +=`<div class="fline fixed">${tag}<span class="fnum">${m[1]}</span>${FIXED_STAMP()}${m[3].replace(FIXED_LINE, "").trim() ? `<span>${inl(m[3].replace(FIXED_LINE, "").trim())}</span>` : ""}</div>`;
       else out += `<div class="fline">${tag}<span class="fnum">${m[1]}</span>${m[3] ? `<span>${inl(m[3])}</span>` : ""}</div>`;
     }
     else if (h) out += `<div class="h h${h[1].length}">${inl(l)}</div>`;

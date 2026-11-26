@@ -69,4 +69,34 @@ const two = fmt('Finding 1: a\n\n- Fixed: x\n\nFinding 2: b\n\n- Fixed: y\n\nFin
 assert.equal((two.match(/fstamp/g) || []).length, 2);
 assert.equal((two.match(/<div class="finding fixed">/g) || []).length, 2);
 assert.equal((two.match(/<div class="finding">/g) || []).length, 1);
+// A fixer that says it in the title ("— fixed", as review-fix reports do) with "Now:" rows and no "Fixed:" row.
+const tail = fmt(`## Review fixes done
+
+### Finding 1 (major): Weapons and spells can vanish with no warning — fixed
+
+- Where: \`app/Services/GameDataService.php:786\`
+- Now: a row with a number in it but nothing picked shows a red message.
+- Proof: both tests pass.
+
+### Finding 2 (minor): Spell min range hides (fixed)
+
+- Now: it reads "min range 2 m".
+
+### Finding 3 (minor): A bad value is ignored — not fixed
+
+- Why: the owner wants it as is.
+
+### Finding 4 (minor): Props have no limit -- fixed
+
+- Now: at most 20 props.`);
+const tb = boxes(tail);
+assert.equal(tb.length, 4, 'four boxes');
+for (const k of [0, 1, 3]) assert.match(tb[k], /^ \w+ fixed".*fstamp/, `title-fixed box ${k + 1} gets the stamp`);
+assert.doesNotMatch(tb[2], /fixed"|fstamp/, '"— not fixed" gets no stamp');
+assert.match(tail, /<div class="ftitle">Weapons and spells can vanish with no warning<\/div>/, 'the words "— fixed" leave the title');
+assert.match(tail, /<div class="ftitle">Spell min range hides<\/div>/);
+assert.match(tail, /A bad value is ignored — not fixed/, '"not fixed" stays in its title');
+const tailLine = fmt('Finding 1 (major): the menu breaks — fixed');
+assert.match(tailLine, /<div class="fline fixed">.*fstamp.*<span>the menu breaks<\/span><\/div>/, 'a one-line title-fixed status gets the stamp');
+assert.doesNotMatch(fmt('Finding 1 (major): the fix is not done\n\n- Fix: do it'), /fstamp/, 'no fixed word, no stamp');
 console.log('ok fixed stamp');

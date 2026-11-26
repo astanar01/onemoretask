@@ -1,5 +1,9 @@
 # What's new
 
+## 2026-11-26
+
+- The big green FIXED now also shows when the helper writes "fixed" at the end of a note's title, which is how it usually says it.
+
 ## 2026-11-25
 
 - If a folder is locked so nothing can be added to it, the board now says so when you add it, instead of saying "the board changed in another window" each time you make a card.
