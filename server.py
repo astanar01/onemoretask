@@ -2175,25 +2175,82 @@ def handback(p, task_id, text=""):
     return aid
 
 
+# A finding a review leaves open, as the page's reviewFindings reads it: a "Finding 2 (major): title" line with bullets
+# under it, unless its title or its own bullets say it was fixed (the page's FIXED_LINE, FIXED_TAIL and FIXED_ROW).
+FINDING_LINE = re.compile(r"(?:\*\*)?Finding (\d+)\b(?:\W*?(?:critical|major|high|minor|medium|low|nit)\b)?[^\w*]*"
+                          r"(?:\*\*)?\s*(.*?)(?:\*\*)?\s*$", re.I)
+FIXED_TITLE = re.compile(r"^fixed\b|(?:\s+(?:[—–]|-{1,2})\s*|:\s*|\s*\(\s*)fixed\.?\s*\)?\s*$", re.I)
+FIXED_ROW = re.compile(r"(?:\*\*)?(?:Fixed\b[^:\n]{0,40}:|(?:Status|Result|Outcome):(?:\*\*)?\s*fixed\b)", re.I)
+BULLET = re.compile(r"(\s*)(?:[-*]|\d+\.) (.*)")
+
+
+def open_findings(text):
+    """Numbers of the findings a review report leaves open: the ones the card gives a Fix button."""
+    lines, out = str(text or "").split("\n"), []
+    for i, raw in enumerate(lines):
+        m = FINDING_LINE.match(re.sub(r"^\s*#{1,3} ", "", raw))
+        if not m:
+            continue
+        bullets, rows = False, []
+        for x in lines[i + 1:]:
+            if not x.strip():
+                continue
+            b = BULLET.match(x)
+            if not b:
+                break
+            bullets = True
+            if not b.group(1):
+                rows.append(b.group(2))
+        if (bullets and not FIXED_TITLE.search(m.group(2)) and not any(FIXED_ROW.match(x) for x in rows)
+                and m.group(1) not in out):
+            out.append(m.group(1))
+    return out
+
+
 def fix_check_due(log):
-    """Index of the first card message after the last code review's report (a Fix button, a typed "fix 1 and 3", a
-    hand-back; a note when it came while a Codex or Antigravity reviewer was still closing) when the session has since
-    reported done: a fix the board checks (fix_check). Else None."""
+    """Index of the card message that led to a fix of the last code review's findings (a Fix button, a typed "fix 1
+    and 3", a hand-back; a note when it came while a Codex or Antigravity reviewer was still closing) once the session
+    has reported done: a fix the board checks (fix_check). The talk starts after the last report that ended an
+    earlier exchange (an answer to "explain finding 2"). None when the review left nothing open, the card was closed
+    or sent again since, the talk asked for a merge, or the session has not reported done. Its report naming a commit
+    ends no exchange: a note answered after a fix keeps that fix in the talk."""
     r = next((i for i in range(len(log) - 1, -1, -1) if log[i].get("status") == "review"), None)
     if r is None:
         return None
     rep = next((i for i in range(r + 1, len(log)) if log[i].get("from") == "claude" and log[i].get("status") == "done"),
                None)
-    if rep is None:
+    if rep is None or not open_findings(log[rep].get("message")):
         return None
-    ask = next((i for i in range(rep + 1, len(log)) if log[i].get("from") == "you"
-                and log[i].get("status") in reports.USER_SAYS), None)
-    if ask is None:
+    if any(e.get("status") in ("recap", "launch") for e in log[r + 1:]):
         return None
-    tail = [e for e in log[ask + 1:] if e.get("status") != "note" and e.get("from") != BOARD]
-    while tail and tail[-1].get("from") == "claude" and tail[-1].get("status") == "progress":
-        tail.pop()
-    return ask if tail and tail[-1].get("from") == "claude" and tail[-1].get("status") == "done" else None
+    idx = [i for i in range(rep + 1, len(log)) if log[i].get("from") != BOARD]
+    end = [i for i in idx if log[i].get("status") != "note"]
+    while end and log[end[-1]].get("from") == "claude" and log[end[-1]].get("status") == "progress":
+        end.pop()
+    if not end or log[end[-1]].get("from") != "claude" or log[end[-1]].get("status") != "done":
+        return None
+    said = [i for i in idx if i < end[-1] and log[i].get("from") == "you" and log[i].get("status") in reports.USER_SAYS]
+    if not said:
+        return None
+    # An exchange that saved nothing (its report names no commit) ends before the fix talk; one that did is part of it.
+    closed = max((i for i in idx if i < said[-1] and log[i].get("from") == "claude"
+                  and log[i].get("status") in ("done", "answer") and not SHA_WORD.search(log[i].get("message") or "")),
+                 default=rep)
+    said = [i for i in said if i > closed]
+    if any((log[i].get("message") or "").startswith("Merge worktree") for i in said):  # worktree_label("merge")
+        return None
+    return said[0]
+
+
+def fix_talk(log, start):
+    """The card messages from `start` to the fix's done report, oldest first, for the fix check's prompt."""
+    lines = []
+    for e in log[start:]:
+        if e.get("from") == "you" and e.get("status") in reports.USER_SAYS:
+            lines.append("You: " + (e.get("message") or ""))
+        elif e.get("from") == "claude" and e.get("status") in ("question", "answer", "done"):
+            lines.append("Fixer: " + (e.get("message") or ""))
+    return "\n\n".join(lines)
 
 
 @one_per_card
@@ -2206,7 +2263,8 @@ def fix_check(p, task_id):
     t = next((x for x in state["tasks"] if x["id"] == task_id), None)
     log = reports.read(p.board, task_id)
     ask = fix_check_due(log) if t and t.get("agent") else None
-    if ask is None:
+    # A note still waiting goes to the fixer first (deliver_notes); its next done report brings the check.
+    if ask is None or reports.pending_notes(log, reports.delivered(p.board, task_id)):
         return None
     ref = commit_ref(p, t)
     commits = own_commits(p, log[ask:], log[ask]["at"], ref)
@@ -2217,7 +2275,6 @@ def fix_check(p, task_id):
     model = found.group(1) if found and found.group(1) != "task model" else None
     use = model or t["agent"].get("model") or ""
     findings = next(e["message"] for e in log[r + 1:ask] if e.get("from") == "claude" and e.get("status") == "done")
-    fixed = [e["message"] for e in log[ask + 1:] if e.get("from") == "claude" and e.get("status") in ("done", "answer", "question")]
     branch = ref[len("refs/heads/"):] if ref != "HEAD" else None
     wt = branch and live_worktree(t)
     board_rel = os.path.relpath(p.board, p.path)
@@ -2233,9 +2290,9 @@ def fix_check(p, task_id):
         f"Fix check for a task on the project task board ({board_rel}): a short second review of a fix.", "",
         f"Task: {t['title']}", f"Task id: {task_id}", *(["", "Task notes:", t["notes"]] if t.get("notes") else []),
         "", "A code review of this task posted this report:", findings, "",
-        "The user replied: " + log[ask]["message"], "",
-        "A session then made the fix. " + ("Its report:" if len(fixed) < 2 else "Its reports, oldest first:"),
-        "\n\n".join(fixed[-3:]), "", "The fix commits, newest first:", *[f"- {sha} {subj}" for sha, subj in commits], "",
+        "Then the user asked for the fix and a session made it. What was said, oldest first (the user's answers "
+        "count: a behavior change the user picked is what the task should do now):", fix_talk(log, ask), "",
+        "The fix commits, newest first:", *[f"- {sha} {subj}" for sha, subj in commits], "",
         *([f"The work is on branch `{branch}` in the git worktree {shell_path(wt['path'])}: check it there, with "
            "`git -C <that path>` and absolute paths (a bare `cd` is often refused). Later fixes go there too, committed on that branch.", ""] if wt else []),
         "Steps:",
@@ -3845,8 +3902,11 @@ class Watcher:
                 continue
             was, now_ = (old.get(key) or {}).get("phase"), fresh[key]["phase"]
             # A session that fixed review findings just reported done: a fresh session checks the fix. Only on this
-            # change seen live, so a board restart starts no check for an old fix.
-            if (was == "working" and now_ == "finished" and not fresh[key]["closed"] and key not in self.fixchecking
+            # change seen live (from work, or from a permission prompt answered just before the done), so a board
+            # restart starts no check for an old fix. A note still waiting goes to the fixer first.
+            if (was in ("working", "needs_you") and now_ == "finished" and not fresh[key]["closed"]
+                    and key not in self.fixchecking
+                    and not reports.pending_notes(fresh[key]["log"], fresh[key]["delivered"] or "")
                     and fix_check_due(fresh[key]["log"]) is not None):
                 self.fixchecking.add(key)
                 threading.Thread(target=self._fix_check, args=(p, t["id"]), daemon=True).start()

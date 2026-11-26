@@ -99,4 +99,25 @@ assert.match(tail, /A bad value is ignored — not fixed/, '"not fixed" stays in
 const tailLine = fmt('Finding 1 (major): the menu breaks — fixed');
 assert.match(tailLine, /<div class="fline fixed">.*fstamp.*<span>the menu breaks<\/span><\/div>/, 'a one-line title-fixed status gets the stamp');
 assert.doesNotMatch(fmt('Finding 1 (major): the fix is not done\n\n- Fix: do it'), /fstamp/, 'no fixed word, no stamp');
+
+// A fix check's passing line with bullets under it: a stamped box, and no Fix button (reviewFindings).
+const rf = html.indexOf('function reviewFindings(text)');
+vm.runInContext(html.slice(rf, html.indexOf('\n}\n', rf) + 3), ctx);
+const open = (s) => Array.from(vm.runInContext('reviewFindings', ctx)(s), (f) => f.n);  // an array of this realm
+const check = `Finding 1 (major): fixed, behavior kept (ran repro and main path)
+
+- Checked: the repro and the Save path.
+
+Finding 2 (minor): Save now closes the draft
+
+- Where: \`app.py:4\`
+- Proof: Reproduced.`;
+const cb = boxes(fmt(check));
+assert.match(cb[0], /^ \w+ fixed".*fstamp/, 'a passing fix check line with bullets gets the stamp');
+assert.doesNotMatch(cb[1], /fixed"|fstamp/, 'the open finding after it gets none');
+assert.deepEqual(open(check), ['2'], 'only the open finding gets a Fix button');
+assert.deepEqual(open(fixReport), ['4'], 'boxes stamped fixed get no Fix button; "Not fixed" keeps one');
+assert.deepEqual(open('Finding 1 (major): a — fixed\n\n- Now: x\n\nFinding 3 (minor): b — not fixed\n\n- Why: y'), ['3'],
+  'titles ending "fixed" get no Fix button; "— not fixed" keeps one');
+assert.deepEqual(open(review), ['1'], "the reviewer's own finding keeps its Fix button");
 console.log('ok fixed stamp');

@@ -291,18 +291,85 @@ A(p6.board, "t1", "reply", "Fix finding 1", "you", session="fc1")
 A(p6.board, "t1", "done", "Nothing to change: the text is right", "claude", session="fc1")
 check(server.fix_check(p6, "t1") is None and len(started_now) == 2, "fix check: none when the fix names no commit")
 
+# a permission prompt answered just before the done: the card goes from "needs you" to finished
+A(p6.board, "t1", "reply", "Fix finding 1", "you", session="fc1")
+time.sleep(1.1)
+f4 = commit6("fix3")
+A(p6.board, "t1", "done", f"Fixed in {f4}", "claude", session="fc1")
+server.WATCH._put(key6, {**server.WATCH.cache[key6], "phase": "needs_you"})
+server.WATCH.poll()
+settle()
+check(len(started_now) == 3 and f'"low {f4}"' in started_now[-1][0],
+      "fix check: also after a permission prompt answered just before the done")
+check("Nothing to change" not in started_now[-1][0].split("What was said")[1],
+      "fix check: the talk starts at the ask that led to the fix, not an earlier exchange")
+
+# a note still waiting for the fixer: no check until the fixer has read it and reported again
+A(p6.board, "t1", "done", "Finding 1 (major): Save is slow\n\n- Where: `app.py:6`", "claude", session="fc1")
+A(p6.board, "t1", "reply", "Fix finding 1", "you", session="fc1")
+time.sleep(1.1)
+f5 = commit6("fix4")
+A(p6.board, "t1", "done", f"Fixed in {f5}", "claude", session="fc1")
+A(p6.board, "t1", "note", "Also keep the old button name", "you")
+real_deliver = server.deliver_notes
+server.deliver_notes = lambda *a, **k: None
+server.WATCH._put(key6, {**server.WATCH.cache[key6], "phase": "working"})
+server.WATCH.poll()
+settle()
+while server.WATCH.delivering:
+    time.sleep(0.05)
+server.deliver_notes = real_deliver
+check(len(started_now) == 3, "fix check: none while a note waits for the fixer")
+server.reports.take_notes(p6.board, "t1")  # the fixer got the note
+A(p6.board, "t1", "done", f"Kept the old button name; the fix is {f5}", "claude", session="fc1")
+server.WATCH._put(key6, {**server.WATCH.cache[key6], "phase": "working"})
+server.WATCH.poll()
+settle()
+check(len(started_now) == 4 and "You: Also keep the old button name" in started_now[-1][0],
+      "fix check: after the fixer read the note, with the note in its talk")
+
 D = lambda st, fr, m="": {"status": st, "from": fr, "message": m}  # noqa: E731
-base = [D("launch", "you"), D("done", "claude"), D("review", "you"), D("done", "claude")]
+OPEN = "Finding 1 (major): Save loses the draft\n\n- Where: `app.py:3`"
+base = [D("launch", "you"), D("done", "claude"), D("review", "you"), D("done", "claude", OPEN)]
 for tail, want, what in (([], None, "the review's report alone"),
                          ([D("reply", "you"), D("progress", "claude")], None, "a fix still at work"),
                          ([D("reply", "you"), D("done", "claude")], 4, "a fix reported done"),
                          ([D("reply", "you"), D("done", "claude"), D("progress", "claude")], 4, "a progress after it"),
+                         ([D("reply", "you"), D("done", "claude"), D("done", "claude")], 4, "two reports after it"),
                          ([D("reply", "you"), D("done", "claude"), D("reply", "you")], None, "a reply after it"),
                          ([D("reply", "you"), D("question", "claude"), D("reply", "you"), D("done", "claude")], 4,
                           "a fix that asked first"),
                          ([D("note", "you"), D("resume", "you"), D("done", "claude")], 4,
-                          "a fix asked while the reviewer was still closing (a note, handed over later)")):
+                          "a fix asked while the reviewer was still closing (a note, handed over later)"),
+                         ([D("reply", "you", "Explain finding 1"), D("done", "claude"), D("reply", "you", "Fix finding 1"),
+                           D("done", "claude")], 6, "a question first, then the fix: the talk starts at the fix"),
+                         ([D("reply", "you"), D("done", "claude", "Fixed in abc1234"), D("note", "you"),
+                           D("done", "claude", "Done")], 4, "a note answered after the fix keeps the fix in the talk"),
+                         ([D("reply", "you", "Merge worktree to main (branch feat-t1)"), D("done", "claude")], None,
+                          "a merge after the review"),
+                         ([D("recap", "claude"), D("reply", "you", "Also add CSV export"), D("done", "claude")], None,
+                          "a card reopened after it was done"),
+                         ([D("launch", "you"), D("done", "claude")], None, "a card sent again")):
     check(server.fix_check_due(base + tail) == want, f"fix_check_due: {what}")
+for report, what in (("No problems found.", "a review with no findings"),
+                     ("Finding 1 (major): fixed, behavior kept (ran repro)\n\n- Checked: repro and main path",
+                      "a fix check that passed, bullets under its line")):
+    check(server.fix_check_due(base[:3] + [D("done", "claude", report), D("reply", "you"), D("done", "claude")]) is None,
+          f"fix_check_due: none after {what}")
+talk = server.fix_talk(base + [D("reply", "you", "Fix finding 1"), D("question", "claude", "Keep or drop the button?"),
+                               D("reply", "you", "Keep it"), D("done", "claude", "Fixed")], 4)
+check(talk == "You: Fix finding 1\n\nFixer: Keep or drop the button?\n\nYou: Keep it\n\nFixer: Fixed",
+      "fix check: it sees every message of the fix talk, the user's pick included")
+# the same reading as the page's reviewFindings (tests/test_fixed_stamp.cjs)
+for text, want in (("Finding 1 (major): fixed, behavior kept (ran repro and main path)\n\n- Checked: both\n\nAll good.", []),
+                   ("Finding 1 (major): fixed, behavior kept (ran repro)\nFinding 2 (minor): fixed (ran it)\n- Checked: both", []),
+                   (OPEN + "\n- Changes how it works: no\n- Proof: Reproduced", ["1"]),
+                   ("Finding 3 (minor): Odd label\n- Where: `b:2`\n- Status: fixed in abc1234", []),
+                   ("Finding 4 (major): Save loses the draft — fixed\n- Where: `a:1`", []),
+                   ("Finding 1 (major): fixed, behavior kept\n\nFinding 2 (major): Save closes it\n\n- Where: `a:4`", ["2"]),
+                   ("Finding 5 (minor): x\n  - Where: `c:3`", ["5"]),
+                   ("Finding 6 (minor): x\n- Not fixed: the owner wants it", ["6"])):
+    check(server.open_findings(text) == want, f"open_findings: {want} in {text.splitlines()[0]!r}")
 
 # --- trust goes to the .claude.json the CLI reads under CLAUDE_CONFIG_DIR
 cfg = os.path.join(TMP, "cfg")

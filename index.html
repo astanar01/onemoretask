@@ -2485,12 +2485,25 @@ function qChoices(shown, i, split) {
 // The code review's findings report: the reviewer's first "done" after the last review start (later ones report fixes).
 const reviewReport = (log) => { const r = log.findLastIndex((x) => x.status === "review"); return r < 0 ? -1 : log.findIndex((x, k) => k > r && x.from !== "you" && x.status === "done"); };
 // "Finding 2 (major): title" lines that open a finding (bullets follow), one per number. A bare
-// "Finding 1 (major): fixed" is a status line about an earlier review, not a finding to fix.
+// "Finding 1 (major): fixed" is a status line about an earlier review, not a finding to fix; so is one whose title
+// or own bullets say it was fixed ("fixed, behavior kept" from a fix check), bullets or not. server.open_findings
+// reads them the same way.
 function reviewFindings(text) {
   const lines = String(text || "").split("\n"), out = [];
   lines.forEach((raw, i) => {
     const m = raw.replace(/^\s*#{1,3} /, "").match(/^(?:\*\*)?Finding (\d+)\b(?:\W*?(?:critical|major|high|minor|medium|low|nit)\b)?[^\w*]*(?:\*\*)?\s*(.*?)(?:\*\*)?\s*$/i);
-    if (m && /^\s*([-*]|\d+\.) /.test(lines.slice(i + 1).find((x) => x.trim()) || "") && !out.some((f) => f.n === m[1])) out.push({ n: m[1], title: m[2] });
+    if (!m) return;
+    let bullets = false;
+    const rows = [];
+    for (const x of lines.slice(i + 1)) {
+      if (!x.trim()) continue;
+      const b = x.match(/^(\s*)(?:[-*]|\d+\.) (.*)/);
+      if (!b) break;
+      bullets = true;
+      if (!b[1]) rows.push(b[2]);
+    }
+    const fixed = FIXED_LINE.test(m[2]) || FIXED_TAIL.test(m[2]) || rows.some((x) => FIXED_ROW.test(x));
+    if (bullets && !fixed && !out.some((f) => f.n === m[1])) out.push({ n: m[1], title: m[2] });
   });
   return out;
 }
@@ -4948,7 +4961,7 @@ function fmtMsgRaw(text) {
       // A title ending "— fixed" gets the stamp in place of those words.
       if (m[3] && FIXED_TAIL.test(m[3])) { m[3] = m[3].replace(FIXED_TAIL, ""); if (!m[3]) m[3] = "fixed"; else tailFixed = true; }
       if (BUL.test(lines.slice(i + 1).find((x) => x.trim()) || "")) {
-        fnd = true; fFixed = tailFixed; tailFixed = false;
+        fnd = true; fFixed = tailFixed || FIXED_LINE.test(m[3]); tailFixed = false;
         const head = (cls, stamp) => `<div class="finding${sev ? " " + sev : ""}${cls}"><div class="fhead">${tag}<span class="fnum">${m[1]}</span>${stamp}</div>`;
         fAt = out.length; fOpen = head("", ""); fOpenFixed = head(" fixed", FIXED_STAMP());
         out += fOpen + (m[3] ? `<div class="ftitle">${inl(m[3])}</div>` : "");
