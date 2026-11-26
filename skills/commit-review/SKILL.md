@@ -1,6 +1,6 @@
 ---
 name: commit-review
-description: Cheap single-pass review of commits that were just made (or uncommitted changes) — finds real bugs, edge cases, regressions and untested paths, runs a small test on each one to prove it (or states its confidence when no test can run), and reports without changing files. Use when asked to "review the commit", "review what was just done", "check this change for bugs", or when the task board's Review code button starts a reviewer. Args "[low|medium|high] [<sha> ... | <a>..<b>]". A budget alternative to /code-review (no subagents, no multi-pass fan-out).
+description: Cheap single-pass review of commits that were just made (or uncommitted changes) — finds real bugs, edge cases, regressions and untested paths, runs a small test on each one to prove it (or states its confidence when no test can run), and reports without changing files. Use when asked to "review the commit", "review what was just done", "check this change for bugs", or when the task board starts a reviewer (Review code button) or a fix check after a fix. Args "[low|medium|high] [<sha> ... | <a>..<b>]". A budget alternative to /code-review (no subagents, no multi-pass fan-out).
 ---
 
 # Commit Review
@@ -14,7 +14,7 @@ Put every independent read into ONE turn (several tool calls in one message, or 
 Bash command that prints several things).
 
 Do NOT modify files, stage, commit, or push. Report only. (If a later message asks you
-to fix findings, that is a new job: fix, verify, commit, never push unless told.)
+to fix findings, that is a new job with its own rules: section 6, "Fixing findings".)
 
 ## 1. Target
 
@@ -161,10 +161,17 @@ Finding 1 (major): short title
 - Where: `file:line`
 - Problem: one sentence.
 - Breaks when: the concrete input or state, and what goes wrong.
-- Fix: the change you suggest, in a sentence or a tiny snippet.
+- Fix: the change you suggest, in a sentence or a tiny snippet. It fixes the cause and
+  keeps the feature working the way the task notes meant it.
+- Changes how it works: no / yes: what the user would see or do differently.
 - Proof: Reproduced (quote the test output) / Not reproduced — confidence high, medium
   or low, and why no test could run; rests on: <the assumption the case depends on>.
 ```
+
+**Changes how it works** is about the suggested fix, not the bug: would the feature work
+differently for the user once the bug is gone? Say "no" when the fix only removes the
+bug. A "yes" tells whoever fixes it to ask the user first (section 6). Prefer a fix that
+keeps the behavior; offer a "yes" fix only when there is none.
 
 Then: one line listing refuted findings ("checked and fine"), and one line with which
 commits you reviewed, the level, and what you did not check. End by asking which
@@ -186,8 +193,46 @@ full report there — chat output alone is not seen.
 - [ ] Every candidate finding had a test run on it, or a stated reason it could not.
 - [ ] No style-only or taste findings. Pre-existing bugs are one line, not a Finding.
 - [ ] Each finding's severity counts how often its path really runs (main path vs one-shot).
+- [ ] Each Fix keeps what the task built; each finding has a `- Changes how it works:` line.
 - [ ] Task notes and the worker's report were compared with the diff (when given).
 - [ ] An earlier review on the card: each old finding has its one-line status; only new ones are numbered.
 - [ ] Blocks separated by blank lines; no run-on paragraph anywhere in the report.
 - [ ] Stayed inside the level's turn budget (independent reads batched into one turn);
       said what was not checked.
+
+## 6. Fixing findings (a later job)
+
+A later message that asks for fixes ("Fix finding 2", "fix 1 and 3", findings handed back
+to the session that did the work) is a new job. The fix follows the intent of what was
+built: the feature must work after the fix the way it was meant to, minus the bug.
+
+1. Before changing anything, re-read the task notes and the worker's report.
+2. Fix the cause, never hide the symptom. Never remove or weaken a feature, a check or a
+   test to make a repro pass.
+3. If the only fix would change what the user sees or can do (the finding said
+   "Changes how it works: yes", or you find it does), do not commit: ask on the card
+   with options and end the turn.
+4. Verify both the finding's repro and the main path the task notes describe. A repro
+   that passes after a behavior change is not a fix.
+5. Commit (never push unless told). The done report names the fix commits and says, per
+   finding, what changed and what behavior was kept; a finding you skip says why.
+
+On the task board, that done report starts a fix check (section 7) in a fresh session.
+
+## 7. Fix check (a short second review of a fix)
+
+When told this is a fix check (the task board starts one by itself after a fix): level
+`low`, the fix commits only. Check three things and nothing else:
+
+1. Each finding the user asked to fix is gone: run its repro again (from the review's
+   Proof line, or the smallest new one).
+2. The behavior the task notes describe still works the same way: run its main path once.
+3. The fix changed nothing else in behavior: read the fix diff for any change beyond the
+   finding (a removed or weakened check or test, a new default, a changed message).
+
+Change no files. Report one line per finding the user asked to fix,
+`Finding N (severity): fixed, behavior kept (how you checked)`, unless it failed a check.
+A failed check is a finding in the shape of section 5, so the card shows its Fix button:
+a finding still there keeps its number, a behavior change the fix made takes the next
+free number. Then end by asking which to fix. Look for nothing else: the full review
+already ran.

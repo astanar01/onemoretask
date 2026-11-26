@@ -433,7 +433,7 @@ def cli_of(s):
 
 
 SENT_TO = re.compile(r"Sent to (Claude|Codex|Antigravity)\b")
-REVIEW_BY = re.compile(r"Code review started \((.+?), session ")
+REVIEW_BY = re.compile(r"(?:Code review started|Fix check started by the board) \((.+?), session ")
 
 
 def with_clis(log, sessions, t):
@@ -2041,6 +2041,16 @@ def own_commits(p, log, since, ref="HEAD"):
     return [c for c in commits if any(w.startswith(c[0]) or c[0].startswith(w) for w in words)]
 
 
+# How a session fixes code review findings (the review prompt and the hand-back; skill commit-review, section 6).
+FIX_RULES = (
+    "before you change anything, re-read the task notes and the task's report. The feature the task built must work "
+    "the same way after the fix, minus the bug. Fix the cause, never hide the symptom. Never remove or weaken a "
+    "feature, a check or a test to make a repro pass. If the only fix would change what the user sees or can do, do "
+    "not commit: ask on the card with options. Verify both the finding's repro and the main path the task notes "
+    "describe. Commit (never push unless the user tells you to). The done report says, per finding, what changed and "
+    "what behavior was kept, and names the fix commits: the board then starts a short check of the fix.")
+
+
 @one_per_card
 def review(p, task_id, model=None):
     """Start a fresh session that code-reviews the task's commits and posts the findings on its card. The card
@@ -2099,7 +2109,7 @@ def review(p, task_id, model=None):
         "/code-review, subagents or workflows. Review only in this turn: no file changes, no commits.",
         f'2. Post its report with `{rep} done "..."`, naming the commits you reviewed. If nothing survived, say so. '
         "End by asking which findings to fix.",
-        "If a later reply asks for fixes: make them, verify them, commit (never push unless the user tells you to), and report done.", "",
+        "If a later reply asks for fixes, that is a new job: " + FIX_RULES, "",
         f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
         "(the board owns it).", "", *card_lines(rep, simple=simple_words(state))])
     aid = start_session(p, task_id, "review: " + t["title"][:58], prompt, use,
@@ -2157,11 +2167,91 @@ def handback(p, task_id, text=""):
     rev = CLI_NAMES.get(cli_of(info), "Claude")
     ask = text.strip() or reports.HANDBACK_ASK
     message = "\n\n".join([f"A {rev} code review looked at your commits on this task. Its report:", findings[-1],
-                           "The user says: " + ask,
-                           "Make the fixes, verify them, commit (never push unless the user tells you to), and report done."])
+                           "The user says: " + ask, "Make the fixes: " + FIX_RULES])
     aid = resume(p, {"id": worker, "sessionId": s.get("sessionId")}, message + board_tail(p, task_id))
     reports.append(p.board, task_id, "reply", reports.HANDBACK.format(CLI_NAMES[cli_of(s)]) + ask,
                    "you", session=aid)
+    WATCH.expect(p, task_id, aid)
+    return aid
+
+
+def fix_check_due(log):
+    """Index of the first card message after the last code review's report (a Fix button, a typed "fix 1 and 3", a
+    hand-back; a note when it came while a Codex or Antigravity reviewer was still closing) when the session has since
+    reported done: a fix the board checks (fix_check). Else None."""
+    r = next((i for i in range(len(log) - 1, -1, -1) if log[i].get("status") == "review"), None)
+    if r is None:
+        return None
+    rep = next((i for i in range(r + 1, len(log)) if log[i].get("from") == "claude" and log[i].get("status") == "done"),
+               None)
+    if rep is None:
+        return None
+    ask = next((i for i in range(rep + 1, len(log)) if log[i].get("from") == "you"
+                and log[i].get("status") in reports.USER_SAYS), None)
+    if ask is None:
+        return None
+    tail = [e for e in log[ask + 1:] if e.get("status") != "note" and e.get("from") != BOARD]
+    while tail and tail[-1].get("from") == "claude" and tail[-1].get("status") == "progress":
+        tail.pop()
+    return ask if tail and tail[-1].get("from") == "claude" and tail[-1].get("status") == "done" else None
+
+
+@one_per_card
+def fix_check(p, task_id):
+    """Start a fresh, cheap session that checks a fix of code review findings (fix_check_due): each finding is gone,
+    the feature works the way the task notes describe, nothing else changed. It changes nothing and reports on the
+    card, where a problem it finds gets the Fix buttons like any review. The review's model, the skill's low budget.
+    Returns the session id, or None when no fix is due or the fix names no commit."""
+    state = load_tasks(p)
+    t = next((x for x in state["tasks"] if x["id"] == task_id), None)
+    log = reports.read(p.board, task_id)
+    ask = fix_check_due(log) if t and t.get("agent") else None
+    if ask is None:
+        return None
+    ref = commit_ref(p, t)
+    commits = own_commits(p, log[ask:], log[ask]["at"], ref)
+    if not commits:
+        return None
+    r = max(i for i in range(ask) if log[i].get("status") == "review")
+    found = REVIEW_BY.match(log[r].get("message") or "")
+    model = found.group(1) if found and found.group(1) != "task model" else None
+    use = model or t["agent"].get("model") or ""
+    findings = next(e["message"] for e in log[r + 1:ask] if e.get("from") == "claude" and e.get("status") == "done")
+    fixed = [e["message"] for e in log[ask + 1:] if e.get("from") == "claude" and e.get("status") in ("done", "answer", "question")]
+    branch = ref[len("refs/heads/"):] if ref != "HEAD" else None
+    wt = branch and live_worktree(t)
+    board_rel = os.path.relpath(p.board, p.path)
+    rep = report_cmd(p, task_id)
+    skill = shell_path(os.path.join(HERE, 'skills', 'commit-review', 'SKILL.md'))
+    args = "low " + " ".join(sha for sha, _ in commits)
+    step1 = (f'1. Use the `commit-review` skill with args "{args}" if it is in your skills list; otherwise read {skill} '
+             "and follow it exactly with those args (where it says Skill tool or Read tool, do the equivalent yourself)."
+             if board_run(cli_of_model(use)) else
+             f'1. Run the commit-review skill (the Skill tool, skill "commit-review", args "{args}"). If that skill is '
+             f"not installed, Read {skill} and follow it.")
+    prompt = "\n".join([
+        f"Fix check for a task on the project task board ({board_rel}): a short second review of a fix.", "",
+        f"Task: {t['title']}", f"Task id: {task_id}", *(["", "Task notes:", t["notes"]] if t.get("notes") else []),
+        "", "A code review of this task posted this report:", findings, "",
+        "The user replied: " + log[ask]["message"], "",
+        "A session then made the fix. " + ("Its report:" if len(fixed) < 2 else "Its reports, oldest first:"),
+        "\n\n".join(fixed[-3:]), "", "The fix commits, newest first:", *[f"- {sha} {subj}" for sha, subj in commits], "",
+        *([f"The work is on branch `{branch}` in the git worktree {shell_path(wt['path'])}: check it there, with "
+           "`git -C <that path>` and absolute paths (a bare `cd` is often refused). Later fixes go there too, committed on that branch.", ""] if wt else []),
+        "Steps:",
+        step1 + ' Follow its "Fix check" section: check only that each finding the user asked to fix is gone (run its '
+        "repro again), that the behavior the task notes describe still works the same way, and that the fix changed "
+        "nothing else in behavior. Do not hunt for other problems. Keep to its turn budget. Do not use /code-review, "
+        "subagents or workflows. Check only in this turn: no file changes, no commits.",
+        f'2. Post the result with `{rep} done "..."`, naming the commits you checked. A problem is a finding in the '
+        "skill's shape, and then end by asking which findings to fix. If the fix is good, say so in a few lines.",
+        "If a later reply asks for fixes, that is a new job: " + FIX_RULES, "",
+        f"Follow CLAUDE.md if the project has one. Do not edit {os.path.join(board_rel, 'tasks.json')} "
+        "(the board owns it).", "", *card_lines(rep, simple=simple_words(state))])
+    aid = start_session(p, task_id, "fix check: " + t["title"][:52], prompt, use,
+                        "" if model else t["agent"].get("effort") or "")
+    reports.append(p.board, task_id, "review", f"Fix check started by the board ({model or 'task model'}, session {aid})",
+                   "you", session=aid, cli=cli_of_model(use))
     WATCH.expect(p, task_id, aid)
     return aid
 
@@ -3414,6 +3504,7 @@ class Watcher:
         self.primed = False   # first pass only records, so a restart doesn't re-alert old sessions
         self.loaded = False   # a first pass has ended, even with an error: the page stops polling fast
         self.delivering = set()  # (project id, task id) whose leftover notes are being handed over
+        self.fixchecking = set()  # (project id, task id) whose fix check (fix_check) is being started
         self.typed_fail = {}  # (project id, task id) -> time typing a note into its session last failed
         self.unstall_fail = {}  # (project id, task id) -> the auto-mode stall (epoch s) a resume failed on
         self.committed = {}   # (project id, task id) -> (log length, whether a card message names its own commit)
@@ -3501,6 +3592,15 @@ class Watcher:
                 self.typed_fail[(p.id, task_id)] = time.time()
         finally:
             self.delivering.discard((p.id, task_id))
+
+    def _fix_check(self, p, task_id):
+        try:
+            fix_check(p, task_id)
+        except Exception as e:  # noqa: BLE001 — say so on the card; Review code still checks the fix by hand
+            print("fix check:", e)
+            reports.append(p.board, task_id, "progress", f"Could not start the check of the fix: {e}", BOARD)
+        finally:
+            self.fixchecking.discard((p.id, task_id))
 
     def _unstall(self, p, task_id, info, stalled):
         try:
@@ -3744,6 +3844,12 @@ class Watcher:
             if key not in fresh:
                 continue
             was, now_ = (old.get(key) or {}).get("phase"), fresh[key]["phase"]
+            # A session that fixed review findings just reported done: a fresh session checks the fix. Only on this
+            # change seen live, so a board restart starts no check for an old fix.
+            if (was == "working" and now_ == "finished" and not fresh[key]["closed"] and key not in self.fixchecking
+                    and fix_check_due(fresh[key]["log"]) is not None):
+                self.fixchecking.add(key)
+                threading.Thread(target=self._fix_check, args=(p, t["id"]), daemon=True).start()
             with self.lock:
                 if key in self.alerts and self.alerts[key]["phase"] != now_:
                     del self.alerts[key]  # it went back to work before the card showed the change

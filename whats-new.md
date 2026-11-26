@@ -3,6 +3,7 @@
 ## 2026-11-26
 
 - The big green FIXED now also shows when the helper writes "fixed" at the end of a note's title, which is how it usually says it.
+- When you ask for a fix after a review, the fix now keeps your feature working the way it was meant to, and a second quick check makes sure of it by itself. Each problem a review finds also says if fixing it would change how things work.
 
 ## 2026-11-25
 
