@@ -62,6 +62,9 @@ with open(os.path.join(ROOT, "server.py"), encoding="utf-8") as f:
 check("review prompt reads the setting", "*card_lines(rep, simple=simple_words(state))" in src)
 # A review's finding format (Where / Proof with file and line) wins over "no file names".
 check("rule keeps the review's Where and Proof lines", "Where and Proof lines stay" in RULE)
+# "No command names" must not hide what the user has to type or press themselves.
+check("rule keeps the exact key or command of a step the user must do",
+      "A step the user must do keeps the exact key or command." in RULE)
 
 # The recap stays detailed for a new session, but opens with a plain-words section when the switch is on.
 asked = []

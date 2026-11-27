@@ -939,7 +939,8 @@ def worktree_lines(wt, main):
 
 SIMPLE_RULE = ("Simple words (the user turned this on for this project's board): write every card message so a "
                "5-year-old could follow it. Short sentences and everyday words. No technical terms: no file, function "
-               "or command names, no git words, no code or error text, unless the user asks for them. Say what the "
+               "or command names, no git words, no code or error text, unless the user asks for them. A step the "
+               "user must do keeps the exact key or command. Say what the "
                "user can now see or do, or what went wrong, not how it works inside. Keep it short. The commit shas "
                "and branch name a done report needs go together on one last line. A code review keeps its finding "
                "format: each finding's heading, Where and Proof lines stay as the review asks (file and line, quoted "

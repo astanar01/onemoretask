@@ -2,6 +2,7 @@
 
 ## 2026-11-26
 
+- With simple words on, when you have to do something yourself, the card still tells you the exact key to press or line to type.
 - When the helper is about to stop right after saying "still working", it now gets a nudge to keep going or say it is done, so a card no longer looks stuck halfway.
 - On a card that only reads, the helper can now look at the list of branches again without being stopped by mistake.
 - The big green FIXED now also shows when the helper writes "fixed" at the end of a note's title, which is how it usually says it.
