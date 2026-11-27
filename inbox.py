@@ -5,7 +5,9 @@
 
 server.py installs it with --settings on every session it starts, for two events:
 - PostToolUse: the notes go in as additional context after the tool call that just ran.
-- Stop: a note that arrives during the last step blocks the stop, so Claude reads it instead of ending.
+- Stop: a note that arrives during the last step blocks the stop, so Claude reads it instead of ending. A turn
+  that would end right after a `progress` report is blocked once too: the card would show a run that stopped
+  while saying it is still working, with no finish or merge buttons.
 Subagents' tool calls fire PostToolUse too (with an agent_id); those are skipped so the note reaches
 the main session, which is the one that talks to the card.
 """
@@ -13,6 +15,17 @@ import json
 import sys
 
 import reports
+
+PROGRESS_STOP = ("Your last report on the card says you are still working, but this turn is ending, so the card "
+                 "will look stopped. Carry on with the work, or post `done` (the task is finished) or `question` "
+                 "(you need the user) with the report script. If you are only waiting for a background job that "
+                 "will wake you, end the turn again.")
+
+
+def ends_on_progress(log):
+    """True when the card's newest entry is a progress report from the session (not a user reply after it)."""
+    return bool(log) and log[-1].get("status") == "progress" and log[-1].get("from") == "claude"
+
 
 args = sys.argv[1:]
 if len(args) != 3 or args[0] != "--board":
@@ -29,6 +42,10 @@ if event.get("agent_id") or name not in ("PostToolUse", "Stop"):
     sys.exit(0)
 notes, _ = reports.take_notes(board, task_id)
 if not notes:
+    # stop_hook_active: this stop already follows one block; a second would loop (a session that waits for a
+    # background job ends its turn on purpose).
+    if name == "Stop" and not event.get("stop_hook_active") and ends_on_progress(reports.read(board, task_id)):
+        sys.stdout.write(json.dumps({"decision": "block", "reason": PROGRESS_STOP}))
     sys.exit(0)
 text = reports.notes_message(board, notes)
 if name == "Stop":
