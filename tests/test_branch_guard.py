@@ -97,6 +97,9 @@ denied = [
     "if true; then git switch feature; fi",
     "for b in x; do git switch feature; done",
     "{ git switch feature; }",
+    "git checkout feature 2>&1",  # the redirect once counted as a second name: a file restore, let through
+    "git switch feature 2>/dev/null",
+    "git checkout feature &>/dev/null",
 ]
 for cmd in denied:
     check(f"denies in the main checkout: {cmd!r}", guard(cmd) == "deny")
@@ -121,6 +124,7 @@ allowed = [
     "ls; grep -r checkout .",
     "bash -c 'git status'",
     "bash script.sh",
+    "git checkout a.txt 2>&1",
 ]
 for cmd in allowed:
     check(f"allows in the main checkout: {cmd!r}", guard(cmd) == "allow")
@@ -186,14 +190,20 @@ git_denied = ["git commit -m x", "git add .", "git push", "git merge feature", "
               "git symbolic-ref HEAD refs/heads/feature", "git symbolic-ref -d HEAD", "git symbolic-ref -m why HEAD x",
               "git diff --output=x.txt", "git log --output x.txt", "git config --unset user.name",
               "git config --global --unset user.name", "git config --unset-all x.y", "git config --remove-section core",
-              "git config --rename-section core x", "git config --add x.y", "git config --edit", "git config -e"]
+              "git config --rename-section core x", "git config --add x.y", "git config --edit", "git config -e",
+              "git branch new 2>&1", "git commit -m x 2>&1", "git branch new &>/dev/null", "git branch -d feature >&2",
+              "sleep 1 & git commit -m x"]
 for cmd in git_denied:
     check(f"answer-only: denies {cmd!r}", guard(cmd) == "deny")
 git_allowed = ["git status", "git log --oneline -5", "git diff HEAD~1", "git show HEAD", "git branch",
                "git branch -a", "git branch --show-current", "git worktree list", "git stash list", "git tag",
                "git remote -v", "git config --get user.name", "git config user.name", "git blame a.txt",
                "git rev-parse HEAD", "git --version", "ls; cat a.txt", "echo 'git commit'", "git symbolic-ref HEAD",
-               "git symbolic-ref --short HEAD", "git symbolic-ref -q HEAD"]
+               "git symbolic-ref --short HEAD", "git symbolic-ref -q HEAD",
+               # a redirect is not a branch name (`2>&1` was split into `2>` and `&`)
+               "git branch -a 2>&1", "git branch 2>/dev/null", "git branch 2> /dev/null", "git branch >&2",
+               "git log --oneline 2>&1 | head -3", "git status &>/dev/null", "git branch -a 'feat*'",
+               "git branch --all", "git branch -r 'origin/*'", "git branch --remotes x"]
 for cmd in git_allowed:
     check(f"answer-only: allows {cmd!r}", guard(cmd) == "allow")
 os.remove(os.path.join(TMP, "tasks.json"))

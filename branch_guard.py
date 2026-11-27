@@ -17,6 +17,7 @@ held tighter: see plan_may_write.
 """
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -37,14 +38,32 @@ GIT_READS = {"status", "log", "diff", "show", "blame", "grep", "ls-files", "ls-t
              "rev-list", "cat-file", "describe", "shortlog", "merge-base", "name-rev", "for-each-ref", "show-ref",
              "check-ignore", "whatchanged", "range-diff", "count-objects", "help", "version",
              "show-branch", "cherry", "var", "diff-tree", "diff-index", "diff-files"}
+REDIRECT = re.compile(r"(\d*|&)(>>?|<)")  # match: a word that starts with a redirect; fullmatch: its target is the next word
 
 
 def segments(command):
     lex = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
+    toks = list(lex)
+    # The splitter cuts `2>&1`, `>&2` and `&>file` at their `&`; glue them back so that `&` is not read as
+    # "run in the background" and the fd after it does not start a new command.
+    glued = []
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok == "&" and glued and glued[-1].endswith((">", "<")) and i + 1 < len(toks):
+            glued[-1] += "&" + toks[i + 1]
+            i += 2
+            continue
+        if tok == "&" and i + 1 < len(toks) and toks[i + 1].startswith(">"):
+            glued.append("&" + toks[i + 1])
+            i += 2
+            continue
+        glued.append(tok)
+        i += 1
     seg = []
-    for tok in lex:
+    for tok in glued:
         if tok in SEPARATORS or set(tok) <= set(";&|\n"):
             if seg:
                 yield seg
@@ -53,6 +72,19 @@ def segments(command):
             seg.append(tok)
     if seg:
         yield seg
+
+
+def without_redirects(args):
+    """`args` minus shell redirects (`2>&1`, `2>/dev/null`, `> out`, `<in`) and the file a bare `>` points at."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif REDIRECT.match(a):
+            skip = bool(REDIRECT.fullmatch(a))
+        else:
+            out.append(a)
+    return out
 
 
 def git(where, *args):
@@ -139,7 +171,7 @@ def git_writes(sub, args):
                 "--unset-upstream", "--edit-description"} & set(args) or any(a.startswith("--set-upstream") for a in args):
             return True
         return bool(names) and not {"--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged",
-                                    "--points-at"} & set(args)
+                                    "--points-at", "-a", "--all", "-r", "--remotes"} & set(args)
     if sub == "tag":
         return bool(names) and not {"-l", "--list", "--contains", "--merged", "--points-at"} & set(args)
     if sub == "worktree":
@@ -188,6 +220,7 @@ def git_segments(command, cwd):
                 rest.pop(0)
             elif opt.startswith(("--git-dir", "--work-tree")):
                 here = None  # points git somewhere else
+        rest = without_redirects(rest)
         if rest:
             yield here, rest[0], rest[1:]
 
