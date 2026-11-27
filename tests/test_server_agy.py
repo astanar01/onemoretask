@@ -461,6 +461,13 @@ def test_s38_handback_any_two_clis():
     server.list_sessions = lambda cwd: [dict(r) for r in rows]
     poll()
     assert card("h1")["handback"] == "Claude", card("h1")["handback"]
+    # The findings wake the Claude worker's own session, with no model flag: the review model picked on the card
+    # (even an OpenAI or Gemini one) only chooses the next reviewer and never reaches the hand-back.
+    agy_before = len(agy.RESUMES)
+    server.handback(p, "h1", "fix 1")
+    bg = [c for c in claude_calls if c[:1] == ["--bg"]][-1]
+    assert bg[:3] == ["--bg", "--resume", "uuid-cl-1"] and "FINDING 1" in bg[3] and len(bg) == 4, bg
+    assert len(agy.RESUMES) == agy_before, agy.RESUMES[agy_before:]
     # Claude reviewer -> Antigravity worker
     _review_card("h2", "agy:gemini-4-neon-high", "antigravity", "ag-w2", "cl-r2", "claude")
     ag_session("ag-w2", "h2", "idle")
@@ -491,6 +498,16 @@ def test_s38_handback_any_two_clis():
         assert server.review_worker(reports.read(p.board, "h4"), {"agent": {"id": "cdx-r4"}}) == "cl-4"
         poll()
         assert card("h4")["handback"] == "Claude", card("h4")["handback"]
+        # Codex review on Claude's work: the findings go to the Claude session, never to Codex
+        cdx_resume, cdx_calls = codex.resume, []
+        codex.resume = lambda *a, **k: cdx_calls.append(a) or "cdx-x"
+        try:
+            server.handback(p, "h4", "fix it")
+        finally:
+            codex.resume = cdx_resume
+        bg = [c for c in claude_calls if c[:1] == ["--bg"]][-1]
+        assert bg[:3] == ["--bg", "--resume", "uuid-cl-4"] and "A Codex code review" in bg[3] and len(bg) == 4, bg
+        assert not cdx_calls, cdx_calls
     finally:
         codex.sessions = orig
     server.list_sessions = lambda cwd: []
